@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -156,5 +157,25 @@ func (b *Bot) cmdHelp(c *Ctx) {
 	} else {
 		e.Footer = &discordgo.MessageEmbedFooter{Text: "Ask a moderator if you think you're missing a command here."}
 	}
+	if links := b.legalLinks(); links != "" {
+		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "\u200b", Value: "-# " + links})
+	}
 	c.Reply(true, e)
+}
+
+// legalLinks returns the Privacy Policy and Terms of Service links for the
+// bottom of /help, or "" when neither is set to an http(s) URL. An embed
+// footer can't hold links, so they go in a last field as small text.
+func (b *Bot) legalLinks() string {
+	var links []string
+	for _, l := range []struct{ label, key string }{
+		{"Privacy Policy", "PRIVACY_URL"}, {"Terms of Service", "TERMS_URL"},
+	} {
+		raw := strings.TrimSpace(b.cfg.Str(l.key))
+		if u, err := url.Parse(raw); err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" &&
+			!strings.ContainsAny(raw, "()<> ") {
+			links = append(links, fmt.Sprintf("[%s](%s)", l.label, raw))
+		}
+	}
+	return strings.Join(links, " · ")
 }

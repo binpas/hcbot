@@ -130,6 +130,8 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MEDIA_CACHE_TOTAL_MB` | Memory limit for all cached attachments, in MB ¹ | 200 |
 | `ASSETS_IMPORT_MAX_MB` | Largest zip file for `/assets import`, in MB | 25 |
 | `README_PATH` | File that `/readme` shows, relative to the working folder | `./README.md` |
+| `PRIVACY_URL` | Privacy Policy link at the bottom of `/help`. Set to `none` to hide it. | the `PRIVACY.md` link in this repository |
+| `TERMS_URL` | Terms of Service link at the bottom of `/help`. Set to `none` to hide it. | the `TERMS.md` link in this repository |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 

@@ -124,6 +124,10 @@ var SetupKeys = []SetupKey{
 		"Largest zip file /assets import accepts, in MB"},
 	{"README_PATH", "README_PATH", KindText, "./README.md",
 		"File that /readme shows (relative to the bot's working folder)"},
+	{"PRIVACY_URL", "PRIVACY_URL", KindText, "https://github.com/binpas/hcbot/blob/main/PRIVACY.md",
+		"Privacy Policy link at the bottom of /help (set to none to hide it)"},
+	{"TERMS_URL", "TERMS_URL", KindText, "https://github.com/binpas/hcbot/blob/main/TERMS.md",
+		"Terms of Service link at the bottom of /help (set to none to hide it)"},
 }
 
 // Extra keys the bot writes itself (not prompted for during /setup).
