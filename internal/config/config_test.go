@@ -55,3 +55,29 @@ func TestStoreFallbacks(t *testing.T) {
 		t.Errorf("ID = %q, want 1234567890", got)
 	}
 }
+
+func TestCheckValue(t *testing.T) {
+	for _, tc := range []struct {
+		key, value string
+		ok         bool
+	}{
+		{"WARN_KICK_THRESHOLD", "5", true},
+		{"WARN_KICK_THRESHOLD", "five", false},
+		{"MOD_LOG", "123456789012345678", true},
+		{"MOD_LOG", "#mod-log", false},
+		{"MOD_ROLE", "0", false},
+		{"JAIL_PROTECTED_ROLES", "123, 456", true},
+		{"JAIL_PROTECTED_ROLES", "123,abc", false},
+		{ModSupportMsgKey, "x", false},
+		{"CURATED_EMOTE", "anything", true},
+		{"SOME_OLD_KEY", "anything", true},
+		{"MOD_LOG", "", true},
+	} {
+		if err := CheckValue(tc.key, tc.value); (err == nil) != tc.ok {
+			t.Errorf("CheckValue(%q, %q) = %v, want ok=%v", tc.key, tc.value, err, tc.ok)
+		}
+	}
+	if !Known(JailSetupKey) || !Known("MOD_LOG") || Known("SOME_OLD_KEY") {
+		t.Error("Known gives the wrong result")
+	}
+}

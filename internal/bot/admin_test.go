@@ -296,3 +296,15 @@ func TestReadme(t *testing.T) {
 	tb.run(tMod, "readme")
 	tb.expect(true, "Couldn't read", "README_PATH")
 }
+
+func TestBackupsInSameSecond(t *testing.T) {
+	tb := newTestBot(t)
+	for range 3 {
+		if _, _, err := tb.makeBackup(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if list := tb.backups(); len(list) != 3 {
+		t.Errorf("backups = %v, want 3", list)
+	}
+}

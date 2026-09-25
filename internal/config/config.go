@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"regexp"
 	"strconv"
@@ -139,6 +140,46 @@ var byKey = func() map[string]SetupKey {
 	return m
 }()
 
+// Known reports whether the bot uses key: a /setup setting or an extra key
+// it writes itself.
+func Known(key string) bool {
+	_, ok := byKey[key]
+	return ok || key == ModSupportMsgKey || key == JailSetupKey
+}
+
+// CheckValue reports why value is not valid for key, or returns nil. An
+// empty value is always valid. Unknown keys accept any value.
+func CheckValue(key, value string) error {
+	if value == "" {
+		return nil
+	}
+	isID := func(v string) bool {
+		n, err := strconv.ParseUint(v, 10, 64)
+		return err == nil && n != 0
+	}
+	kind := byKey[key].Kind
+	if key == ModSupportMsgKey {
+		kind = KindChannel // any snowflake ID
+	}
+	switch kind {
+	case KindInt:
+		if _, err := strconv.Atoi(value); err != nil {
+			return errors.New("must be a whole number")
+		}
+	case KindChannel, KindCategory, KindRole:
+		if !isID(value) {
+			return errors.New("must be a Discord ID")
+		}
+	case KindRoleList:
+		for _, tok := range listSep.Split(strings.TrimSpace(value), -1) {
+			if !isID(tok) {
+				return errors.New("must be a list of Discord IDs")
+			}
+		}
+	}
+	return nil
+}
+
 // Store is the in-memory cache of the config table.
 type Store struct {
 	mu     sync.RWMutex
@@ -165,6 +206,16 @@ func (s *Store) Set(key, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.values[key] = value
+}
+
+// Replace swaps in a new set of database values.
+func (s *Store) Replace(values map[string]string) {
+	if values == nil {
+		values = map[string]string{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values = values
 }
 
 // Raw resolves a config value: database → .env → built-in default.

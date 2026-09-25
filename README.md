@@ -303,10 +303,19 @@ A role or member in a template that no longer exists is skipped and listed.
 | `/db backup` | admin only | Makes a database backup and sends it as a file. |
 | `/db list [filename]` | admin only | Lists backups, or sends one. |
 | `/db delete <filename>` | admin only | Deletes a backup, after you confirm. |
+| `/db configexport` | admin only | Sends the saved settings as a JSON file. |
+| `/db configimport <file> <mode>` | admin only | Imports settings from a JSON file, after you confirm. The bot makes a backup first. |
 | `/assets export` | admin only | All custom emojis and stickers as a zip file. |
 | `/assets import <file>` | admin only | Imports a zip from `/assets export`. |
 
 Backups are in `backups/`, named `health_bot_<UTC time>.db`. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically.
+
+`/db configexport` and `/db configimport` let you repair the settings by hand. Export the settings, change or remove values in the JSON file, and import the file again. The file holds only the values saved in the database, not `.env` values or defaults. The `mode` option controls the import:
+
+- `replace`: the file becomes the full set of saved settings. A key that you remove from the file is removed from the database. The setting then uses its `.env` value or default.
+- `merge`: the bot adds and changes only the keys in the file. Other settings stay as they are.
+
+The import refuses a file with a value that is not correct (for example, text in a number setting), and changes nothing. It shows what it will add, change and remove before you confirm, and warns about keys that the bot does not use.
 
 `/assets import` checks the free slots first (Discord counts static and animated emojis separately) and changes nothing if there is not enough room. For a name that already exists, you get a DM (or a private message in the channel, if your DMs are closed) with the old and the new image and **Replace** / **Keep Existing** buttons. Lottie and GIF stickers cannot be exported, because the bot API cannot upload them again.
 

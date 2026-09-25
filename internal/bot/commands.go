@@ -489,6 +489,15 @@ func optStr(name, desc string, required bool) *discordgo.ApplicationCommandOptio
 	}
 }
 
+// optChoice is a string option that accepts only the given values.
+func optChoice(name, desc string, required bool, values ...string) *discordgo.ApplicationCommandOption {
+	o := optStr(name, desc, required)
+	for _, v := range values {
+		o.Choices = append(o.Choices, &discordgo.ApplicationCommandOptionChoice{Name: v, Value: v})
+	}
+	return o
+}
+
 func optInt(name, desc string, required bool) *discordgo.ApplicationCommandOption {
 	return &discordgo.ApplicationCommandOption{
 		Type: discordgo.ApplicationCommandOptionInteger, Name: name, Description: desc, Required: required,

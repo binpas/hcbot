@@ -482,36 +482,12 @@ type batchImport struct {
 }
 
 func (b *Bot) cmdTriggerBatchImport(c *Ctx) {
-	file := c.Attachment("file")
-	if file == nil {
-		c.Reply(true, errEmbed("Couldn't read that attachment."))
-		return
-	}
 	limitMB := max(b.cfg.Int("TRIGGER_IMPORT_MAX_MB"), 1)
-	limit := int64(limitMB) << 20
-	if int64(file.Size) > limit {
-		c.Reply(true, errEmbed(fmt.Sprintf("That file is larger than **%d MB** (`TRIGGER_IMPORT_MAX_MB` in `/setup`).", limitMB)))
+	raw, ok := b.readAttachment(c, c.Attachment("file"), int64(limitMB)<<20,
+		fmt.Sprintf("That file is larger than **%d MB** (`TRIGGER_IMPORT_MAX_MB` in `/setup`).", limitMB))
+	if !ok {
 		return
 	}
-	c.Defer(true)
-	resp, err := b.s.Client.Get(file.URL)
-	if err != nil {
-		c.logErr("download attachment", err)
-		c.Reply(true, errEmbed("Couldn't read that attachment."))
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil || resp.StatusCode != 200 {
-		c.logErr("read attachment", fmt.Errorf("status %d: %v", resp.StatusCode, err))
-		c.Reply(true, errEmbed("Couldn't read that attachment."))
-		return
-	}
-	if int64(len(raw)) > limit {
-		c.Reply(true, errEmbed(fmt.Sprintf("That file is larger than **%d MB** (`TRIGGER_IMPORT_MAX_MB` in `/setup`).", limitMB)))
-		return
-	}
-	raw = bytes.ToValidUTF8(raw, []byte("�"))
 
 	var data any
 	if err := json.Unmarshal(raw, &data); err != nil {
@@ -585,6 +561,39 @@ func (b *Bot) cmdTriggerBatchImport(c *Ctx) {
 	}
 	c.ReplyComplex(true, []*discordgo.MessageEmbed{makeEmbed("📥 Confirm Batch Import", summary, colourOrange)},
 		confirmButtons("trigbatch", c.UserID(), id))
+}
+
+// readAttachment downloads an attachment of at most limit bytes, and
+// defers the reply first. tooBig is the error for a larger file. When it
+// returns false, it has already answered.
+func (b *Bot) readAttachment(c *Ctx, file *discordgo.MessageAttachment, limit int64, tooBig string) ([]byte, bool) {
+	if file == nil {
+		c.Reply(true, errEmbed("Couldn't read that attachment."))
+		return nil, false
+	}
+	if int64(file.Size) > limit {
+		c.Reply(true, errEmbed(tooBig))
+		return nil, false
+	}
+	c.Defer(true)
+	resp, err := b.s.Client.Get(file.URL)
+	if err != nil {
+		c.logErr("download attachment", err)
+		c.Reply(true, errEmbed("Couldn't read that attachment."))
+		return nil, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil || resp.StatusCode != 200 {
+		c.logErr("read attachment", fmt.Errorf("status %d: %v", resp.StatusCode, err))
+		c.Reply(true, errEmbed("Couldn't read that attachment."))
+		return nil, false
+	}
+	if int64(len(raw)) > limit {
+		c.Reply(true, errEmbed(tooBig))
+		return nil, false
+	}
+	return bytes.ToValidUTF8(raw, []byte("�")), true
 }
 
 // validTriggerEntry checks one {"name": str, "values": [str, ...]} entry.

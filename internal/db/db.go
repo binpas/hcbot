@@ -238,6 +238,27 @@ func (d *DB) LoadConfig() (map[string]string, error) {
 	return out, rows.Err()
 }
 
+// ImportConfig stores values in one transaction. With replace, it first
+// removes every row, so the table ends up holding exactly values.
+func (d *DB) ImportConfig(values map[string]string, replace bool) error {
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if replace {
+		if _, err := tx.Exec(`DELETE FROM config`); err != nil {
+			return err
+		}
+	}
+	for k, v := range values {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`, k, v); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // SetConfig stores one config value.
 func (d *DB) SetConfig(key, value string) error {
 	_, err := d.sql.Exec(

@@ -20,7 +20,7 @@ import (
 // Database backups (admin only: a backup holds everything)
 // ---------------------------------------------------------------------
 
-var backupNameRE = regexp.MustCompile(`^health_bot_\d{8}_\d{6}\.db$`)
+var backupNameRE = regexp.MustCompile(`^health_bot_\d{8}_\d{6}(_\d+)?\.db$`)
 
 // humanSize matches the Python bot's _human_size.
 func humanSize(n int64) string {
@@ -58,7 +58,15 @@ func (b *Bot) makeBackup() (string, int64, error) {
 	if err := os.MkdirAll(b.backupDir, 0o755); err != nil {
 		return "", 0, err
 	}
-	name := "health_bot_" + time.Now().UTC().Format("20060102_150405") + ".db"
+	// Two backups in the same second get a _2, _3, ... suffix.
+	stamp := "health_bot_" + time.Now().UTC().Format("20060102_150405")
+	name := stamp + ".db"
+	for n := 2; ; n++ {
+		if _, err := os.Stat(filepath.Join(b.backupDir, name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("%s_%d.db", stamp, n)
+	}
 	path := filepath.Join(b.backupDir, name)
 	if err := b.db.Backup(path); err != nil {
 		return "", 0, err
@@ -769,6 +777,20 @@ func (b *Bot) registerAdmin() {
 		handler: b.cmdDBDelete,
 	})
 	b.addConfirm("dbdelete", b.onDBDeleteConfirm)
+	b.addCommand(&command{
+		name: "db configexport", description: "Export the saved bot settings to a JSON file.", perm: permAdmin,
+		handler: b.cmdConfigExport,
+	})
+	b.addCommand(&command{
+		name: "db configimport", description: "Import bot settings from a JSON file made by /db configexport.", perm: permAdmin,
+		options: []*discordgo.ApplicationCommandOption{
+			optAttachment("file", "A .json file made by /db configexport", true),
+			optChoice("mode", "Replace all settings, or merge the file into the current settings", true,
+				"replace", "merge"),
+		},
+		handler: b.cmdConfigImport,
+	})
+	b.addConfirm("cfgimport", b.onConfigImportConfirm)
 
 	b.addCommand(&command{
 		name: "permsreport", description: "Generate a full channel-permissions report: synced vs. unsynced (mod only).",
