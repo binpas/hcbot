@@ -307,6 +307,8 @@ A role or member in a template that no longer exists is skipped and listed.
 | `/db configimport <file> <mode>` | admin only | Imports settings from a JSON file, after you confirm. The bot makes a backup first. |
 | `/assets export` | admin only | All custom emojis and stickers as a zip file. |
 | `/assets import <file>` | admin only | Imports a zip from `/assets export`. |
+| `/botprofile avatar <file>` | admin only | Changes the bot's avatar everywhere, after you confirm. |
+| `/botprofile banner <file>` | admin only | Changes the bot's profile banner everywhere, after you confirm. |
 
 Backups are in `backups/`, named `health_bot_<UTC time>.db`. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically.
 
@@ -316,6 +318,8 @@ Backups are in `backups/`, named `health_bot_<UTC time>.db`. They are safe copie
 - `merge`: the bot adds and changes only the keys in the file. Other settings stay as they are.
 
 The import refuses a file with a value that is not correct (for example, text in a number setting), and changes nothing. It shows what it will add, change and remove before you confirm, and warns about keys that the bot does not use.
+
+`/botprofile` accepts PNG, JPEG, GIF and WebP images up to 8 MB, and shows a preview before you confirm. The change is logged in `MOD_LOG`. Discord allows only a few profile changes each hour. If you change the avatar or banner too often, the bot tells you how long to wait.
 
 `/assets import` checks the free slots first (Discord counts static and animated emojis separately) and changes nothing if there is not enough room. For a name that already exists, you get a DM (or a private message in the channel, if your DMs are closed) with the old and the new image and **Replace** / **Keep Existing** buttons. Lottie and GIF stickers cannot be exported, because the bot API cannot upload them again.
 

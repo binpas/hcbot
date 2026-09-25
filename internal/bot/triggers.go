@@ -488,6 +488,7 @@ func (b *Bot) cmdTriggerBatchImport(c *Ctx) {
 	if !ok {
 		return
 	}
+	raw = bytes.ToValidUTF8(raw, []byte("\ufffd"))
 
 	var data any
 	if err := json.Unmarshal(raw, &data); err != nil {
@@ -593,7 +594,7 @@ func (b *Bot) readAttachment(c *Ctx, file *discordgo.MessageAttachment, limit in
 		c.Reply(true, errEmbed(tooBig))
 		return nil, false
 	}
-	return bytes.ToValidUTF8(raw, []byte("�")), true
+	return raw, true
 }
 
 // validTriggerEntry checks one {"name": str, "values": [str, ...]} entry.

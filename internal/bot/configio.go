@@ -47,6 +47,7 @@ func (b *Bot) cmdConfigImport(c *Ctx) {
 	if !ok {
 		return
 	}
+	raw = bytes.ToValidUTF8(raw, []byte("\ufffd"))
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil || data == nil {
 		msg := "Expected a JSON object of `\"KEY\": \"value\"` pairs — the format `/db configexport` produces."

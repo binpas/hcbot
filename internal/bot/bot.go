@@ -90,6 +90,7 @@ func New(env config.Env, database *db.DB) (*Bot, error) {
 	b.registerReactionRoles()
 	b.registerAdmin()
 	b.registerAssets()
+	b.registerBotProfile()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
