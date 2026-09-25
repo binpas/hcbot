@@ -1,0 +1,39 @@
+# HEALTH Discord bot (Go) — user service (runs under your own account).
+#
+# Install (see README.md, "Run as a systemd service"):
+#   cp deploy/systemd/gohealthy-user.service ~/.config/systemd/user/gohealthy.service
+#   systemctl --user daemon-reload && systemctl --user enable --now gohealthy
+#   sudo loginctl enable-linger "$USER"    # keep it running after logout
+# Logs:
+#   journalctl --user -u gohealthy -f
+
+[Unit]
+Description=HEALTH Discord bot (gohealthy)
+Documentation=file://%h/gohealthy/README.md
+# Stop trying after 5 crashes in 5 minutes (for example, a bad token).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# .env, health_bot.db, backups/ and README.md are in this folder.
+WorkingDirectory=%h/gohealthy
+ExecStart=%h/gohealthy/gohealthy
+Restart=on-failure
+RestartSec=10s
+# The bot stops cleanly on SIGTERM: it closes the gateway and the database.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Logging: everything goes to the journal. The bot leaves out its own
+# timestamps when it runs under systemd.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gohealthy
+
+# New files (database, backups) are private to you.
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

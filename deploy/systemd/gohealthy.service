@@ -1,0 +1,79 @@
+# HEALTH Discord bot (Go) — system service.
+#
+# Install (see README.md, "Run as a systemd service"):
+#   sudo install -m 0644 deploy/systemd/gohealthy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now gohealthy
+# Logs:
+#   journalctl -u gohealthy -f
+
+[Unit]
+Description=HEALTH Discord bot (gohealthy)
+Documentation=file:///opt/gohealthy/README.md
+Wants=network-online.target
+After=network-online.target
+# Stop trying after 5 crashes in 5 minutes (for example, a bad token).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=gohealthy
+Group=gohealthy
+# .env, health_bot.db, backups/ and README.md are in this folder.
+WorkingDirectory=/opt/gohealthy
+ExecStart=/opt/gohealthy/gohealthy
+Restart=on-failure
+RestartSec=10s
+# The bot stops cleanly on SIGTERM: it closes the gateway and the database.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Logging: everything goes to the journal. The bot leaves out its own
+# timestamps when it runs under systemd.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gohealthy
+
+# New files (database, backups) are private to the gohealthy user.
+UMask=0077
+
+# Security: the bot only needs the network and its own folder.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/gohealthy
+ProtectHome=yes
+# To run the bot from a home folder (for example /home/botden/healthbot),
+# ProtectHome=yes blocks the folder (error 203/EXEC). Use these 3 lines
+# instead, and set WorkingDirectory, ExecStart, ReadWritePaths, User and
+# Group to match:
+#   ProtectHome=tmpfs
+#   TemporaryFileSystem=/home/botden:mode=0755
+#   BindPaths=/home/botden/healthbot
+# The bot then sees only its own folder in /home. TemporaryFileSystem is
+# needed because UMask=0077 makes the parent folder root-only (error
+# 200/CHDIR).
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# Secrets. Never commit bot tokens or keys.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Bot runtime data (server and user data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-*
+backups/
+
+# Build output
+/gohealthy
+/hcbot
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Test and coverage output
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Logs
+*.log
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
