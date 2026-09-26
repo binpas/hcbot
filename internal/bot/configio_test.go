@@ -27,7 +27,7 @@ func TestConfigExportImport(t *testing.T) {
 	r := tb.expect(true, "**Replace:**", "**Add (2):** `OLD_KEY`, `WARN_KICK_THRESHOLD`",
 		"**Remove (1):** `TICKET_CAT`", "does not use these keys, but they will be imported: `OLD_KEY`")
 	tb.click(tAdmin, tb.componentID(r, "confirm:yes:cfgimport:"))
-	tb.expect(true, "Imported **", "Backup from before the import: `health_bot_")
+	tb.expect(true, "Imported **", "Backup from before the import: `hcbot_")
 	if len(tb.backups()) != 1 {
 		t.Errorf("backups = %v", tb.backups())
 	}

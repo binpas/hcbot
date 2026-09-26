@@ -15,7 +15,7 @@ Usage: ./configure [options]
 Options:
   --target=OS-ARCH  Platform to build for, for example linux-amd64.
                     Default: this machine.
-  --bindir=DIR      Where `make install` puts gohealthy and markovtrain.
+  --bindir=DIR      Where `make install` puts hcbot and hcbot-train.
                     Default: /usr/local/bin
   --yes             Do not ask; use the options, the saved values and
                     the defaults.

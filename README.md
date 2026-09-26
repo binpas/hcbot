@@ -47,7 +47,7 @@ make
 ```
 
 - `./configure` checks that Go is new enough, and asks for the platform to build for (the default is this machine; botden is `linux-amd64`) and the install folder (the default is `/usr/local/bin`). It saves the answers in `config.mk`, and shows them as the defaults the next time. `./configure --help` shows the options; `--yes` asks nothing.
-- `make` builds `gohealthy` and `markovtrain`. `make help` lists all targets.
+- `make` builds `hcbot` and `hcbot-train`. `make help` lists all targets.
 
 | Target | What it does |
 |---|---|
@@ -61,8 +61,8 @@ make
 Without `make`, build with Go directly:
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o hcbot ./cmd/hcbot
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o hcbot ./cmd/hcbot
 ```
 
 - `CGO_ENABLED=0` makes a static binary that runs on any Linux server of the same architecture.
@@ -73,16 +73,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o goh
 ## Run
 
 1. Put these files in one folder (the bot's **working folder**):
-   - the `gohealthy` binary,
+   - the `hcbot` binary,
    - a `.env` file (see [Configuration](#configuration)),
    - this `README.md` (the `/readme` command shows it).
 2. Start the bot from that folder:
 
    ```bash
-   ./gohealthy
+   ./hcbot
    ```
 
-On the first start, the bot makes `health_bot.db` and `markov.db` in the working folder. Backups go into `backups/` in the same folder. After an update, the bot updates the database schema by itself.
+On the first start, the bot makes `hcbot.db` and `markov.db` in the working folder. A database from an older version, `health_bot.db`, is renamed to `hcbot.db` automatically when `hcbot.db` does not exist yet. Backups go into `backups/` in the same folder. After an update, the bot updates the database schema by itself.
 
 The bot stops cleanly on `Ctrl+C` or `SIGTERM`. To run it as a service, see [Run as a systemd service](#run-as-a-systemd-service).
 
@@ -348,7 +348,7 @@ A role or member in a template that no longer exists is skipped and listed.
 | `/botprofile avatar <file>` | admin only | Changes the bot's avatar everywhere, after you confirm. |
 | `/botprofile banner <file>` | admin only | Changes the bot's profile banner everywhere, after you confirm. |
 
-Backups are in `backups/`, named `health_bot_<UTC time>.db`. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically.
+Backups are in `backups/`, named `hcbot_<UTC time>.db`. Backups from older versions (`health_bot_<UTC time>.db`) are still listed. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically.
 
 `/db configexport` and `/db configimport` let you repair the settings by hand. Export the settings, change or remove values in the JSON file, and import the file again. The file holds only the values saved in the database, not `.env` values or defaults. The `mode` option controls the import:
 
@@ -374,27 +374,27 @@ The import refuses a file with a value that is not correct (for example, text in
 
 The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and replies in the `MARKOV_REPLY_CHANNELS` channels. Both lists also include the threads in those channels. When a list is empty, that part is off.
 
-- **Without `ENABLE_MESSAGE_CONTENT_FEATURES`:** the bot learns only from messages that start with or contain `@BotName`, and replies to them. Use `/markov import` or `markovtrain` to train it with more text.
+- **Without `ENABLE_MESSAGE_CONTENT_FEATURES`:** the bot learns only from messages that start with or contain `@BotName`, and replies to them. Use `/markov import` or `hcbot-train` to train it with more text.
 - **With `ENABLE_MESSAGE_CONTENT_FEATURES`:** the bot learns from all messages in the learn channels. It also replies at random to `MARKOV_REPLY_CHANCE` percent of the messages in the reply channels.
 
 A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 
 **What it learns:** the words of each message, in lowercase, with the pairs of words that come before each word. It does not keep who said a message, or the full message. It leaves out mentions, `@everyone`, `@here`, links, and words longer than 64 characters. It ignores a full message that contains a blocked word or phrase. Replies cannot ping anyone.
 
-**Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A phrase blocks those words in that sequence. The blocklist is in `health_bot.db`, so it stays when you delete the chain.
+**Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A phrase blocks those words in that sequence. The blocklist is in `hcbot.db`, so it stays when you delete the chain.
 
 **Remove data:** `/markov forget` removes a word or phrase. `/markov reset` removes everything. You can also stop the bot, delete `markov.db`, `markov.db-wal` and `markov.db-shm`, and start the bot again. **Do not delete the file while the bot runs.**
 
 **Size:** each word step uses about 40–60 bytes. A busy server can make 100–300 MB in some months. `/markov status` shows the size, and `/markov prune` makes it smaller. `markov.db` is not in the daily backup.
 
-### Train with the `markovtrain` script
+### Train with the `hcbot-train` script
 
 ```bash
-make                  # builds markovtrain with gohealthy
-./markovtrain [-db markov.db] [-maindb health_bot.db] file...
+make                  # builds hcbot-train with hcbot
+./hcbot-train [-db markov.db] [-maindb hcbot.db] file...
 ```
 
-Run it in the bot's working folder. Each file is plain text (one message on each line) or a `.json` export from [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter). Bot messages in an export are skipped. The script uses the blocklist from `health_bot.db` and only reads that file. You can run it while the bot runs.
+Run it in the bot's working folder. Each file is plain text (one message on each line) or a `.json` export from [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter). Bot messages in an export are skipped. The script uses the blocklist from `hcbot.db` and only reads that file. You can run it while the bot runs.
 
 ## Audit logging
 
@@ -414,9 +414,9 @@ The bot keeps the last 1000 messages in memory. A delete of an older message is 
 
 ## Run as a systemd service
 
-Each bot is an **instance**: a systemd service with its own name, user, working folder, `.env` and token. All instances run the same binary from the install folder (`/usr/local/bin`). The bot reads `.env`, `health_bot.db`, `markov.db`, `backups/` and `README.md` from its **working folder**, not from the folder of the binary.
+Each bot is an **instance**: a systemd service with its own name, user, working folder, `.env` and token. All instances run the same binary from the install folder (`/usr/local/bin`). The bot reads `.env`, `hcbot.db`, `markov.db`, `backups/` and `README.md` from its **working folder**, not from the folder of the binary.
 
-`deploy/systemd/gohealthy.service.in` is the template for the unit files. Do not install it directly.
+`deploy/systemd/hcbot.service.in` is the template for the unit files. Do not install it directly.
 
 ### Set up an instance
 
@@ -427,7 +427,7 @@ On the server, in the repository folder:
 ./configure && make && sudo make install
 
 # 2. Make a user for the bot (skip this if the user exists).
-sudo useradd --system --home-dir /opt/healthbot --shell /usr/sbin/nologin gohealthy
+sudo useradd --system --home-dir /opt/healthbot --shell /usr/sbin/nologin hcbot
 
 # 3. Set up the instance. It asks for the user, the group and the working
 #    folder, and makes build/healthbot.service.
@@ -435,7 +435,7 @@ make instance NAME=healthbot
 
 # 4. Install the folder and the unit, then add the .env and start it.
 sudo make install-instance NAME=healthbot
-sudo install -o gohealthy -g gohealthy -m 0600 .env /opt/healthbot/.env
+sudo install -o hcbot -g hcbot -m 0600 .env /opt/healthbot/.env
 sudo systemctl enable --now healthbot
 ```
 
@@ -471,7 +471,7 @@ Repeat `make instance` and `sudo make install-instance` with a new name, a new w
 ```bash
 make instance NAME=otherbot RUNDIR=/opt/otherbot
 sudo make install-instance NAME=otherbot
-sudo install -o gohealthy -g gohealthy -m 0600 other.env /opt/otherbot/.env
+sudo install -o hcbot -g hcbot -m 0600 other.env /opt/otherbot/.env
 sudo systemctl enable --now otherbot
 journalctl -u otherbot -f
 ```
@@ -514,7 +514,7 @@ make check
 
 ## Data storage
 
-`health_bot.db` (SQLite) in the working folder:
+`hcbot.db` (SQLite) in the working folder:
 
 | Table | Content |
 |---|---|

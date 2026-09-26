@@ -1,9 +1,9 @@
-// Command markovtrain trains the bot's Markov chat from files. Each file is
+// Command hcbot-train trains the bot's Markov chat from files. Each file is
 // plain text with one message on each line, or a DiscordChatExporter .json
 // export. It uses the blocklist from the main database, which it only
 // reads. It can run while the bot runs.
 //
-//	markovtrain [-db markov.db] [-maindb health_bot.db] file...
+//	hcbot-train [-db markov.db] [-maindb hcbot.db] file...
 package main
 
 import (
@@ -23,7 +23,7 @@ const step = 5000 // messages for each transaction
 func main() {
 	log.SetFlags(0)
 	chainPath := flag.String("db", "markov.db", "the Markov database to train")
-	mainPath := flag.String("maindb", "health_bot.db", "the bot's main database, for the blocklist")
+	mainPath := flag.String("maindb", "hcbot.db", "the bot's main database, for the blocklist")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags] file...\n\n"+
 			"Each file is plain text (one message per line) or a DiscordChatExporter .json export.\n\n", os.Args[0])

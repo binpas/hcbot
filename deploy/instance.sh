@@ -1,6 +1,6 @@
 #!/bin/sh
 # Set up one bot instance: its user, group and working folder, and its
-# systemd unit made from deploy/systemd/gohealthy.service.in. The Makefile
+# systemd unit made from deploy/systemd/hcbot.service.in. The Makefile
 # runs this; see `make help`.
 #
 #   instance.sh NAME            ask for the settings, save them, make the unit
@@ -54,7 +54,7 @@ if [ "$mode" = ask ]; then
 		fi
 		eval "$1=\$def"
 	}
-	prompt BOTUSER "User that runs the bot" gohealthy
+	prompt BOTUSER "User that runs the bot" hcbot
 	prompt BOTGROUP "Group" "$BOTUSER"
 	prompt RUNDIR "Working folder (.env, databases, backups)" "/opt/$NAME"
 fi
@@ -94,9 +94,9 @@ render() {
 			gsub(/@NAME@/, name); gsub(/@USER@/, user); gsub(/@GROUP@/, group)
 			gsub(/@RUNDIR@/, rundir); gsub(/@BINDIR@/, bindir)
 			print
-		}' deploy/systemd/gohealthy.service.in >"$unit.tmp"
+		}' deploy/systemd/hcbot.service.in >"$unit.tmp"
 	mv "$unit.tmp" "$unit"
-	echo "Made $unit (user $BOTUSER, folder $RUNDIR, binary $BINDIR/gohealthy)."
+	echo "Made $unit (user $BOTUSER, folder $RUNDIR, binary $BINDIR/hcbot)."
 }
 
 case $mode in
@@ -117,7 +117,7 @@ install)
 	id -u "$BOTUSER" >/dev/null 2>&1 || die "the user '$BOTUSER' does not exist. Make it first, for example:
   sudo useradd --system --home-dir $RUNDIR --shell /usr/sbin/nologin $BOTUSER"
 	getent group "$BOTGROUP" >/dev/null 2>&1 || die "the group '$BOTGROUP' does not exist."
-	[ -x "$BINDIR/gohealthy" ] || echo "Warning: $BINDIR/gohealthy is not installed yet. Run: sudo make install"
+	[ -x "$BINDIR/hcbot" ] || echo "Warning: $BINDIR/hcbot is not installed yet. Run: sudo make install"
 
 	target=/etc/systemd/system/$NAME.service
 	if [ -f "$target" ] && ! cmp -s "$unit" "$target"; then

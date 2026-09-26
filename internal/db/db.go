@@ -1,5 +1,6 @@
-// Package db wraps the bot's SQLite database. The schema matches the
-// Python bot's health_bot.db, so either bot can run against the same file.
+// Package db wraps the bot's SQLite database, hcbot.db. The schema matches
+// the Python bot's health_bot.db, so either bot can run against the same
+// file.
 package db
 
 import (

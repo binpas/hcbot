@@ -20,7 +20,15 @@ import (
 // Database backups (admin only: a backup holds everything)
 // ---------------------------------------------------------------------
 
-var backupNameRE = regexp.MustCompile(`^health_bot_\d{8}_\d{6}(_\d+)?\.db$`)
+// Backups are hcbot_<UTC time>.db; health_bot_<UTC time>.db is the name
+// from before the rename, still listed.
+var backupNameRE = regexp.MustCompile(`^(hcbot|health_bot)_(\d{8}_\d{6}(_\d+)?)\.db$`)
+
+// backupStamp is the time part of a backup name, for sorting old and new
+// names together.
+func backupStamp(name string) string {
+	return backupNameRE.FindStringSubmatch(name)[2]
+}
 
 // humanSize matches the Python bot's _human_size.
 func humanSize(n int64) string {
@@ -49,7 +57,7 @@ func (b *Bot) backups() []string {
 			out = append(out, e.Name())
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return backupStamp(out[i]) < backupStamp(out[j]) })
 	return out
 }
 
@@ -59,7 +67,7 @@ func (b *Bot) makeBackup() (string, int64, error) {
 		return "", 0, err
 	}
 	// Two backups in the same second get a _2, _3, ... suffix.
-	stamp := "health_bot_" + time.Now().UTC().Format("20060102_150405")
+	stamp := "hcbot_" + time.Now().UTC().Format("20060102_150405")
 	name := stamp + ".db"
 	for n := 2; ; n++ {
 		if _, err := os.Stat(filepath.Join(b.backupDir, name)); os.IsNotExist(err) {

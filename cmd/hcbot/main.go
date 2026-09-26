@@ -1,4 +1,4 @@
-// Command gohealthy runs the HEALTH Discord bot.
+// Command hcbot runs the HEALTH Discord bot.
 package main
 
 import (
@@ -13,7 +13,10 @@ import (
 	"github.com/binpas/hcbot/internal/markov"
 )
 
-const dbPath = "health_bot.db"
+const (
+	dbPath    = "hcbot.db"
+	oldDBPath = "health_bot.db" // the name before hcbot.db
+)
 
 // version is the git commit, set by the Makefile (-X main.version=...).
 var version = "dev"
@@ -28,6 +31,11 @@ func main() {
 		log.Fatal("BOT_TOKEN is not set")
 	}
 
+	if renamed, err := db.RenameFile(oldDBPath, dbPath); err != nil {
+		log.Fatalf("rename %s to %s: %v", oldDBPath, dbPath, err)
+	} else if renamed {
+		log.Printf("Renamed %s to %s.", oldDBPath, dbPath)
+	}
 	database, err := db.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open database: %v", err)

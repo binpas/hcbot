@@ -20,7 +20,7 @@ INSTANCES := $(basename $(notdir $(wildcard instances/*.conf)))
 all: build
 
 help:
-	@echo "make                  build gohealthy and markovtrain for $(GOOS)/$(GOARCH)"
+	@echo "make                  build hcbot and hcbot-train for $(GOOS)/$(GOARCH)"
 	@echo "make linux            build both for botden (linux/amd64) into dist/linux-amd64/"
 	@echo "make test             go test ./..."
 	@echo "make check            gofmt, go vet, tests, and golangci-lint if installed"
@@ -33,12 +33,12 @@ help:
 	@echo "make distclean        also remove config.mk"
 
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) -o gohealthy ./cmd/gohealthy
-	GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) -o markovtrain ./cmd/markovtrain
+	GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) -o hcbot ./cmd/hcbot
+	GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) -o hcbot-train ./cmd/hcbot-train
 
 linux:
-	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/linux-amd64/gohealthy ./cmd/gohealthy
-	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/linux-amd64/markovtrain ./cmd/markovtrain
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/linux-amd64/hcbot ./cmd/hcbot
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/linux-amd64/hcbot-train ./cmd/hcbot-train
 
 test:
 	$(GO) test ./...
@@ -52,10 +52,10 @@ check:
 
 # install does not build, so `sudo make install` never runs Go as root.
 install:
-	@for f in gohealthy markovtrain; do \
+	@for f in hcbot hcbot-train; do \
 		[ -f $$f ] || { echo "$$f is not built. Run make first."; exit 1; }; done
 	install -d $(DESTDIR)$(BINDIR)
-	install -m 0755 gohealthy markovtrain $(DESTDIR)$(BINDIR)/
+	install -m 0755 hcbot hcbot-train $(DESTDIR)$(BINDIR)/
 
 instance:
 	@[ -n "$(NAME)" ] || { echo "Usage: make instance NAME=<name> [BOTUSER=u] [BOTGROUP=g] [RUNDIR=/path]"; exit 2; }
@@ -70,7 +70,7 @@ install-instance:
 	@BINDIR='$(BINDIR)' sh deploy/instance.sh --install '$(NAME)'
 
 clean:
-	rm -f gohealthy markovtrain
+	rm -f hcbot hcbot-train
 	rm -rf dist build
 
 distclean: clean

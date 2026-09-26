@@ -2,6 +2,9 @@ package db
 
 import (
 	"database/sql"
+	"errors"
+	"io/fs"
+	"os"
 	"strings"
 )
 
@@ -72,4 +75,28 @@ func (d *DB) Template(guildID, name string) (*PermTemplate, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// RenameFile renames the database file from to to, with its -wal, -shm
+// and -journal files, when from exists and to does not. It reports
+// whether it renamed anything.
+func RenameFile(from, to string) (bool, error) {
+	if _, err := os.Stat(to); err == nil {
+		return false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	if _, err := os.Stat(from); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	// The side files first: a main file without its WAL loses data.
+	for _, suffix := range []string{"-wal", "-shm", "-journal", ""} {
+		err := os.Rename(from+suffix, to+suffix)
+		if err != nil && !(suffix != "" && errors.Is(err, fs.ErrNotExist)) {
+			return false, err
+		}
+	}
+	return true, nil
 }

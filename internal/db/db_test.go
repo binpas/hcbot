@@ -257,3 +257,37 @@ func TestMarkovBlocklist(t *testing.T) {
 		t.Fatalf("MarkovBlocklist = %v", got)
 	}
 }
+
+func TestRenameFile(t *testing.T) {
+	dir := t.TempDir()
+	from, to := filepath.Join(dir, "health_bot.db"), filepath.Join(dir, "hcbot.db")
+	if ok, err := RenameFile(from, to); ok || err != nil {
+		t.Fatalf("no old file: %v, %v", ok, err)
+	}
+	for _, f := range []string{from, from + "-wal"} {
+		if err := os.WriteFile(f, []byte(f), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ok, err := RenameFile(from, to); !ok || err != nil {
+		t.Fatalf("RenameFile = %v, %v", ok, err)
+	}
+	for _, f := range []string{to, to + "-wal"} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("%s missing: %v", f, err)
+		}
+	}
+	if _, err := os.Stat(from); err == nil {
+		t.Error("old file still there")
+	}
+	// The new file exists: never overwrite it.
+	if err := os.WriteFile(from, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := RenameFile(from, to); ok || err != nil {
+		t.Fatalf("new file exists: %v, %v", ok, err)
+	}
+	if b, _ := os.ReadFile(to); string(b) != from { // the content of the renamed file
+		t.Error("new file was overwritten")
+	}
+}

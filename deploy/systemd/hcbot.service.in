@@ -20,10 +20,10 @@ StartLimitBurst=5
 Type=simple
 User=@USER@
 Group=@GROUP@
-# .env, health_bot.db, markov.db, backups/ and README.md are in this
+# .env, hcbot.db, markov.db, backups/ and README.md are in this
 # folder. Each instance has its own folder; all use the same binary.
 WorkingDirectory=@RUNDIR@
-ExecStart=@BINDIR@/gohealthy
+ExecStart=@BINDIR@/hcbot
 Restart=on-failure
 RestartSec=10s
 # The bot stops cleanly on SIGTERM: it closes the gateway and the database.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestDBBackups(t *testing.T) {
 	tb.expect(true, "No database backups saved yet")
 
 	tb.run(tAdmin, "db backup")
-	tb.expect(true, "Backup saved as `health_bot_")
+	tb.expect(true, "Backup saved as `hcbot_")
 	list := tb.backups()
 	if len(list) != 1 {
 		t.Fatalf("backups = %v", list)
@@ -64,7 +65,7 @@ func TestDBBackups(t *testing.T) {
 	tb.expect(true, "Backups (1)", "`"+name+"`")
 	tb.run(tAdmin, "db list", strOpt("filename", name))
 	tb.expect(true, "`"+name+"`")
-	tb.run(tAdmin, "db list", strOpt("filename", "../health_bot.db"))
+	tb.run(tAdmin, "db list", strOpt("filename", "../hcbot.db"))
 	tb.expect(true, "No backup named")
 
 	tb.api.fail("PATCH", "/webhooks/.*/messages/@original")
@@ -307,4 +308,25 @@ func TestBackupsInSameSecond(t *testing.T) {
 	if list := tb.backups(); len(list) != 3 {
 		t.Errorf("backups = %v, want 3", list)
 	}
+}
+
+// Backups from before the rename (health_bot_*) are still listed, in time
+// order with the new ones.
+func TestBackupsOldAndNewNames(t *testing.T) {
+	tb := newTestBot(t)
+	if err := os.MkdirAll(tb.backupDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"hcbot_20260102_000000.db", "health_bot_20260101_000000.db",
+		"health_bot_20260103_000000.db", "other.db"} {
+		if err := os.WriteFile(filepath.Join(tb.backupDir, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"health_bot_20260101_000000.db", "hcbot_20260102_000000.db", "health_bot_20260103_000000.db"}
+	if got := tb.backups(); !slices.Equal(got, want) {
+		t.Errorf("backups = %v, want %v", got, want)
+	}
+	tb.run(tAdmin, "db list", strOpt("filename", "health_bot_20260101_000000.db"))
+	tb.expect(true, "`health_bot_20260101_000000.db`")
 }
