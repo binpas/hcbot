@@ -25,7 +25,8 @@ import (
 // (MARKOV_REPLY_CHANCE), as a reply or just in the channel
 // (MARKOV_RANDOM_AS_REPLY). MARKOV_COOLDOWN keeps it quiet in a channel
 // for a while after it talks; MARKOV_ALWAYS_REPLY_MENTION lets mentions
-// skip that. The chain lives in its own file, markov.db.
+// skip that; mentions from mods always skip it. The chain lives in its own
+// file, markov.db.
 
 const (
 	markovFlushEvery = 15 * time.Second
@@ -187,7 +188,8 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
 		switch {
 		case mentioned:
-			if b.mk.claim(m.ChannelID, b.markovCooldown(), b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION")) {
+			always := b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") || b.messageFromMod(m)
+			if b.mk.claim(m.ChannelID, b.markovCooldown(), always) {
 				b.markovReply(m, words, true)
 			}
 		case percent(b.cfg.Int("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
@@ -201,6 +203,31 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 		}
 		b.mk.mu.Unlock()
 	}
+}
+
+// messageFromMod reports whether a message's author is a mod: MOD_ROLE, the
+// Administrator permission, or the server owner. It uses the roles sent
+// with the message and the cached server roles, so it needs no API call.
+func (b *Bot) messageFromMod(m *discordgo.Message) bool {
+	if m.Member == nil || m.Author == nil {
+		return false
+	}
+	if role := b.cfg.ID("MOD_ROLE"); role != "" && slices.Contains(m.Member.Roles, role) {
+		return true
+	}
+	g, err := b.s.State.Guild(m.GuildID)
+	if err != nil {
+		return false
+	}
+	if g.OwnerID == m.Author.ID {
+		return true
+	}
+	for _, r := range g.Roles {
+		if (r.ID == g.ID || slices.Contains(m.Member.Roles, r.ID)) && r.Permissions&discordgo.PermissionAdministrator != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // markovReply posts a generated message, as a reply to m when asReply is
@@ -287,7 +314,7 @@ func (b *Bot) cmdMarkovStatus(c *Ctx) {
 	}
 	mention := "always, even during the cooldown"
 	if !b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
-		mention = "only when the cooldown is over"
+		mention = "only when the cooldown is over (mods: always)"
 	}
 	talk := fmt.Sprintf("Replies to @mentions %s. Talks after **%d%%** of other messages (**%d%%** of those as a reply). "+
 		"Cooldown: **%ds**", mention, max(0, min(b.cfg.Int("MARKOV_REPLY_CHANCE"), 100)),

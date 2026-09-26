@@ -163,15 +163,41 @@ func TestMarkovCooldown(t *testing.T) {
 	if count(tChGeneral) != 3 {
 		t.Fatal("a mention skipped the cooldown with MARKOV_ALWAYS_REPLY_MENTION off")
 	}
-	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second) // the cooldown is over
+	// Mods (MOD_ROLE, Administrator, the owner) always get a reply.
+	tb.say(tMod, tChGeneral, "hi", true)
+	if count(tChGeneral) != 4 {
+		t.Fatal("no reply to a mod during the cooldown")
+	}
 	tb.say(tUser, tChGeneral, "hi", true)
 	if count(tChGeneral) != 4 {
+		t.Fatal("a mod's reply did not start the cooldown for others")
+	}
+	g, _ := tb.s.State.Guild(tGuild)
+	g.Roles = append(g.Roles, &discordgo.Role{ID: "19", Name: "Boss", Permissions: discordgo.PermissionAdministrator})
+	if err := tb.s.State.MemberAdd(&discordgo.Member{GuildID: tGuild, User: &discordgo.User{ID: "210", Username: "boss"},
+		Roles: []string{"19"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.s.State.MemberAdd(&discordgo.Member{GuildID: tGuild, User: &discordgo.User{ID: tOwner, Username: "owner"}}); err != nil {
+		t.Fatal(err)
+	}
+	tb.say("210", tChGeneral, "hi", true)
+	tb.say(tOwner, tChGeneral, "hi", true)
+	if count(tChGeneral) != 6 {
+		t.Fatalf("replies to an administrator and the owner = %d, want 2", count(tChGeneral)-4)
+	}
+	tb.run(tMod, "markov status")
+	tb.expect(true, "only when the cooldown is over (mods: always)")
+
+	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second) // the cooldown is over
+	tb.say(tUser, tChGeneral, "hi", true)
+	if count(tChGeneral) != 7 {
 		t.Fatal("no reply to a mention after the cooldown")
 	}
 	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second)
 	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "0"})
 	tb.say(tUser, tChGeneral, "quiet", false)
-	if count(tChGeneral) != 4 {
+	if count(tChGeneral) != 7 {
 		t.Error("talked with MARKOV_REPLY_CHANCE 0")
 	}
 }

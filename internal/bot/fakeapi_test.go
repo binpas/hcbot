@@ -738,7 +738,7 @@ func (tb *testBot) say(userID, channelID, text string, mention bool) {
 	}
 	tb.seq++
 	msg := &discordgo.Message{ID: fmt.Sprint(20000 + tb.seq), ChannelID: channelID, GuildID: tGuild,
-		Author: m.User, Content: text}
+		Author: m.User, Content: text, Member: &discordgo.Member{Roles: m.Roles}}
 	if mention {
 		msg.Content = "<@" + tBot + "> " + text
 		msg.Mentions = []*discordgo.User{{ID: tBot}}
