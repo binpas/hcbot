@@ -13,14 +13,17 @@ import (
 
 	"github.com/binpas/hcbot/internal/config"
 	"github.com/binpas/hcbot/internal/db"
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 // Bot holds the shared state every handler needs.
 type Bot struct {
-	s   *discordgo.Session
-	db  *db.DB
-	env config.Env
-	cfg *config.Store
+	s     *discordgo.Session
+	db    *db.DB
+	chain *markov.Store // the Markov chat's own database
+	env   config.Env
+	cfg   *config.Store
+	mk    markovState
 
 	commands   map[string]*command // keyed by qualified name, e.g. "jail arrest"
 	groups     map[string]*group
@@ -45,7 +48,7 @@ type Bot struct {
 }
 
 // New builds the bot. Call Run to connect.
-func New(env config.Env, database *db.DB) (*Bot, error) {
+func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	values, err := database.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -66,6 +69,7 @@ func New(env config.Env, database *db.DB) (*Bot, error) {
 	b := &Bot{
 		s:            s,
 		db:           database,
+		chain:        chain,
 		env:          env,
 		cfg:          config.NewStore(values),
 		commands:     map[string]*command{},
@@ -91,6 +95,7 @@ func New(env config.Env, database *db.DB) (*Bot, error) {
 	b.registerAdmin()
 	b.registerAssets()
 	b.registerBotProfile()
+	b.registerMarkov()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
@@ -117,6 +122,7 @@ func (b *Bot) Open() error {
 // Close stops the background loops and disconnects from Discord.
 func (b *Bot) Close() error {
 	close(b.stop)
+	b.flushMarkov()
 	return b.s.Close()
 }
 
@@ -142,6 +148,7 @@ func (b *Bot) startLoops() {
 		b.every(30*time.Second, b.runScheduledActions)
 		b.every(30*time.Second, b.runJailReleases)
 		b.daily(4, 0, b.runDailyBackup)
+		b.every(markovFlushEvery, b.flushMarkov)
 	})
 }
 

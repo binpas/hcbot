@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestParseRoleList(t *testing.T) {
-	got := ParseRoleList(" 123, 456 abc\n789,, ")
+func TestParseIDList(t *testing.T) {
+	got := ParseIDList(" 123, 456 abc\n789,, ")
 	want := []string{"123", "456", "789"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("ParseRoleList = %v, want %v", got, want)
+		t.Fatalf("ParseIDList = %v, want %v", got, want)
 	}
-	if got := ParseRoleList(""); len(got) != 0 {
-		t.Fatalf("ParseRoleList(\"\") = %v, want empty", got)
+	if got := ParseIDList(""); len(got) != 0 {
+		t.Fatalf("ParseIDList(\"\") = %v, want empty", got)
 	}
 }
 

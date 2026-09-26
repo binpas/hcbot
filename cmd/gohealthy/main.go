@@ -10,6 +10,7 @@ import (
 	"github.com/binpas/hcbot/internal/bot"
 	"github.com/binpas/hcbot/internal/config"
 	"github.com/binpas/hcbot/internal/db"
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 const dbPath = "health_bot.db"
@@ -34,7 +35,17 @@ func main() {
 		}
 	}()
 
-	b, err := bot.New(env, database)
+	chain, err := markov.Open(env.MarkovDBPath)
+	if err != nil {
+		log.Fatalf("open markov database: %v", err)
+	}
+	defer func() {
+		if err := chain.Close(); err != nil {
+			log.Printf("close markov database: %v", err)
+		}
+	}()
+
+	b, err := bot.New(env, database, chain)
 	if err != nil {
 		log.Fatalf("create bot: %v", err)
 	}

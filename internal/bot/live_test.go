@@ -41,6 +41,7 @@ import (
 
 	"github.com/binpas/hcbot/internal/config"
 	"github.com/binpas/hcbot/internal/db"
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 const liveMaxMembers = 5
@@ -77,7 +78,12 @@ func newLive(t *testing.T) *live {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	b, err := New(config.Env{BotToken: token, GuildID: guildID}, database)
+	chain, err := markov.Open(filepath.Join(t.TempDir(), "markov.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = chain.Close() })
+	b, err := New(config.Env{BotToken: token, GuildID: guildID}, database, chain)
 	if err != nil {
 		t.Fatal(err)
 	}

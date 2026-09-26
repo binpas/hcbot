@@ -3,6 +3,7 @@ package bot
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestHelpLegalLinks(t *testing.T) {
@@ -37,4 +38,23 @@ func TestHelpLegalLinks(t *testing.T) {
 	if got := lastField(); strings.HasPrefix(got, "-# ") {
 		t.Errorf("help still has a links line: %q", got)
 	}
+}
+
+// Discord refuses an embed over 6000 characters, or a field over 1024.
+func TestHelpFitsEmbedLimits(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.run(tMod, "help")
+	e := tb.last().Embeds[0]
+	total := utf8.RuneCountInString(e.Title) + utf8.RuneCountInString(e.Description) + utf8.RuneCountInString(e.Footer.Text)
+	for _, f := range e.Fields {
+		n := utf8.RuneCountInString(f.Value)
+		if n > 1024 {
+			t.Errorf("field %q is %d characters", f.Name, n)
+		}
+		total += utf8.RuneCountInString(f.Name) + n
+	}
+	if total > 6000 {
+		t.Errorf("mod help embed is %d characters, over 6000", total)
+	}
+	t.Logf("mod help embed: %d characters", total)
 }

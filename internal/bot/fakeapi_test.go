@@ -27,6 +27,7 @@ import (
 
 	"github.com/binpas/hcbot/internal/config"
 	"github.com/binpas/hcbot/internal/db"
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 // apiCall is one recorded REST request.
@@ -273,7 +274,12 @@ func newTestBot(t *testing.T, opts ...func(*config.Env)) *testBot {
 	for _, o := range opts {
 		o(&env)
 	}
-	b, err := New(env, database)
+	chain, err := markov.Open(filepath.Join(t.TempDir(), "markov.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = chain.Close() })
+	b, err := New(env, database, chain)
 	if err != nil {
 		t.Fatal(err)
 	}

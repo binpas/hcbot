@@ -170,6 +170,13 @@ var schema = []string{
 		payload    TEXT    NOT NULL,
 		expires_at TEXT    NOT NULL
 	)`,
+	// Words and phrases the Markov chat never learns or says. It is here,
+	// not in markov.db, so it stays when the chain is deleted. Go bot only.
+	`CREATE TABLE IF NOT EXISTS markov_blocklist (
+		phrase     TEXT PRIMARY KEY,
+		created_by INTEGER,
+		created_at TEXT DEFAULT (datetime('now'))
+	)`,
 }
 
 // Columns added after a table was first created. Each ALTER fails harmlessly

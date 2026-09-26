@@ -1,0 +1,443 @@
+package bot
+
+import (
+	"fmt"
+	"log"
+	"math/rand/v2"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unicode/utf8"
+
+	"github.com/bwmarrin/discordgo"
+
+	"github.com/binpas/hcbot/internal/markov"
+)
+
+// The Markov chat learns from messages in MARKOV_LEARN_CHANNELS and talks
+// in MARKOV_REPLY_CHANNELS. Without the Message Content option it sees only
+// messages that mention the bot, so it learns from those and replies to
+// them; with the option it learns from every message and can also reply at
+// random (MARKOV_REPLY_CHANCE). The chain lives in its own file, markov.db.
+
+const (
+	markovFlushEvery = 15 * time.Second
+	markovMaxPending = 20000 // messages kept when writes keep failing
+	markovImportStep = 2000  // messages for each Learn call during an import
+)
+
+// markovMentions lets a reply ping nobody, not even the replied-to author.
+var markovMentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}
+
+type markovState struct {
+	mu      sync.Mutex
+	pending [][]string // learned messages not yet written to markov.db
+	block   atomic.Pointer[markov.Blocklist]
+}
+
+func (b *Bot) registerMarkov() {
+	if err := b.loadMarkovBlocklist(); err != nil {
+		log.Printf("load markov blocklist: %v", err)
+	}
+	text := func(desc string) *discordgo.ApplicationCommandOption { return optStr("text", desc, true) }
+	b.addGroup(&group{name: "markov", description: "Manage the Markov chat (mod only).", defaultPerm: manageMessages})
+	b.addCommand(&command{
+		name:        "markov status",
+		description: "Show the size of the Markov chain and its settings.",
+		perm:        permMod,
+		handler:     b.cmdMarkovStatus,
+	})
+	b.addCommand(&command{
+		name:        "markov forget",
+		description: "Remove a word, or a phrase of several words, from the Markov chain.",
+		options:     []*discordgo.ApplicationCommandOption{text("The word or phrase to remove")},
+		perm:        permMod,
+		handler:     b.cmdMarkovForget,
+	})
+	b.addCommand(&command{
+		name:        "markov blockadd",
+		description: "Block a word or phrase: the Markov chat never learns or says it.",
+		options:     []*discordgo.ApplicationCommandOption{text("The word or phrase to block")},
+		perm:        permMod,
+		handler:     b.cmdMarkovBlockAdd,
+	})
+	b.addCommand(&command{
+		name:        "markov blockremove",
+		description: "Remove a word or phrase from the Markov blocklist.",
+		options:     []*discordgo.ApplicationCommandOption{text("The blocked word or phrase")},
+		perm:        permMod,
+		handler:     b.cmdMarkovBlockRemove,
+	})
+	b.addCommand(&command{
+		name:        "markov blocklist",
+		description: "List the blocked words and phrases.",
+		perm:        permMod,
+		handler:     b.cmdMarkovBlocklist,
+	})
+	b.addCommand(&command{
+		name:        "markov import",
+		description: "Train the Markov chain from a text file (one message per line) or a DiscordChatExporter .json.",
+		options:     []*discordgo.ApplicationCommandOption{optAttachment("file", "A .txt or .json file", true)},
+		perm:        permMod,
+		handler:     b.cmdMarkovImport,
+	})
+	b.addCommand(&command{
+		name:        "markov prune",
+		description: "Remove the word steps seen only once, to make the Markov database smaller.",
+		perm:        permMod,
+		handler:     b.cmdMarkovPrune,
+	})
+	b.addCommand(&command{
+		name:        "markov reset",
+		description: "Delete the whole Markov chain (admin only). The blocklist stays.",
+		perm:        permAdmin,
+		handler:     b.cmdMarkovReset,
+	})
+	b.addConfirm("mkforget", b.onMarkovForgetConfirm)
+	b.addConfirm("mkprune", b.onMarkovPruneConfirm)
+	b.addConfirm("mkreset", b.onMarkovResetConfirm)
+}
+
+func (b *Bot) loadMarkovBlocklist() error {
+	entries, err := b.db.MarkovBlocklist()
+	if err != nil {
+		return err
+	}
+	b.mk.block.Store(markov.NewBlocklist(entries))
+	return nil
+}
+
+func (b *Bot) markovBlocks(words []string) bool {
+	return b.mk.block.Load().Blocks(words)
+}
+
+// markovChannel reports whether channelID, or the parent of a thread, is in
+// the channel list setting key.
+func (b *Bot) markovChannel(key, channelID string) bool {
+	list := b.cfg.List(key)
+	if len(list) == 0 {
+		return false
+	}
+	if slices.Contains(list, channelID) {
+		return true
+	}
+	ch := b.channel(channelID)
+	return ch != nil && ch.IsThread() && slices.Contains(list, ch.ParentID)
+}
+
+// markovMessage learns from a message and replies to it when it should.
+func (b *Bot) markovMessage(m *discordgo.Message) {
+	if b.chain == nil || m.GuildID == "" {
+		return
+	}
+	botID := b.s.State.User.ID
+	mentioned := slices.ContainsFunc(m.Mentions, func(u *discordgo.User) bool { return u.ID == botID })
+	if !mentioned && !b.env.MessageContent {
+		return // Discord may still send the text; it is not used
+	}
+	text := m.Content
+	if mentioned {
+		text = regexp.MustCompile(`<@!?`+botID+`>`).ReplaceAllString(text, " ")
+	}
+	words := markov.Tokenize(text)
+
+	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
+		chance := b.cfg.Int("MARKOV_REPLY_CHANCE")
+		if mentioned || rand.IntN(100) < chance {
+			b.markovReply(m, words, mentioned)
+		}
+	}
+	if len(words) > 0 && !b.markovBlocks(words) && b.markovChannel("MARKOV_LEARN_CHANNELS", m.ChannelID) {
+		b.mk.mu.Lock()
+		if len(b.mk.pending) < markovMaxPending {
+			b.mk.pending = append(b.mk.pending, words)
+		}
+		b.mk.mu.Unlock()
+	}
+}
+
+// markovReply posts a generated reply. It tries to start from a word of
+// the message, longer words first.
+func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
+	seed := slices.Clone(words)
+	slices.SortStableFunc(seed, func(x, y string) int {
+		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
+	})
+	seed = seed[:min(len(seed), 5)]
+	out, err := b.chain.Generate(seed, func(w []string) bool { return !b.markovBlocks(w) })
+	if err != nil {
+		log.Printf("markov generate: %v", err)
+		return
+	}
+	if out == "" {
+		return
+	}
+	msg := &discordgo.MessageSend{Content: truncate(out, 2000), AllowedMentions: markovMentions}
+	if asReply {
+		msg.Reference = m.Reference()
+	}
+	if _, err := b.s.ChannelMessageSendComplex(m.ChannelID, msg); err != nil && asReply {
+		// The message may be gone; answer without the reply link.
+		msg.Reference = nil
+		_, err = b.s.ChannelMessageSendComplex(m.ChannelID, msg)
+		if err != nil {
+			log.Printf("markov reply: %v", err)
+		}
+	} else if err != nil {
+		log.Printf("markov reply: %v", err)
+	}
+}
+
+// flushMarkov writes the learned messages to markov.db.
+func (b *Bot) flushMarkov() {
+	if b.chain == nil {
+		return
+	}
+	b.mk.mu.Lock()
+	batch := b.mk.pending
+	b.mk.pending = nil
+	b.mk.mu.Unlock()
+	if len(batch) == 0 {
+		return
+	}
+	if err := b.chain.Learn(batch); err != nil {
+		log.Printf("markov learn: %v", err)
+		b.mk.mu.Lock()
+		b.mk.pending = append(batch, b.mk.pending...)
+		if len(b.mk.pending) > markovMaxPending {
+			b.mk.pending = b.mk.pending[:markovMaxPending]
+		}
+		b.mk.mu.Unlock()
+	}
+}
+
+func (b *Bot) cmdMarkovStatus(c *Ctx) {
+	b.flushMarkov()
+	st, err := b.chain.Stats()
+	if err != nil {
+		c.dbFailed("markov stats", err)
+		return
+	}
+	channels := func(key string) string {
+		ids := b.cfg.List(key)
+		if len(ids) == 0 {
+			return "*none — set it in `/setup`*"
+		}
+		out := make([]string, len(ids))
+		for i, id := range ids {
+			out[i] = channelMention(id)
+		}
+		return truncate(strings.Join(out, ", "), 1000)
+	}
+	e := makeEmbed("🦜 Markov Chat", "", colourBlurple)
+	e.Fields = []*discordgo.MessageEmbedField{
+		{Name: "Words", Value: fmt.Sprint(st.Words), Inline: true},
+		{Name: "Word steps", Value: fmt.Sprint(st.Transitions), Inline: true},
+		{Name: "Database", Value: fmt.Sprintf("%.1f MB", float64(st.Bytes)/(1<<20)), Inline: true},
+		{Name: "Learns from", Value: channels("MARKOV_LEARN_CHANNELS")},
+		{Name: "Replies in", Value: channels("MARKOV_REPLY_CHANNELS")},
+		{Name: "Blocklist", Value: fmt.Sprintf("%d word(s) or phrase(s)", b.mk.block.Load().Len())},
+	}
+	if b.env.MessageContent {
+		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Mode",
+			Value: fmt.Sprintf("Learns from all messages. Random reply chance: **%d%%**.", b.cfg.Int("MARKOV_REPLY_CHANCE"))})
+	} else {
+		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Mode",
+			Value: "Message Content is off: learns only from messages that @mention the bot, and from `/markov import`."})
+	}
+	c.Reply(true, e)
+}
+
+// markovPhrase reads the text option as normalized words. When it returns
+// false, it has already answered.
+func markovPhrase(c *Ctx) ([]string, bool) {
+	text, _ := c.Str("text")
+	phrase := markov.Phrase(text)
+	if len(phrase) == 0 {
+		c.Reply(true, errEmbed("That has no words to use (mentions and links are ignored)."))
+		return nil, false
+	}
+	return phrase, true
+}
+
+func (b *Bot) cmdMarkovForget(c *Ctx) {
+	phrase, ok := markovPhrase(c)
+	if !ok {
+		return
+	}
+	b.askMarkovForget(c, phrase, "")
+}
+
+// askMarkovForget counts the steps a phrase makes and asks to remove them.
+// intro goes before the question.
+func (b *Bot) askMarkovForget(c *Ctx, phrase []string, intro string) {
+	b.flushMarkov()
+	quoted := "`" + strings.Join(phrase, " ") + "`"
+	n, err := b.chain.CountPhrase(phrase)
+	if err != nil {
+		c.dbFailed("markov count", err)
+		return
+	}
+	if n == 0 {
+		c.Reply(true, okEmbed(intro+"The Markov chain does not contain "+quoted+"."))
+		return
+	}
+	id, err := b.savePending("mkforget", c.UserID(), phrase)
+	if err != nil {
+		c.dbFailed("save pending forget", err)
+		return
+	}
+	c.ReplyComplex(true, []*discordgo.MessageEmbed{makeEmbed("🧹 Remove from the Markov chain?",
+		fmt.Sprintf("%sRemove **%d** word step(s) that contain %s?", intro, n, quoted), colourOrange)},
+		confirmButtons("mkforget", c.UserID(), id))
+}
+
+func (b *Bot) onMarkovForgetConfirm(c *Ctx, extra []string) {
+	if len(extra) < 1 {
+		return
+	}
+	var phrase []string
+	if !b.takePending(c, "mkforget", extra[0], &phrase) {
+		return
+	}
+	c.DeferUpdate()
+	b.flushMarkov()
+	n, err := b.chain.Forget(phrase)
+	if err != nil {
+		c.logErr("markov forget", err)
+		c.FinishUpdate(errEmbed("Something went wrong with the Markov database — check the bot's log."))
+		return
+	}
+	c.FinishUpdate(okEmbed(fmt.Sprintf("Removed **%d** word step(s) with `%s`.", n, strings.Join(phrase, " "))))
+}
+
+func (b *Bot) cmdMarkovBlockAdd(c *Ctx) {
+	phrase, ok := markovPhrase(c)
+	if !ok {
+		return
+	}
+	entry := strings.Join(phrase, " ")
+	added, err := b.db.AddMarkovBlock(entry, c.UserID())
+	if err == nil {
+		err = b.loadMarkovBlocklist()
+	}
+	if err != nil {
+		c.dbFailed("add markov block", err)
+		return
+	}
+	intro := "`" + entry + "` is now blocked.\n\n"
+	if !added {
+		intro = "`" + entry + "` was already blocked.\n\n"
+	}
+	b.askMarkovForget(c, phrase, intro)
+}
+
+func (b *Bot) cmdMarkovBlockRemove(c *Ctx) {
+	phrase, ok := markovPhrase(c)
+	if !ok {
+		return
+	}
+	entry := strings.Join(phrase, " ")
+	removed, err := b.db.RemoveMarkovBlock(entry)
+	if err == nil {
+		err = b.loadMarkovBlocklist()
+	}
+	if err != nil {
+		c.dbFailed("remove markov block", err)
+		return
+	}
+	if !removed {
+		c.Reply(true, errEmbed("`"+entry+"` is not on the blocklist."))
+		return
+	}
+	c.Reply(true, okEmbed("`"+entry+"` is no longer blocked."))
+}
+
+func (b *Bot) cmdMarkovBlocklist(c *Ctx) {
+	entries, err := b.db.MarkovBlocklist()
+	if err != nil {
+		c.dbFailed("markov blocklist", err)
+		return
+	}
+	if len(entries) == 0 {
+		c.Reply(true, okEmbed("The blocklist is empty. Add to it with `/markov blockadd`."))
+		return
+	}
+	var sb strings.Builder
+	for i, e := range entries {
+		line := "||" + e + "||\n"
+		if sb.Len()+len(line) > 3900 {
+			fmt.Fprintf(&sb, "…and %d more", len(entries)-i)
+			break
+		}
+		sb.WriteString(line)
+	}
+	c.Reply(true, makeEmbed(fmt.Sprintf("🚫 Markov blocklist (%d)", len(entries)), sb.String(), colourRed))
+}
+
+func (b *Bot) cmdMarkovImport(c *Ctx) {
+	file := c.Attachment("file")
+	maxMB := b.cfg.Int("MARKOV_IMPORT_MAX_MB")
+	raw, ok := b.readAttachment(c, file, int64(maxMB)<<20,
+		fmt.Sprintf("That file is too large (the limit is %d MB, set by `MARKOV_IMPORT_MAX_MB`).", maxMB))
+	if !ok {
+		return
+	}
+	lines, err := markov.ParseImport(file.Filename, raw)
+	if err != nil {
+		c.Reply(true, errEmbed("Couldn't read that JSON file: "+err.Error()))
+		return
+	}
+	kept, blocked := markov.Prepare(lines, b.mk.block.Load())
+	for i := 0; i < len(kept); i += markovImportStep {
+		if err := b.chain.Learn(kept[i:min(i+markovImportStep, len(kept))]); err != nil {
+			c.dbFailed("markov import", err)
+			return
+		}
+	}
+	c.Reply(true, okEmbed(fmt.Sprintf("Learned **%d** message(s) from `%s`. Skipped **%d** blocked and **%d** empty.",
+		len(kept), file.Filename, blocked, len(lines)-len(kept)-blocked)))
+}
+
+func (b *Bot) cmdMarkovPrune(c *Ctx) {
+	c.ReplyComplex(true, []*discordgo.MessageEmbed{makeEmbed("✂️ Prune the Markov chain?",
+		"This removes every word step seen only once. The database gets smaller, and replies stay about the same.",
+		colourOrange)}, confirmButtons("mkprune", c.UserID()))
+}
+
+func (b *Bot) onMarkovPruneConfirm(c *Ctx, _ []string) {
+	c.DeferUpdate()
+	b.flushMarkov()
+	before, _ := b.chain.Stats()
+	n, err := b.chain.Prune()
+	if err != nil {
+		c.logErr("markov prune", err)
+		c.FinishUpdate(errEmbed("Something went wrong with the Markov database — check the bot's log."))
+		return
+	}
+	after, _ := b.chain.Stats()
+	c.FinishUpdate(okEmbed(fmt.Sprintf("Removed **%d** word step(s). The database went from %.1f MB to %.1f MB.",
+		n, float64(before.Bytes)/(1<<20), float64(after.Bytes)/(1<<20))))
+}
+
+func (b *Bot) cmdMarkovReset(c *Ctx) {
+	c.ReplyComplex(true, []*discordgo.MessageEmbed{makeEmbed("⚠️ Delete the whole Markov chain?",
+		"The bot forgets everything it learned. The blocklist stays. This cannot be undone.", colourRed)},
+		confirmButtons("mkreset", c.UserID()))
+}
+
+func (b *Bot) onMarkovResetConfirm(c *Ctx, _ []string) {
+	c.DeferUpdate()
+	b.mk.mu.Lock()
+	b.mk.pending = nil
+	b.mk.mu.Unlock()
+	if err := b.chain.Reset(); err != nil {
+		c.logErr("markov reset", err)
+		c.FinishUpdate(errEmbed("Something went wrong with the Markov database — check the bot's log."))
+		return
+	}
+	c.FinishUpdate(okEmbed("The Markov chain is now empty."))
+}

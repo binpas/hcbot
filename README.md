@@ -14,6 +14,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Triggers:** mod-defined keyword responses, with random picks from several responses and a Carl-bot import.
 - **Autoreacts:** the bot reacts with an emote when a word or phrase is said. *(Needs the [Message Content option](#message-content-features).)*
 - **Reaction roles** built with a wizard.
+- **Markov chat:** the bot learns how people talk in chosen channels and replies with its own mix of their words. It has a blocklist and tools to remove words. Its data is in a separate database file.
 - **Curation (starboard):** messages with enough reactions are forwarded to a curated channel. *(Needs the [Message Content option](#message-content-features).)*
 - **Audit logging:** messages, channels, threads, roles, voice, bans and invites.
 - **Admin tools:** database backups (also daily), emoji/sticker export and import, a channel permissions report, permission templates, and channel archiving.
@@ -67,7 +68,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o goh
    ./gohealthy
    ```
 
-On the first start, the bot makes `health_bot.db` in the working folder. Backups go into `backups/` in the same folder. After an update, the bot updates the database schema by itself.
+On the first start, the bot makes `health_bot.db` and `markov.db` in the working folder. Backups go into `backups/` in the same folder. After an update, the bot updates the database schema by itself.
 
 The bot stops cleanly on `Ctrl+C` or `SIGTERM`. To run it as a service, see [Run as a systemd service](#run-as-a-systemd-service).
 
@@ -100,6 +101,7 @@ MEDIA_CACHE_MAX_BYTES=8388608
 | `ENABLE_MESSAGE_CONTENT_FEATURES` | `true` turns on the [message content features](#message-content-features). |
 | `MEDIA_CACHE_SIZE` | How many messages' attachments the audit log keeps (default 300). |
 | `MEDIA_CACHE_MAX_BYTES` | Largest attachment it keeps, in bytes (default 8 MiB). |
+| `MARKOV_DB_PATH` | The database file for the [Markov chat](#markov-chat) (default `markov.db`). |
 
 Keep `.env` private: the token gives full control of the bot. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
@@ -132,6 +134,10 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `README_PATH` | File that `/readme` shows, relative to the working folder | `./README.md` |
 | `PRIVACY_URL` | Privacy Policy link at the bottom of `/help`. Set to `none` to hide it. | the `PRIVACY.md` link in this repository |
 | `TERMS_URL` | Terms of Service link at the bottom of `/help`. Set to `none` to hide it. | the `TERMS.md` link in this repository |
+| `MARKOV_LEARN_CHANNELS` | Up to 25 channels the [Markov chat](#markov-chat) learns from | (list) |
+| `MARKOV_REPLY_CHANNELS` | Up to 25 channels where the Markov chat replies | (list) |
+| `MARKOV_REPLY_CHANCE` | Percent chance (0–100) of a reply to any message in a reply channel ¹ | 0 |
+| `MARKOV_IMPORT_MAX_MB` | Largest file for `/markov import`, in MB | 25 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -194,6 +200,7 @@ All commands are slash commands. `<angle brackets>` are required, `[square brack
 |---|---|
 | `/timeout [minutes]` | Mute yourself for a break (default 10, max 1440). |
 | `@BotName <trigger>` | Posts a trigger's response. The mention must be the first thing in the message. |
+| `@BotName <text>` | In a `MARKOV_REPLY_CHANNELS` channel, the [Markov chat](#markov-chat) replies. |
 | `/help` | Shows the commands you can use. |
 
 Trigger responses show `@everyone`, `@here` and role mentions but **do not ping** them. User mentions and the reply ping still work.
@@ -273,6 +280,21 @@ A trigger with the same name as a command does not fire. The `/autoreact` comman
 
 **Carl-bot import:** a `{rand:a,b,c}` or `{random:a~b~c}` block becomes several responses. A custom separator is possible: `{rand(|):a|b|c}`. If a block has both `,` and `~`, the bot asks which one to use. Other Carl-bot syntax (`{user}`, `{args}`, …) stays as text and is listed so you can fix it.
 
+### Markov chat
+
+| Command | Access | Description |
+|---|---|---|
+| `/markov status` | mod only | The size of the chain, its channels and the mode. |
+| `/markov forget <text>` | mod only | Removes a word, or a phrase, from the chain, after you confirm. |
+| `/markov blockadd <text>` | mod only | Blocks a word or phrase. Then offers to remove it from the chain. |
+| `/markov blockremove <text>` | mod only | Removes a word or phrase from the blocklist. |
+| `/markov blocklist` | mod only | All blocked words and phrases (hidden as spoilers). |
+| `/markov import <file>` | mod only | Trains the chain from a `.txt` file (one message on each line) or a DiscordChatExporter `.json` export. |
+| `/markov prune` | mod only | Removes the word steps seen only once, after you confirm. The database gets smaller. |
+| `/markov reset` | admin only | Deletes the whole chain, after you confirm. The blocklist stays. |
+
+See [Markov chat](#markov-chat) for how it learns.
+
 ### Reaction roles
 
 | Command | Access | Description |
@@ -333,6 +355,32 @@ The import refuses a file with a value that is not correct (for example, text in
 - **Invites:** new invites are logged in `MOD_LOG`. React ❌ on the log entry to delete the invite. This also works after a restart.
 - **Bans and unbans** from any source are logged in `MOD_LOG`.
 - **Timers:** tempban unbans, MOTD removals and jail releases are checked every 30 seconds and survive a restart.
+
+## Markov chat
+
+The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and replies in the `MARKOV_REPLY_CHANNELS` channels. Both lists also include the threads in those channels. When a list is empty, that part is off.
+
+- **Without `ENABLE_MESSAGE_CONTENT_FEATURES`:** the bot learns only from messages that start with or contain `@BotName`, and replies to them. Use `/markov import` or `markovtrain` to train it with more text.
+- **With `ENABLE_MESSAGE_CONTENT_FEATURES`:** the bot learns from all messages in the learn channels. It also replies at random to `MARKOV_REPLY_CHANCE` percent of the messages in the reply channels.
+
+A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
+
+**What it learns:** the words of each message, in lowercase, with the pairs of words that come before each word. It does not keep who said a message, or the full message. It leaves out mentions, `@everyone`, `@here`, links, and words longer than 64 characters. It ignores a full message that contains a blocked word or phrase. Replies cannot ping anyone.
+
+**Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A phrase blocks those words in that sequence. The blocklist is in `health_bot.db`, so it stays when you delete the chain.
+
+**Remove data:** `/markov forget` removes a word or phrase. `/markov reset` removes everything. You can also stop the bot, delete `markov.db`, `markov.db-wal` and `markov.db-shm`, and start the bot again. **Do not delete the file while the bot runs.**
+
+**Size:** each word step uses about 40–60 bytes. A busy server can make 100–300 MB in some months. `/markov status` shows the size, and `/markov prune` makes it smaller. `markov.db` is not in the daily backup.
+
+### Train with the `markovtrain` script
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o markovtrain ./cmd/markovtrain
+./markovtrain [-db markov.db] [-maindb health_bot.db] file...
+```
+
+Run it in the bot's working folder. Each file is plain text (one message on each line) or a `.json` export from [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter). Bot messages in an export are skipped. The script uses the blocklist from `health_bot.db` and only reads that file. You can run it while the bot runs.
 
 ## Audit logging
 
@@ -477,3 +525,11 @@ gofmt -l . && go build ./... && go vet ./... && go test ./... && golangci-lint r
 | `perm_templates` | Permission templates |
 | `scheduled_actions` | Tempban and MOTD timers |
 | `pending_actions` | Data behind buttons, for example imports and wizard drafts |
+| `markov_blocklist` | Words and phrases the Markov chat never learns or says |
+
+`markov.db` (SQLite) in the working folder, or at `MARKOV_DB_PATH`:
+
+| Table | Content |
+|---|---|
+| `words` | Each word the Markov chat knows |
+| `transitions` | How often each pair of words came before each word |

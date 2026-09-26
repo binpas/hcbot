@@ -28,6 +28,9 @@ type Env struct {
 
 	MediaCacheSize     int
 	MediaCacheMaxBytes int
+
+	// MarkovDBPath is the separate database file for the Markov chat.
+	MarkovDBPath string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -41,6 +44,7 @@ func LoadEnv() Env {
 		MessageContent:     envBool("ENABLE_MESSAGE_CONTENT_FEATURES"),
 		MediaCacheSize:     envInt("MEDIA_CACHE_SIZE", 300),
 		MediaCacheMaxBytes: envInt("MEDIA_CACHE_MAX_BYTES", 8*1024*1024),
+		MarkovDBPath:       envStr("MARKOV_DB_PATH", "markov.db"),
 	}
 }
 
@@ -50,6 +54,13 @@ func envBool(key string) bool {
 		return true
 	}
 	return false
+}
+
+func envStr(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
 }
 
 func envInt(key string, def int) int {
@@ -65,6 +76,7 @@ const (
 	KindCategory = "category"
 	KindRole     = "role"
 	KindRoleList = "role_list"
+	KindChanList = "channel_list"
 	KindEmoji    = "emoji"
 	KindInt      = "int"
 	KindText     = "text"
@@ -128,6 +140,14 @@ var SetupKeys = []SetupKey{
 		"Privacy Policy link at the bottom of /help (set to none to hide it)"},
 	{"TERMS_URL", "TERMS_URL", KindText, "https://github.com/binpas/hcbot/blob/main/TERMS.md",
 		"Terms of Service link at the bottom of /help (set to none to hide it)"},
+	{"MARKOV_LEARN_CHANNELS", "MARKOV_LEARN_CHANNEL_IDS", KindChanList, "",
+		"Channels the Markov chat learns from — pick up to 25"},
+	{"MARKOV_REPLY_CHANNELS", "MARKOV_REPLY_CHANNEL_IDS", KindChanList, "",
+		"Channels where the Markov chat replies to @mentions — pick up to 25"},
+	{"MARKOV_REPLY_CHANCE", "MARKOV_REPLY_CHANCE", KindInt, "0",
+		"Percent chance (0-100) that the Markov chat replies to any message in a reply channel"},
+	{"MARKOV_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB", KindInt, "25",
+		"Largest file /markov import accepts, in MB"},
 }
 
 // Extra keys the bot writes itself (not prompted for during /setup).
@@ -174,7 +194,7 @@ func CheckValue(key, value string) error {
 		if !isID(value) {
 			return errors.New("must be a Discord ID")
 		}
-	case KindRoleList:
+	case KindRoleList, KindChanList:
 		for _, tok := range listSep.Split(strings.TrimSpace(value), -1) {
 			if !isID(tok) {
 				return errors.New("must be a list of Discord IDs")
@@ -260,9 +280,9 @@ func (s *Store) Str(key string) string {
 	return s.Raw(key)
 }
 
-// List returns a configured role-ID list setting.
+// List returns a configured ID list setting (roles or channels).
 func (s *Store) List(key string) []string {
-	return ParseRoleList(s.Raw(key))
+	return ParseIDList(s.Raw(key))
 }
 
 // Source reports where a setting's current value comes from.
@@ -278,9 +298,9 @@ func (s *Store) Source(key string) string {
 
 var listSep = regexp.MustCompile(`[,\s]+`)
 
-// ParseRoleList parses a comma/whitespace-separated string of role IDs,
-// ignoring anything that isn't a valid snowflake.
-func ParseRoleList(raw string) []string {
+// ParseIDList parses a comma/whitespace-separated string of IDs, ignoring
+// anything that isn't a valid snowflake.
+func ParseIDList(raw string) []string {
 	var ids []string
 	for _, tok := range listSep.Split(strings.TrimSpace(raw), -1) {
 		if _, err := strconv.ParseUint(tok, 10, 64); err == nil {

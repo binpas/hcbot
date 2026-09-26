@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -215,5 +216,44 @@ func TestBackupAndTemplates(t *testing.T) {
 	}
 	if err := d.Backup(dest); err == nil {
 		t.Error("backup overwrote an existing file")
+	}
+}
+
+func TestMarkovBlocklist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "m.db")
+	if _, err := ReadMarkovBlocklist(path); err == nil {
+		t.Fatal("ReadMarkovBlocklist(no file): want an error")
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil { // an empty file is an empty database
+		t.Fatal(err)
+	}
+	if got, err := ReadMarkovBlocklist(path); err != nil || len(got) != 0 {
+		t.Fatalf("ReadMarkovBlocklist(no table) = %v, %v", got, err)
+	}
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+
+	if ok, err := d.AddMarkovBlock("Bad Word", "1"); !ok || err != nil {
+		t.Fatalf("AddMarkovBlock = %v, %v", ok, err)
+	}
+	if ok, _ := d.AddMarkovBlock("bad word", "1"); ok {
+		t.Fatal("AddMarkovBlock twice: want false")
+	}
+	_, _ = d.AddMarkovBlock("apple", "1")
+	got, err := ReadMarkovBlocklist(path)
+	if err != nil || len(got) != 2 || got[0] != "apple" || got[1] != "bad word" {
+		t.Fatalf("ReadMarkovBlocklist = %v, %v", got, err)
+	}
+	if ok, _ := d.RemoveMarkovBlock("APPLE"); !ok {
+		t.Fatal("RemoveMarkovBlock: want true")
+	}
+	if ok, _ := d.RemoveMarkovBlock("apple"); ok {
+		t.Fatal("RemoveMarkovBlock twice: want false")
+	}
+	if got, _ := d.MarkovBlocklist(); len(got) != 1 {
+		t.Fatalf("MarkovBlocklist = %v", got)
 	}
 }

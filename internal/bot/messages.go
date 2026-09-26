@@ -17,7 +17,7 @@ var triggerMentions = &discordgo.MessageAllowedMentions{
 	RepliedUser: true,
 }
 
-// onMessageCreate handles triggers and autoreacts. Section 7 adds the
+// onMessageCreate handles triggers, autoreacts and the Markov chat. Section 7 adds the
 // media cache here.
 func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	defer recoverHandler("message handler")
@@ -29,9 +29,10 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		return
 	}
 	if b.fireTrigger(m.Message) {
-		return // a trigger fired: no autoreacts
+		return // a trigger fired: no autoreacts or Markov chat
 	}
 	b.autoreact(m.Message)
+	b.markovMessage(m.Message)
 }
 
 // mentionKeyword returns the word after a leading mention of the bot,

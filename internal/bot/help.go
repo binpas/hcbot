@@ -19,6 +19,7 @@ type helpCategory struct {
 var generalCommands = []helpEntry{
 	{"/timeout [minutes]", "Mute yourself for a break. Defaults to 10 minutes, max 1440."},
 	{"@BotName <trigger>", "Posts the stored response for a trigger created by a mod."},
+	{"@BotName <text>", "Chat with the bot in its Markov chat channels."},
 	{"/help", "Show the commands available to you."},
 }
 
@@ -62,6 +63,14 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/trigger info <name>", "List all responses currently stored for a trigger."},
 			{"/trigger delete <name>", "Remove a trigger and all of its responses."},
 			{"/trigger import", "Import a single Carl-bot tag/autoresponder as a trigger via a popup."},
+		}},
+		{"Markov Chat", []helpEntry{
+			{"/markov status", "Chain size and settings."},
+			{"/markov forget <text>", "Remove a word or phrase."},
+			{"/markov blockadd|blockremove <text>", "Block or unblock a word or phrase."},
+			{"/markov blocklist", "List blocked words."},
+			{"/markov import <file>", "Train from a .txt or .json file."},
+			{"/markov prune", "Shrink the database."},
 		}},
 		{"Autoreacts", []helpEntry{
 			{"/autoreact add <emote> <phrase>", "React with an emote whenever a word or phrase is said."},
@@ -107,6 +116,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 		}},
 		{"Admin only", []helpEntry{
 			{"/setup", "Configure channel/role/emote/number settings via a private, paginated embed UI."},
+			{"/markov reset", "Delete the whole Markov chain."},
 			{"/db backup", "Create a database backup now."},
 			{"/db list [filename]", "List saved database backups, or download one by name."},
 			{"/db delete <filename>", "Delete a saved database backup."},

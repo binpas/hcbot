@@ -31,7 +31,7 @@ const (
 // /setup hides them when the option is off; stored values are kept.
 var contentOnlySettings = map[string]bool{
 	"CURATED": true, "CURATED_EMOTE": true, "CURATED_THRESHOLD": true,
-	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
+	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true, "MARKOV_REPLY_CHANCE": true,
 }
 
 // setupPages splits the visible settings into pages.
@@ -136,6 +136,20 @@ func (v setupView) components(disabled bool) []discordgo.MessageComponent {
 				Placeholder: "Set " + k.Key + " (replaces the whole list)",
 				MinValues:   &zero, MaxValues: 25, DefaultValues: defaults, Disabled: disabled,
 			}
+		case config.KindChanList:
+			var defaults []discordgo.SelectMenuDefaultValue
+			for _, id := range v.b.cfg.List(k.Key) {
+				if len(defaults) == 25 {
+					break
+				}
+				defaults = append(defaults, discordgo.SelectMenuDefaultValue{ID: id, Type: discordgo.SelectMenuDefaultValueChannel})
+			}
+			comp = discordgo.SelectMenu{
+				MenuType: discordgo.ChannelSelectMenu, CustomID: v.id("clist", k.Key),
+				Placeholder:  "Set " + k.Key + " (replaces the whole list)",
+				ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews},
+				MinValues:    &zero, MaxValues: 25, DefaultValues: defaults, Disabled: disabled,
+			}
 		default: // int / emoji / text — no native select component, use a modal
 			comp = discordgo.Button{
 				Label: "Edit " + k.Key, Style: discordgo.SecondaryButton,
@@ -209,7 +223,7 @@ func (b *Bot) onSetupComponent(c *Ctx) {
 		if vals := c.Values(); len(vals) == 1 && b.setupSave(c, key, vals[0]) {
 			v.refresh(c)
 		}
-	case "rlist":
+	case "rlist", "clist":
 		if b.setupSave(c, key, strings.Join(c.Values(), ",")) {
 			v.refresh(c)
 		}
@@ -305,14 +319,20 @@ func (b *Bot) setupDisplay(guildID, kind, raw string) string {
 			return roleMention(raw)
 		}
 		return fmt.Sprintf("`%s` *(not found)*", raw)
-	case config.KindRoleList:
-		ids := config.ParseRoleList(raw)
+	case config.KindRoleList, config.KindChanList:
+		ids := config.ParseIDList(raw)
 		if len(ids) == 0 {
 			return "*none*"
 		}
 		mentions := make([]string, len(ids))
 		for i, id := range ids {
-			if _, err := b.s.State.Role(guildID, id); err == nil {
+			if kind == config.KindChanList {
+				if _, err := b.s.State.Channel(id); err == nil {
+					mentions[i] = channelMention(id)
+				} else {
+					mentions[i] = fmt.Sprintf("`%s` *(not found)*", id)
+				}
+			} else if _, err := b.s.State.Role(guildID, id); err == nil {
 				mentions[i] = roleMention(id)
 			} else {
 				mentions[i] = fmt.Sprintf("`%s` *(not found)*", id)
