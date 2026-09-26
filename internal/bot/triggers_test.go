@@ -299,12 +299,10 @@ func TestAutoreactsNeedMessageContent(t *testing.T) {
 	if has(off) || !has(on) {
 		t.Errorf("/autoreact registered: off=%v on=%v", has(off), has(on))
 	}
-	off.run(tMod, "help")
-	if strings.Contains(off.last().text(), "/autoreact") {
+	if strings.Contains(off.helpText(tMod), "/autoreact") {
 		t.Error("/help lists /autoreact without the option")
 	}
-	on.run(tMod, "help")
-	if !strings.Contains(on.last().text(), "/autoreact") {
+	if !strings.Contains(on.helpText(tMod), "/autoreact") {
 		t.Error("/help misses /autoreact with the option")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -65,12 +66,13 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/trigger import", "Import a single Carl-bot tag/autoresponder as a trigger via a popup."},
 		}},
 		{"Markov Chat", []helpEntry{
-			{"/markov status", "Chain size and settings."},
-			{"/markov forget <text>", "Remove a word or phrase."},
-			{"/markov blockadd|blockremove <text>", "Block or unblock a word or phrase."},
-			{"/markov blocklist", "List blocked words."},
-			{"/markov import <file>", "Train from a .txt or .json file."},
-			{"/markov prune", "Shrink the database."},
+			{"/markov status", "Show the size of the chain, its channels and the mode."},
+			{"/markov forget <text>", "Remove a word or phrase from the chain."},
+			{"/markov blockadd <text>", "Block a word or phrase, and offer to remove it from the chain."},
+			{"/markov blockremove <text>", "Unblock a word or phrase."},
+			{"/markov blocklist", "List the blocked words and phrases."},
+			{"/markov import <file>", "Train from a .txt file (one message per line) or a DiscordChatExporter .json."},
+			{"/markov prune", "Remove word steps seen only once, to shrink the database."},
 		}},
 		{"Autoreacts", []helpEntry{
 			{"/autoreact add <emote> <phrase>", "React with an emote whenever a word or phrase is said."},
@@ -116,7 +118,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 		}},
 		{"Admin only", []helpEntry{
 			{"/setup", "Configure channel/role/emote/number settings via a private, paginated embed UI."},
-			{"/markov reset", "Delete the whole Markov chain."},
+			{"/markov reset", "Delete the whole Markov chain. The blocklist stays."},
 			{"/db backup", "Create a database backup now."},
 			{"/db list [filename]", "List saved database backups, or download one by name."},
 			{"/db delete <filename>", "Delete a saved database backup."},
@@ -132,6 +134,7 @@ func (b *Bot) registerHelp() {
 		description: "Show the commands available to you.",
 		handler:     b.cmdHelp,
 	})
+	b.addComponent("help", b.onHelpComponent)
 }
 
 func helpField(title string, entries []helpEntry, replace func(string) string) *discordgo.MessageEmbedField {
@@ -146,31 +149,101 @@ func helpField(title string, entries []helpEntry, replace func(string) string) *
 }
 
 func (b *Bot) cmdHelp(c *Ctx) {
-	isMod := b.isMod(c.Member())
-	title := "📖 Command Reference"
-	if isMod {
-		title = "🛡️ Command Reference"
+	if b.isMod(c.Member()) {
+		embeds, components := b.modHelpPage(c.UserID(), 0)
+		c.ReplyComplex(true, embeds, components)
+		return
 	}
-	e := makeEmbed(title,
+	e := makeEmbed("📖 Command Reference",
 		"Every command below is a slash command. Arguments in `<>` are required, `[]` are optional.",
 		colourBlurple)
+	e.Fields = append(e.Fields, helpField("General", generalCommands, b.helpMention()))
+	e.Footer = &discordgo.MessageEmbedFooter{Text: "Ask a moderator if you think you're missing a command here."}
+	b.addLegalLinks(e)
+	c.Reply(true, e)
+}
 
-	mention := strings.NewReplacer("@BotName", userMention(b.s.State.User.ID)).Replace
-	e.Fields = append(e.Fields, helpField("General", generalCommands, mention))
+func (b *Bot) helpMention() func(string) string {
+	return strings.NewReplacer("@BotName", userMention(b.s.State.User.ID)).Replace
+}
 
-	if isMod {
-		same := func(s string) string { return s }
-		for _, cat := range b.modCommandCategories() {
-			e.Fields = append(e.Fields, helpField(cat.title, cat.entries, same))
-		}
-		e.Footer = &discordgo.MessageEmbedFooter{Text: "Showing moderator commands because you have the mod role."}
-	} else {
-		e.Footer = &discordgo.MessageEmbedFooter{Text: "Ask a moderator if you think you're missing a command here."}
-	}
+func (b *Bot) addLegalLinks(e *discordgo.MessageEmbed) {
 	if links := b.legalLinks(); links != "" {
 		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "\u200b", Value: "-# " + links})
 	}
-	c.Reply(true, e)
+}
+
+// modHelpPage builds one page of the mod help: page 0 is General with a
+// list of the sections, and each later page is one section. The buttons
+// and the section select carry the invoker, so only they can turn pages.
+func (b *Bot) modHelpPage(invoker string, page int) ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+	cats := b.modCommandCategories()
+	page = max(0, min(page, len(cats)))
+
+	e := makeEmbed("🛡️ Command Reference",
+		"Every command below is a slash command. Arguments in `<>` are required, `[]` are optional.",
+		colourBlurple)
+	if page == 0 {
+		e.Fields = append(e.Fields, helpField("General", generalCommands, b.helpMention()))
+		titles := make([]string, len(cats))
+		for i, cat := range cats {
+			titles[i] = fmt.Sprintf("%d. %s", i+2, cat.title)
+		}
+		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{
+			Name:  "━━━━━━  Sections  ━━━━━━",
+			Value: strings.Join(titles, "\n") + "\n\nUse the buttons or the menu below to see a section.",
+		})
+	} else {
+		cat := cats[page-1]
+		e.Fields = append(e.Fields, helpField(cat.title, cat.entries, func(s string) string { return s }))
+	}
+	e.Footer = &discordgo.MessageEmbedFooter{
+		Text: fmt.Sprintf("Page %d/%d · Showing moderator commands because you have the mod role.", page+1, len(cats)+1),
+	}
+	b.addLegalLinks(e)
+
+	options := []discordgo.SelectMenuOption{{Label: "General", Value: "0", Default: page == 0}}
+	for i, cat := range cats {
+		options = append(options, discordgo.SelectMenuOption{
+			Label: cat.title, Value: strconv.Itoa(i + 1), Default: page == i+1,
+		})
+	}
+	id := func(to string) string { return "help:" + invoker + ":" + to }
+	return []*discordgo.MessageEmbed{e}, []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{
+			MenuType: discordgo.StringSelectMenu, CustomID: id("sel"), Placeholder: "Go to a section", Options: options,
+		}}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{Label: "◀ Back", Style: discordgo.PrimaryButton, CustomID: id(strconv.Itoa(page - 1)), Disabled: page == 0},
+			discordgo.Button{Label: "Next ▶", Style: discordgo.PrimaryButton, CustomID: id(strconv.Itoa(page + 1)), Disabled: page == len(cats)},
+		}},
+	}
+}
+
+// onHelpComponent turns a mod help page: help:<invoker>:<page|sel>.
+func (b *Bot) onHelpComponent(c *Ctx) {
+	if len(c.Args) < 2 {
+		return
+	}
+	if c.UserID() != c.Args[0] {
+		c.Reply(true, errEmbed("This help isn't yours — run `/help` yourself."))
+		return
+	}
+	if !b.isMod(c.Member()) {
+		c.Reply(true, errEmbed("You must be a moderator to see these pages."))
+		return
+	}
+	to := c.Args[1]
+	if to == "sel" {
+		if vals := c.Values(); len(vals) == 1 {
+			to = vals[0]
+		}
+	}
+	page, err := strconv.Atoi(to)
+	if err != nil {
+		return
+	}
+	c.Update(b.modHelpPage(c.Args[0], page))
 }
 
 // legalLinks returns the Privacy Policy and Terms of Service links for the

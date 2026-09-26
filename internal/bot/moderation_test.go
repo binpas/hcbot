@@ -269,8 +269,12 @@ func TestHelp(t *testing.T) {
 	}
 
 	tb.config(map[string]string{"WARN_ARREST_THRESHOLD": "4"})
-	tb.run(tMod, "help")
-	tb.expect(true, "/ban", "/jail audit", "Auto-arrests at **4** warnings")
+	text := tb.helpText(tMod)
+	for _, want := range []string{"/timeout", "/ban", "/jail audit", "Auto-arrests at **4** warnings", "/markov reset"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("mod help misses %q", want)
+		}
+	}
 }
 
 func TestAuditReasonEncoding(t *testing.T) {
