@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -152,5 +153,37 @@ func TestSetupHidesMessageContentSettings(t *testing.T) {
 	off.expect(true, "belongs to a feature that is off")
 	if off.cfg.Int("CURATED_THRESHOLD") != 7 {
 		t.Error("hidden setting changed")
+	}
+}
+
+func TestSetupShowsSource(t *testing.T) {
+	t.Setenv("TRIGGER_IMPORT_MAX_MB", "")
+	t.Setenv("WARN_KICK_THRESHOLD", "8")
+	tb := newTestBot(t)
+	ids := make([]string, 25)
+	for i := range ids {
+		ids[i] = fmt.Sprint(1000000000000000000 + i)
+	}
+	tb.config(map[string]string{"JAIL_PROTECTED_ROLES": strings.Join(ids, ",")})
+
+	fields := map[string]string{}
+	v := setupView{b: tb.Bot, guildID: tGuild, invoker: tAdmin}
+	for v.page = range tb.setupPages() {
+		for _, f := range v.embed().Fields {
+			fields[f.Name] = f.Value
+			if len(f.Value) > 1024 {
+				t.Errorf("%s is %d characters, over the 1024 limit", f.Name, len(f.Value))
+			}
+		}
+	}
+	for key, want := range map[string]string{
+		"MOD_LOG":               "💾 **Saved**\n",
+		"JAIL_PROTECTED_ROLES":  "💾 **Saved**\n",
+		"WARN_KICK_THRESHOLD":   "📄 **From .env**\n",
+		"TRIGGER_IMPORT_MAX_MB": "⚙️ **Built-in default** *(not saved)*\n",
+	} {
+		if !strings.HasPrefix(fields[key], want) {
+			t.Errorf("%s = %q, want it to start with %q", key, fields[key], want)
+		}
 	}
 }

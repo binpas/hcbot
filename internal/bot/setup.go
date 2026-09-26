@@ -78,11 +78,19 @@ func (v setupView) embed() *discordgo.MessageEmbed {
 		shown := v.b.setupDisplay(v.guildID, k.Kind, v.b.cfg.Raw(k.Key))
 		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{
 			Name:  k.Key,
-			Value: fmt.Sprintf("%s *(%s)*\n%s", shown, v.b.cfg.Source(k.Key), k.Description),
+			Value: fmt.Sprintf("%s\n%s\n%s", sourceLabels[v.b.cfg.Source(k.Key)], shown, k.Description),
 		})
 	}
 	e.Footer = &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Page %d/%d", v.page+1, len(v.b.setupPages()))}
 	return e
+}
+
+// sourceLabels names where a setting's value comes from, on its own line
+// so a long value can't hide it.
+var sourceLabels = map[string]string{
+	"database": "💾 **Saved**",
+	".env":     "📄 **From .env**",
+	"default":  "⚙️ **Built-in default** *(not saved)*",
 }
 
 func (v setupView) id(action, key string) string {
@@ -311,8 +319,8 @@ func (b *Bot) setupDisplay(guildID, kind, raw string) string {
 			}
 		}
 		text := strings.Join(mentions, ", ")
-		if len(text) > 900 { // stay well under the 1024-char embed field limit
-			cut := text[:880]
+		if len(text) > 800 { // leave room for the source and description in the 1024-char field
+			cut := text[:780]
 			if i := strings.LastIndex(cut, ","); i >= 0 {
 				cut = cut[:i]
 			}
