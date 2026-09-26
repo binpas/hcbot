@@ -15,6 +15,9 @@ import (
 
 const dbPath = "health_bot.db"
 
+// version is the git commit, set by the Makefile (-X main.version=...).
+var version = "dev"
+
 func main() {
 	// Under systemd the journal adds its own timestamps.
 	if os.Getenv("JOURNAL_STREAM") != "" {

@@ -45,3 +45,10 @@ go.work.sum
 *~
 .DS_Store
 Thumbs.db
+
+# ./configure and make output
+/markovtrain
+/dist/
+/build/
+/instances/
+config.mk

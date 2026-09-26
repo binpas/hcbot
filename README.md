@@ -42,17 +42,31 @@ The bot uses only the non-privileged gateway intents. It never requests **Server
 From the repository folder:
 
 ```bash
+./configure
+make
+```
+
+- `./configure` checks that Go is new enough, and asks for the platform to build for (the default is this machine; botden is `linux-amd64`) and the install folder (the default is `/usr/local/bin`). It saves the answers in `config.mk`, and shows them as the defaults the next time. `./configure --help` shows the options; `--yes` asks nothing.
+- `make` builds `gohealthy` and `markovtrain`. `make help` lists all targets.
+
+| Target | What it does |
+|---|---|
+| `make` | Builds both binaries for the configured platform. |
+| `make linux` | Builds both for linux/amd64 into `dist/linux-amd64/`, whatever the configured platform is. |
+| `make test` | `go test ./...` |
+| `make check` | `gofmt`, `go vet`, the tests, and `golangci-lint` when it is installed. |
+| `make install` | Copies both binaries to the install folder. Use `sudo`. It does not build, so Go never runs as root. |
+| `make clean` | Removes the binaries, `dist/` and `build/`. `make distclean` also removes `config.mk`. |
+
+Without `make`, build with Go directly:
+
+```bash
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
 ```
 
 - `CGO_ENABLED=0` makes a static binary that runs on any Linux server of the same architecture.
 - `-trimpath -ldflags="-s -w"` makes the binary smaller.
-
-To build for another server, set `GOOS` and `GOARCH`, for example:
-
-```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
-```
 
 ---
 
@@ -376,7 +390,7 @@ A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 ### Train with the `markovtrain` script
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o markovtrain ./cmd/markovtrain
+make                  # builds markovtrain with gohealthy
 ./markovtrain [-db markov.db] [-maindb health_bot.db] file...
 ```
 
@@ -400,91 +414,82 @@ The bot keeps the last 1000 messages in memory. A delete of an older message is 
 
 ## Run as a systemd service
 
-The `deploy/systemd/` folder has two unit files:
+Each bot is an **instance**: a systemd service with its own name, user, working folder, `.env` and token. All instances run the same binary from the install folder (`/usr/local/bin`). The bot reads `.env`, `health_bot.db`, `markov.db`, `backups/` and `README.md` from its **working folder**, not from the folder of the binary.
 
-| File | Use |
-|---|---|
-| `gohealthy.service` | A **system** service on a server. It runs as its own `gohealthy` user from `/opt/gohealthy`, with security restrictions. |
-| `gohealthy-user.service` | A **user** service that runs from `~/gohealthy` under your own account. No root needed. |
+`deploy/systemd/gohealthy.service.in` is the template for the unit files. Do not install it directly.
 
-Both restart the bot after a crash (at most 5 times in 5 minutes), stop it cleanly with `SIGTERM`, and send its log to the systemd journal.
+### Set up an instance
 
-### System service
+On the server, in the repository folder:
 
 ```bash
-# 1. Build the binary (see Build).
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o gohealthy ./cmd/gohealthy
+# 1. Build and install the binaries.
+./configure && make && sudo make install
 
-# 2. Make a user and the working folder.
-sudo useradd --system --home-dir /opt/gohealthy --shell /usr/sbin/nologin gohealthy
-sudo install -d -o gohealthy -g gohealthy -m 0750 /opt/gohealthy
+# 2. Make a user for the bot (skip this if the user exists).
+sudo useradd --system --home-dir /opt/healthbot --shell /usr/sbin/nologin gohealthy
 
-# 3. Copy the files. .env must be private.
-sudo install -o gohealthy -g gohealthy -m 0755 gohealthy /opt/gohealthy/
-sudo install -o gohealthy -g gohealthy -m 0600 .env /opt/gohealthy/.env
-sudo install -o gohealthy -g gohealthy -m 0644 README.md /opt/gohealthy/
+# 3. Set up the instance. It asks for the user, the group and the working
+#    folder, and makes build/healthbot.service.
+make instance NAME=healthbot
 
-# 4. Install and start the service.
-sudo install -m 0644 deploy/systemd/gohealthy.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now gohealthy
+# 4. Install the folder and the unit, then add the .env and start it.
+sudo make install-instance NAME=healthbot
+sudo install -o gohealthy -g gohealthy -m 0600 .env /opt/healthbot/.env
+sudo systemctl enable --now healthbot
 ```
 
-To update the bot, build it again, then:
+- `make instance NAME=x` saves the answers in `instances/x.conf`. The next run shows them as the defaults. To ask nothing, give them: `make instance NAME=x BOTUSER=u BOTGROUP=g RUNDIR=/path </dev/null`.
+- `make services` makes every `build/<name>.service` again, for example after a change to the template or to the install folder.
+- `sudo make install-instance NAME=x` stops if the user or the group does not exist. It makes the working folder (owner: the bot user, mode 0700) when it does not exist, copies `README.md` into it, installs `/etc/systemd/system/x.service`, and runs `systemctl daemon-reload`. When the unit already exists and is different, it shows the difference and asks first (`FORCE=1` replaces it without a question). It does not start, stop or enable the service.
+
+**Update the bot:** build and install again, then restart each instance:
 
 ```bash
-sudo install -o gohealthy -g gohealthy -m 0755 gohealthy /opt/gohealthy/
-sudo systemctl restart gohealthy
+make && sudo make install
+sudo systemctl restart healthbot
 ```
 
-To use another folder, change `WorkingDirectory`, `ExecStart` and `ReadWritePaths` in the unit file.
+A new binary changes all instances at their next restart.
 
-### System service from a home folder
+### A folder in /home
 
-To run the system service from a folder in a home folder, for example `/home/botden/healthbot` as the user `botden`:
+`ProtectHome=yes` blocks all of `/home`, so a service with its folder there fails with `203/EXEC`. When the working folder is in `/home`, the generated unit uses these lines instead, so the bot sees only its own folder in `/home`:
 
-1. In the unit file, set `User=botden`, `Group=botden`, and `WorkingDirectory`, `ExecStart` and `ReadWritePaths` to the folder.
-2. Replace `ProtectHome=yes` with these 3 lines:
+```ini
+ProtectHome=tmpfs
+TemporaryFileSystem=/home/botden:mode=0755
+BindPaths=/home/botden/healthbot
+```
 
-   ```ini
-   ProtectHome=tmpfs
-   TemporaryFileSystem=/home/botden:mode=0755
-   BindPaths=/home/botden/healthbot
-   ```
+`TemporaryFileSystem` is necessary because `UMask=0077` would make the parent folder root-only, and the service would fail with `200/CHDIR`. Keep `.env` and the databases private: `chmod 600`.
 
-   `ProtectHome=yes` blocks all of `/home`, so the service fails with `203/EXEC`. With these lines, the bot sees only its own folder in `/home`. `TemporaryFileSystem` is necessary because `UMask=0077` would make the parent folder root-only, and the service would fail with `200/CHDIR`.
-3. Make the files private: `chmod 700` for the folder and `chmod 600` for `.env` and `health_bot.db`.
+### Multiple instances
 
-### User service
+Repeat `make instance` and `sudo make install-instance` with a new name, a new working folder and a `.env` with another bot token. The instances share nothing but the binary. Each has its own databases, backups and log:
 
 ```bash
-mkdir -p ~/gohealthy
-cp gohealthy .env README.md ~/gohealthy/
-chmod 600 ~/gohealthy/.env
-mkdir -p ~/.config/systemd/user
-cp deploy/systemd/gohealthy-user.service ~/.config/systemd/user/gohealthy.service
-systemctl --user daemon-reload
-systemctl --user enable --now gohealthy
-# Keep it running when you are logged out:
-sudo loginctl enable-linger "$USER"
+make instance NAME=otherbot RUNDIR=/opt/otherbot
+sudo make install-instance NAME=otherbot
+sudo install -o gohealthy -g gohealthy -m 0600 other.env /opt/otherbot/.env
+sudo systemctl enable --now otherbot
+journalctl -u otherbot -f
 ```
-
-For the user service, add `--user` to the `systemctl` and `journalctl` commands below.
 
 ### Control and logs
 
+Use the instance name, for example `healthbot`:
+
 ```bash
-systemctl status gohealthy        # state and the last log lines
-sudo systemctl stop gohealthy     # stop
-sudo systemctl start gohealthy    # start
-sudo systemctl restart gohealthy  # restart (for example, after a change to .env)
+systemctl status healthbot        # state and the last log lines
+sudo systemctl stop healthbot     # stop
+sudo systemctl start healthbot    # start
+sudo systemctl restart healthbot  # restart (for example, after a change to .env)
 
-journalctl -u gohealthy -f             # follow the log
-journalctl -u gohealthy --since today  # today's log
-journalctl -u gohealthy -p warning     # errors and warnings only
+journalctl -u healthbot -f             # follow the log
+journalctl -u healthbot --since today  # today's log
+journalctl -u healthbot -p warning     # errors and warnings only
 ```
-
-For a user service: `journalctl --user -u gohealthy -f`.
 
 Under systemd, the bot writes its log lines without its own timestamp, because the journal adds one. The journal keeps the log according to its own limits (`/etc/systemd/journald.conf`, for example `SystemMaxUse=`).
 
@@ -493,7 +498,7 @@ Under systemd, the bot writes its log lines without its own timestamp, because t
 ## Development and tests
 
 ```bash
-gofmt -l . && go build ./... && go vet ./... && go test ./... && golangci-lint run ./...
+make check
 ```
 
 - **Unit and handler tests** (`go test ./...`) need no network. They use a fake Discord API that records every request.

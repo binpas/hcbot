@@ -1,14 +1,15 @@
-# HEALTH Discord bot (Go) — system service.
+# HEALTH Discord bot (Go) — system service for the instance @NAME@.
 #
-# Install (see README.md, "Run as a systemd service"):
-#   sudo install -m 0644 deploy/systemd/gohealthy.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now gohealthy
+# Template: make builds build/<name>.service from this file (see
+# README.md, "Run as a systemd service"). Do not edit build/ by hand.
+#   make instance NAME=@NAME@ && sudo make install-instance NAME=@NAME@
+#   sudo systemctl enable --now @NAME@
 # Logs:
-#   journalctl -u gohealthy -f
+#   journalctl -u @NAME@ -f
 
 [Unit]
-Description=HEALTH Discord bot (gohealthy)
-Documentation=file:///opt/gohealthy/README.md
+Description=HEALTH Discord bot (@NAME@)
+Documentation=file://@RUNDIR@/README.md
 Wants=network-online.target
 After=network-online.target
 # Stop trying after 5 crashes in 5 minutes (for example, a bad token).
@@ -17,11 +18,12 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=gohealthy
-Group=gohealthy
-# .env, health_bot.db, backups/ and README.md are in this folder.
-WorkingDirectory=/opt/gohealthy
-ExecStart=/opt/gohealthy/gohealthy
+User=@USER@
+Group=@GROUP@
+# .env, health_bot.db, markov.db, backups/ and README.md are in this
+# folder. Each instance has its own folder; all use the same binary.
+WorkingDirectory=@RUNDIR@
+ExecStart=@BINDIR@/gohealthy
 Restart=on-failure
 RestartSec=10s
 # The bot stops cleanly on SIGTERM: it closes the gateway and the database.
@@ -32,26 +34,18 @@ TimeoutStopSec=30s
 # timestamps when it runs under systemd.
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=gohealthy
+SyslogIdentifier=@NAME@
 
-# New files (database, backups) are private to the gohealthy user.
+# New files (database, backups) are private to the @USER@ user.
 UMask=0077
 
 # Security: the bot only needs the network and its own folder.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/opt/gohealthy
-ProtectHome=yes
-# To run the bot from a home folder (for example /home/botden/healthbot),
-# ProtectHome=yes blocks the folder (error 203/EXEC). Use these 3 lines
-# instead, and set WorkingDirectory, ExecStart, ReadWritePaths, User and
-# Group to match:
-#   ProtectHome=tmpfs
-#   TemporaryFileSystem=/home/botden:mode=0755
-#   BindPaths=/home/botden/healthbot
-# The bot then sees only its own folder in /home. TemporaryFileSystem is
-# needed because UMask=0077 makes the parent folder root-only (error
-# 200/CHDIR).
+ReadWritePaths=@RUNDIR@
+# ProtectHome=yes, or for a folder in /home, lines that show the bot only
+# its own folder there (see README.md, "A folder in /home").
+@PROTECTHOME@
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectHostname=yes

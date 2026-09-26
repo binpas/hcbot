@@ -1,0 +1,122 @@
+#!/bin/sh
+# Configure the HEALTH bot build. Writes config.mk, which the Makefile reads.
+# Instances (systemd units) are set up with `make instance NAME=<name>`.
+#
+#   ./configure [--target=OS-ARCH] [--bindir=DIR] [--yes]
+
+set -eu
+
+cd "$(dirname "$0")"
+
+usage() {
+	cat <<'EOF'
+Usage: ./configure [options]
+
+Options:
+  --target=OS-ARCH  Platform to build for, for example linux-amd64.
+                    Default: this machine.
+  --bindir=DIR      Where `make install` puts gohealthy and markovtrain.
+                    Default: /usr/local/bin
+  --yes             Do not ask; use the options, the saved values and
+                    the defaults.
+  --help            Show this help.
+
+Values saved in config.mk are the defaults the next time.
+EOF
+}
+
+# Saved values from the last run.
+old() {
+	if [ -f config.mk ]; then sed -n "s/^$1 *= *//p" config.mk | tail -n 1; fi
+}
+
+TARGET=""
+BINDIR=""
+ASK=yes
+[ -t 0 ] || ASK=no
+for arg in "$@"; do
+	case $arg in
+	--target=*) TARGET=${arg#*=} ;;
+	--bindir=*) BINDIR=${arg#*=} ;;
+	--yes) ASK=no ;;
+	--help | -h) usage; exit 0 ;;
+	*) echo "configure: unknown option: $arg" >&2; usage >&2; exit 2 ;;
+	esac
+done
+
+# ask VAR "Question" default: sets VAR unless an option already set it.
+ask() {
+	eval "cur=\${$1}"
+	if [ -n "$cur" ]; then return; fi
+	if [ "$ASK" = yes ]; then
+		printf '%s [%s]: ' "$2" "$3"
+		read -r reply || reply=""
+		cur=${reply:-$3}
+	else
+		cur=$3
+	fi
+	eval "$1=\$cur"
+}
+
+# Go: present, and at least the version in go.mod.
+GO=$(command -v go || true)
+if [ -z "$GO" ]; then
+	echo "configure: Go is not installed. Install it (macOS: brew install go; see https://go.dev/dl/)." >&2
+	exit 1
+fi
+need=$(sed -n 's/^go  *\([0-9.]*\).*/\1/p' go.mod)
+have=$("$GO" env GOVERSION | sed 's/^go//; s/[^0-9.].*//')
+older=$(awk -v a="$have" -v b="$need" 'BEGIN {
+	n = split(a, x, "."); m = split(b, y, ".")
+	for (i = 1; i <= (n > m ? n : m); i++) {
+		if (x[i] + 0 < y[i] + 0) { print 1; exit }
+		if (x[i] + 0 > y[i] + 0) { print 0; exit }
+	}
+	print 0 }')
+if [ "$older" = 1 ]; then
+	echo "configure: Go $have is too old; go.mod needs Go $need or later." >&2
+	exit 1
+fi
+
+native="$("$GO" env GOOS)-$("$GO" env GOARCH)"
+saved_target="$(old GOOS)-$(old GOARCH)"
+[ "$saved_target" = "-" ] && saved_target=$native
+ask TARGET "Build for which platform (botden is linux-amd64)" "$saved_target"
+saved_bindir=$(old BINDIR)
+ask BINDIR "Install the binaries in" "${saved_bindir:-/usr/local/bin}"
+
+case $TARGET in
+*-*) GOOS=${TARGET%%-*} GOARCH=${TARGET#*-} ;;
+*) echo "configure: --target must look like linux-amd64, not '$TARGET'." >&2; exit 2 ;;
+esac
+if ! "$GO" tool dist list | grep -qx "$GOOS/$GOARCH"; then
+	echo "configure: Go cannot build for $GOOS/$GOARCH (see: go tool dist list)." >&2
+	exit 2
+fi
+case $BINDIR in
+/*) ;;
+*) echo "configure: --bindir must be an absolute path." >&2; exit 2 ;;
+esac
+case $BINDIR in
+*[[:space:]]*) echo "configure: --bindir must not contain spaces." >&2; exit 2 ;;
+esac
+
+cat >config.mk <<EOF
+# Written by ./configure. Run it again to change these values.
+GO = $GO
+GOOS = $GOOS
+GOARCH = $GOARCH
+BINDIR = $BINDIR
+EOF
+
+lint="not installed (make check skips it)"
+command -v golangci-lint >/dev/null 2>&1 && lint="installed"
+cat <<EOF
+
+Go:            $("$GO" env GOVERSION) ($GO)
+Build for:     $GOOS/$GOARCH
+Install in:    $BINDIR
+golangci-lint: $lint
+
+Wrote config.mk. Next: make
+EOF
