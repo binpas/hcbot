@@ -473,7 +473,7 @@ TemporaryFileSystem=/home/botden:mode=0755
 BindPaths=/home/botden/healthbot
 ```
 
-`TemporaryFileSystem` is necessary because `UMask=0077` would make the parent folder root-only, and the service would fail with `200/CHDIR`. Keep `.env` and the databases private: `chmod 600`.
+`TemporaryFileSystem` is necessary because `UMask=0077` would make the parent folder root-only, and the service would fail with `200/CHDIR`. For a deeper folder, such as `/home/botden/src/testbot`, the unit gets one `TemporaryFileSystem` line for each folder between: `/home/botden` and `/home/botden/src`. Keep `.env` and the databases private: `chmod 600`.
 
 ### Multiple instances
 

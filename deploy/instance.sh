@@ -75,13 +75,22 @@ esac
 render() {
 	[ -n "${BINDIR:-}" ] || die "BINDIR is not set; run this from make."
 	# A folder in /home needs its own view of /home: ProtectHome=yes hides
-	# all of it (203/EXEC), and the tmpfs parent must be 0755 because
-	# UMask=0077 would make it root-only (200/CHDIR).
+	# all of it (203/EXEC). Each folder between /home/<user> and RUNDIR is
+	# an empty tmpfs with mode 0755, because a folder that systemd makes
+	# for the bind mount gets UMask=0077 and is root-only (200/CHDIR).
 	# awk -v turns each \n into a new line.
 	case $RUNDIR in
 	/home/*/*)
-		top=/home/$(echo "${RUNDIR#/home/}" | cut -d/ -f1)
-		protect="ProtectHome=tmpfs\nTemporaryFileSystem=$top:mode=0755\nBindPaths=$RUNDIR" ;;
+		protect="ProtectHome=tmpfs"
+		dir=/home/$(echo "${RUNDIR#/home/}" | cut -d/ -f1)
+		rest=${RUNDIR#"$dir"/}
+		while :; do
+			protect="$protect\nTemporaryFileSystem=$dir:mode=0755"
+			case $rest in */*) ;; *) break ;; esac
+			dir=$dir/${rest%%/*}
+			rest=${rest#*/}
+		done
+		protect="$protect\nBindPaths=$RUNDIR" ;;
 	/home/*)
 		protect="ProtectHome=tmpfs\nBindPaths=$RUNDIR" ;;
 	*) protect="ProtectHome=yes" ;;
