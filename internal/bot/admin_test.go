@@ -330,3 +330,58 @@ func TestBackupsOldAndNewNames(t *testing.T) {
 	tb.run(tAdmin, "db list", strOpt("filename", "health_bot_20260101_000000.db"))
 	tb.expect(true, "`health_bot_20260101_000000.db`")
 }
+
+// After an archive, every channel setting that used the old channel uses
+// the replacement.
+func TestChannelArchiveMovesSettings(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{
+		"MOD_LOG": tChVIP, "MOD_SUPPORT": tChVIP, "CURATED": tChGeneral,
+		"MARKOV_LEARN_CHANNELS": tChGeneral + "," + tChVIP, "MARKOV_REPLY_CHANNELS": tChVIP,
+	})
+	tb.run(tMod, "channelarchive", &discordgo.ApplicationCommandInteractionDataOption{
+		Name: "channel", Type: discordgo.ApplicationCommandOptionChannel, Value: tChVIP})
+	tb.expect(true, "is now the live channel", "Settings now set to the new channel: `MOD_LOG`, `MOD_SUPPORT`, "+
+		"`MARKOV_LEARN_CHANNELS`, `MARKOV_REPLY_CHANNELS`.", "Post/Repost Mod Support Embed")
+	for key, want := range map[string]string{
+		"MOD_LOG": "601", "MOD_SUPPORT": "601", "CURATED": tChGeneral,
+		"MARKOV_LEARN_CHANNELS": tChGeneral + ",601", "MARKOV_REPLY_CHANNELS": "601",
+	} {
+		if got := tb.cfg.Get(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+	// MOD_LOG moved, so the log entry goes to the new channel.
+	if !contains(tb.sent("601"), "Channel Archived") {
+		t.Error("archive not logged in the new MOD_LOG channel")
+	}
+
+	// A channel that no setting uses: no settings note.
+	tb.run(tMod, "channelarchive", &discordgo.ApplicationCommandInteractionDataOption{
+		Name: "channel", Type: discordgo.ApplicationCommandOptionChannel, Value: tChSupport})
+	if r := tb.expect(true, "is now the live channel"); strings.Contains(r.text(), "Settings now set") {
+		t.Errorf("reply = %q", r.text())
+	}
+}
+
+// A failed archive changes no settings.
+func TestChannelArchiveFailureKeepsSettings(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_REPLY_CHANNELS": tChVIP})
+	tb.api.fail("PATCH", "/channels/"+tChVIP)
+	tb.run(tMod, "channelarchive", &discordgo.ApplicationCommandInteractionDataOption{
+		Name: "channel", Type: discordgo.ApplicationCommandOptionChannel, Value: tChVIP})
+	tb.expect(true, "couldn't move the original")
+	if got := tb.cfg.Get("MARKOV_REPLY_CHANNELS"); got != tChVIP {
+		t.Errorf("MARKOV_REPLY_CHANNELS = %q after a failed archive", got)
+	}
+}
+
+func TestFollowArchivedChannelNoDuplicate(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": "700,701,702"})
+	tb.followArchivedChannel("700", "702")
+	if got := tb.cfg.Get("MARKOV_LEARN_CHANNELS"); got != "702,701" {
+		t.Errorf("MARKOV_LEARN_CHANNELS = %q, want 702,701", got)
+	}
+}

@@ -332,7 +332,7 @@ In the wizard, set the name, the channel, the pairs (one `<emote> <role>` per li
 | `/permtemplate save <channel> <name>` | mod only | Saves a channel's overwrites as a template. |
 | `/permtemplate list` | mod only | All templates. |
 | `/permtemplate apply <name> <channel> <mode>` | mod only | Applies a template after you confirm. **Add to current permissions** merges the template into the channel's overwrites and removes nothing. **Replace all** makes the channel match the template exactly. |
-| `/channelarchive [channel]` | mod only | Makes a copy of the channel as the new live channel, and moves the original into a `Channel Archive N` category. |
+| `/channelarchive [channel]` | mod only | Makes a copy of the channel as the new live channel, and moves the original into a `Channel Archive N` category. Each channel setting that used the original (for example `MOD_LOG` or `MARKOV_REPLY_CHANNELS`) is changed to the new channel, and the reply lists them. If `MOD_SUPPORT` changes, post the ticket embed again from `/setup`. |
 
 A role or member in a template that no longer exists is skipped and listed.
 

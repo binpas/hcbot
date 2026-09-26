@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/binpas/hcbot/internal/config"
 )
 
 // ---------------------------------------------------------------------
@@ -687,7 +689,56 @@ func (b *Bot) archiveChannel(guildID string, ch *discordgo.Channel, by string) (
 		return false, fmt.Sprintf("Created %s as the replacement, but couldn't move the original into **%s** (missing permissions?).",
 			channelMention(clone.ID), cat.Name)
 	}
-	return true, fmt.Sprintf("%s is now the live channel. The original was moved to **%s**.", channelMention(clone.ID), cat.Name)
+	note := fmt.Sprintf("%s is now the live channel. The original was moved to **%s**.", channelMention(clone.ID), cat.Name)
+	return true, note + b.followArchivedChannel(ch.ID, clone.ID)
+}
+
+// followArchivedChannel points every channel setting (single channels and
+// channel lists) at the replacement of an archived channel. It returns a
+// note for the reply, or "" when no setting used the channel.
+func (b *Bot) followArchivedChannel(oldID, newID string) string {
+	var moved, failed []string
+	for _, k := range config.SetupKeys {
+		value := ""
+		switch k.Kind {
+		case config.KindChannel:
+			if b.cfg.ID(k.Key) == oldID {
+				value = newID
+			}
+		case config.KindChanList:
+			ids := b.cfg.List(k.Key)
+			if i := slices.Index(ids, oldID); i >= 0 {
+				ids[i] = newID
+				var out []string // without a second copy when newID was already there
+				for _, id := range ids {
+					if !slices.Contains(out, id) {
+						out = append(out, id)
+					}
+				}
+				value = strings.Join(out, ",")
+			}
+		}
+		if value == "" {
+			continue
+		}
+		if err := b.setConfig(k.Key, value); err != nil {
+			log.Printf("channel archive: update %s: %v", k.Key, err)
+			failed = append(failed, "`"+k.Key+"`")
+			continue
+		}
+		moved = append(moved, "`"+k.Key+"`")
+	}
+	var note string
+	if len(moved) > 0 {
+		note += "\nSettings now set to the new channel: " + strings.Join(moved, ", ") + "."
+		if slices.Contains(moved, "`MOD_SUPPORT`") {
+			note += " Post the ticket embed again with **Post/Repost Mod Support Embed** in `/setup`."
+		}
+	}
+	if len(failed) > 0 {
+		note += "\nCouldn't update " + strings.Join(failed, ", ") + " — set them in `/setup` (see the bot's log)."
+	}
+	return note
 }
 
 func (b *Bot) cmdChannelArchive(c *Ctx) {
