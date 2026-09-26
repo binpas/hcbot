@@ -72,6 +72,11 @@ func TestCheckValue(t *testing.T) {
 		{"CURATED_EMOTE", "anything", true},
 		{"SOME_OLD_KEY", "anything", true},
 		{"MOD_LOG", "", true},
+		{"MARKOV_ALWAYS_REPLY_MENTION", "off", true},
+		{"MARKOV_ALWAYS_REPLY_MENTION", "Yes", true},
+		{"MARKOV_ALWAYS_REPLY_MENTION", "maybe", false},
+		{"MARKOV_LEARN_CHANNELS", "123 456", true},
+		{"MARKOV_LEARN_CHANNELS", "general", false},
 	} {
 		if err := CheckValue(tc.key, tc.value); (err == nil) != tc.ok {
 			t.Errorf("CheckValue(%q, %q) = %v, want ok=%v", tc.key, tc.value, err, tc.ok)
@@ -79,5 +84,21 @@ func TestCheckValue(t *testing.T) {
 	}
 	if !Known(JailSetupKey) || !Known("MOD_LOG") || Known("SOME_OLD_KEY") {
 		t.Error("Known gives the wrong result")
+	}
+}
+
+func TestStoreBool(t *testing.T) {
+	t.Setenv("MARKOV_ALWAYS_REPLY_MENTION", "")
+	s := NewStore(nil)
+	if !s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
+		t.Error("default: want on")
+	}
+	s.Set("MARKOV_ALWAYS_REPLY_MENTION", "off")
+	if s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
+		t.Error("off: want false")
+	}
+	s.Set("MARKOV_ALWAYS_REPLY_MENTION", "garbage")
+	if !s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
+		t.Error("bad value: want the default (on)")
 	}
 }

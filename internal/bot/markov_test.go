@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 func (tb *testBot) markovStats() (words, steps int64) {
@@ -32,14 +35,11 @@ func (tb *testBot) markovSent(channelID string) []discordgo.MessageSend {
 func TestMarkovMentionOnly(t *testing.T) {
 	tb := newTestBot(t)
 	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_REPLY_CHANNELS": tChGeneral,
-		"MARKOV_REPLY_CHANCE": "100"})
+		"MARKOV_COOLDOWN": "0"})
 
 	tb.say(tUser, tChGeneral, "not a mention", false)
 	if w, _ := tb.markovStats(); w != 0 {
 		t.Fatalf("learned %d words without a mention or Message Content", w)
-	}
-	if len(tb.markovSent(tChGeneral)) != 0 {
-		t.Fatal("replied without a mention or Message Content")
 	}
 
 	// The chain is empty: it learns, but has nothing to say yet.
@@ -84,7 +84,8 @@ func TestMarkovMentionOnly(t *testing.T) {
 
 func TestMarkovMessageContent(t *testing.T) {
 	tb := newTestBot(t, withMessageContent)
-	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_REPLY_CHANNELS": tChGeneral})
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_REPLY_CHANNELS": tChGeneral,
+		"MARKOV_COOLDOWN": "0"})
 
 	tb.say(tUser, tChGeneral, "every message is learned", false)
 	if w, _ := tb.markovStats(); w != 4 {
@@ -93,12 +94,118 @@ func TestMarkovMessageContent(t *testing.T) {
 	if len(tb.markovSent(tChGeneral)) != 0 {
 		t.Fatal("replied at random with MARKOV_REPLY_CHANCE 0")
 	}
-	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "100"})
+	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "100", "MARKOV_RANDOM_AS_REPLY": "0"})
 	tb.say(tUser, tChGeneral, "message", false)
 	sent := tb.markovSent(tChGeneral)
-	if len(sent) != 1 || sent[0].Reference != nil {
+	if len(sent) != 1 || sent[0].Reference != nil || !strings.HasPrefix(sent[0].Content, "message") {
+		t.Fatalf("random message = %+v", sent)
+	}
+	tb.config(map[string]string{"MARKOV_RANDOM_AS_REPLY": "100"})
+	tb.say(tUser, tChGeneral, "message", false)
+	if sent := tb.markovSent(tChGeneral); len(sent) != 2 || sent[1].Reference == nil {
 		t.Fatalf("random reply = %+v", sent)
 	}
+}
+
+// Without Message Content the bot cannot read other messages, but it can
+// still talk after them. It does not learn from them.
+func TestMarkovRandomWithoutMessageContent(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_REPLY_CHANNELS": tChGeneral,
+		"MARKOV_COOLDOWN": "0", "MARKOV_RANDOM_AS_REPLY": "0"})
+	tb.say(tUser, tChGeneral, "hello there friend", true) // learned; no reply from an empty chain
+	tb.flushMarkov()
+	tb.say(tUser, tChGeneral, "secret text", false)
+	if len(tb.markovSent(tChGeneral)) != 0 {
+		t.Fatalf("talked with MARKOV_REPLY_CHANCE 0: %+v", tb.markovSent(tChGeneral))
+	}
+	if n, _ := tb.chain.CountPhrase([]string{"secret"}); n != 0 {
+		t.Error("learned a message without a mention or Message Content")
+	}
+
+	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "100"})
+	tb.say(tUser, tChGeneral, "secret text", false)
+	sent := tb.markovSent(tChGeneral)
+	if len(sent) != 1 || sent[0].Content != "hello there friend" || sent[0].Reference != nil {
+		t.Fatalf("random message = %+v", sent)
+	}
+}
+
+func TestMarkovCooldown(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_REPLY_CHANNELS": tChGeneral + "," + tChVIP,
+		"MARKOV_REPLY_CHANCE": "100", "MARKOV_COOLDOWN": "60"})
+	learn(t, tb, "some words here")
+	count := func(ch string) int { return len(tb.markovSent(ch)) }
+
+	tb.say(tUser, tChGeneral, "one", false)
+	tb.say(tUser, tChGeneral, "two", false)
+	if count(tChGeneral) != 1 {
+		t.Fatalf("random messages during the cooldown: %d", count(tChGeneral))
+	}
+	tb.say(tUser, tChVIP, "other channel", false)
+	if count(tChVIP) != 1 {
+		t.Error("the cooldown of one channel stopped another")
+	}
+
+	// MARKOV_ALWAYS_REPLY_MENTION on (the default): mentions skip the cooldown.
+	tb.say(tUser, tChGeneral, "hi", true)
+	tb.say(tUser, tChGeneral, "hi", true)
+	if count(tChGeneral) != 3 {
+		t.Fatalf("mention replies = %d, want 2 more", count(tChGeneral)-1)
+	}
+	tb.run(tMod, "markov status")
+	tb.expect(true, "Replies to @mentions always", "Cooldown: **60s** (", "s left in this channel)")
+
+	// Off: mentions obey the cooldown too.
+	tb.config(map[string]string{"MARKOV_ALWAYS_REPLY_MENTION": "off"})
+	tb.say(tUser, tChGeneral, "hi", true)
+	if count(tChGeneral) != 3 {
+		t.Fatal("a mention skipped the cooldown with MARKOV_ALWAYS_REPLY_MENTION off")
+	}
+	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second) // the cooldown is over
+	tb.say(tUser, tChGeneral, "hi", true)
+	if count(tChGeneral) != 4 {
+		t.Fatal("no reply to a mention after the cooldown")
+	}
+	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second)
+	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "0"})
+	tb.say(tUser, tChGeneral, "quiet", false)
+	if count(tChGeneral) != 4 {
+		t.Error("talked with MARKOV_REPLY_CHANCE 0")
+	}
+}
+
+// learn writes messages straight into the chain.
+func learn(t *testing.T, tb *testBot, lines ...string) {
+	t.Helper()
+	kept, _ := markov.Prepare(lines, nil)
+	if err := tb.chain.Learn(kept); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetupToggle(t *testing.T) {
+	tb := newTestBot(t)
+	tb.run(tAdmin, "setup")
+	for page := 0; page < 20; page++ {
+		r := tb.last()
+		for _, c := range r.Components {
+			if strings.HasPrefix(c.CustomID, "setup:toggle:") && strings.HasSuffix(c.CustomID, ":MARKOV_ALWAYS_REPLY_MENTION") {
+				if !strings.Contains(r.text(), "✅ On") {
+					t.Errorf("default not shown as on: %q", r.text())
+				}
+				tb.click(tAdmin, c.CustomID)
+				if tb.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") || tb.cfg.Get("MARKOV_ALWAYS_REPLY_MENTION") != "off" {
+					t.Fatal("toggle did not save off")
+				}
+				tb.expect(true, "❌ Off")
+				return
+			}
+		}
+		tb.click(tAdmin, tb.componentID(r, "setup:next:"))
+	}
+	t.Fatal("no MARKOV_ALWAYS_REPLY_MENTION button in /setup")
 }
 
 func TestMarkovBlocklistAndForget(t *testing.T) {

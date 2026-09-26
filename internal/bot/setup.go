@@ -31,7 +31,7 @@ const (
 // /setup hides them when the option is off; stored values are kept.
 var contentOnlySettings = map[string]bool{
 	"CURATED": true, "CURATED_EMOTE": true, "CURATED_THRESHOLD": true,
-	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true, "MARKOV_REPLY_CHANCE": true,
+	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
 }
 
 // setupPages splits the visible settings into pages.
@@ -150,6 +150,15 @@ func (v setupView) components(disabled bool) []discordgo.MessageComponent {
 				ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews},
 				MinValues:    &zero, MaxValues: 25, DefaultValues: defaults, Disabled: disabled,
 			}
+		case config.KindBool:
+			label, style := "Off — click to turn on", discordgo.SecondaryButton
+			if v.b.cfg.Bool(k.Key) {
+				label, style = "On — click to turn off", discordgo.SuccessButton
+			}
+			comp = discordgo.Button{
+				Label: truncate(k.Key+": "+label, 80), Style: style,
+				CustomID: v.id("toggle", k.Key), Disabled: disabled,
+			}
 		default: // int / emoji / text — no native select component, use a modal
 			comp = discordgo.Button{
 				Label: "Edit " + k.Key, Style: discordgo.SecondaryButton,
@@ -225,6 +234,14 @@ func (b *Bot) onSetupComponent(c *Ctx) {
 		}
 	case "rlist", "clist":
 		if b.setupSave(c, key, strings.Join(c.Values(), ",")) {
+			v.refresh(c)
+		}
+	case "toggle":
+		value := "on"
+		if b.cfg.Bool(key) {
+			value = "off"
+		}
+		if b.setupSave(c, key, value) {
 			v.refresh(c)
 		}
 	case "edit":
@@ -349,6 +366,13 @@ func (b *Bot) setupDisplay(guildID, kind, raw string) string {
 		return text
 	case config.KindEmoji:
 		return raw
+	case config.KindBool:
+		if v, ok := config.ParseBool(raw); ok && v {
+			return "✅ On"
+		} else if ok {
+			return "❌ Off"
+		}
+		return fmt.Sprintf("`%s` *(not on or off)*", raw)
 	}
 	return "`" + raw + "`" // int
 }

@@ -77,6 +77,7 @@ const (
 	KindRole     = "role"
 	KindRoleList = "role_list"
 	KindChanList = "channel_list"
+	KindBool     = "bool" // "on" or "off"
 	KindEmoji    = "emoji"
 	KindInt      = "int"
 	KindText     = "text"
@@ -145,7 +146,13 @@ var SetupKeys = []SetupKey{
 	{"MARKOV_REPLY_CHANNELS", "MARKOV_REPLY_CHANNEL_IDS", KindChanList, "",
 		"Channels where the Markov chat replies to @mentions — pick up to 25"},
 	{"MARKOV_REPLY_CHANCE", "MARKOV_REPLY_CHANCE", KindInt, "0",
-		"Percent chance (0-100) that the Markov chat replies to any message in a reply channel"},
+		"Percent chance (0-100) that the Markov chat talks after a normal message in a reply channel"},
+	{"MARKOV_RANDOM_AS_REPLY", "MARKOV_RANDOM_AS_REPLY", KindInt, "50",
+		"Percent (0-100) of those random messages sent as a reply to the message; the rest are posted in the channel"},
+	{"MARKOV_COOLDOWN", "MARKOV_COOLDOWN", KindInt, "60",
+		"Seconds after a Markov message before the chat talks again in that channel"},
+	{"MARKOV_ALWAYS_REPLY_MENTION", "MARKOV_ALWAYS_REPLY_MENTION", KindBool, "on",
+		"On: always reply to an @mention, even during the cooldown. Off: mentions obey the cooldown"},
 	{"MARKOV_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB", KindInt, "25",
 		"Largest file /markov import accepts, in MB"},
 }
@@ -193,6 +200,10 @@ func CheckValue(key, value string) error {
 	case KindChannel, KindCategory, KindRole:
 		if !isID(value) {
 			return errors.New("must be a Discord ID")
+		}
+	case KindBool:
+		if _, ok := ParseBool(value); !ok {
+			return errors.New("must be on or off")
 		}
 	case KindRoleList, KindChanList:
 		for _, tok := range listSep.Split(strings.TrimSpace(value), -1) {
@@ -278,6 +289,27 @@ func (s *Store) Int(key string) int {
 // Str returns a configured string setting (e.g. an emote).
 func (s *Store) Str(key string) string {
 	return s.Raw(key)
+}
+
+// Bool returns a configured on/off setting, falling back to its default.
+func (s *Store) Bool(key string) bool {
+	if v, ok := ParseBool(s.Raw(key)); ok {
+		return v
+	}
+	v, _ := ParseBool(byKey[key].Default)
+	return v
+}
+
+// ParseBool reads an on/off value. It also accepts true/false, yes/no and
+// 1/0. ok is false for anything else.
+func ParseBool(raw string) (value, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "on", "true", "yes", "1":
+		return true, true
+	case "off", "false", "no", "0":
+		return false, true
+	}
+	return false, false
 }
 
 // List returns a configured ID list setting (roles or channels).

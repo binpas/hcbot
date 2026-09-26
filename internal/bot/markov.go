@@ -18,10 +18,14 @@ import (
 )
 
 // The Markov chat learns from messages in MARKOV_LEARN_CHANNELS and talks
-// in MARKOV_REPLY_CHANNELS. Without the Message Content option it sees only
-// messages that mention the bot, so it learns from those and replies to
-// them; with the option it learns from every message and can also reply at
-// random (MARKOV_REPLY_CHANCE). The chain lives in its own file, markov.db.
+// in MARKOV_REPLY_CHANNELS. Without the Message Content option it reads only
+// messages that mention the bot, so it learns only from those; with the
+// option it learns from every message. In both cases it replies to
+// mentions, and after other messages it talks at random
+// (MARKOV_REPLY_CHANCE), as a reply or just in the channel
+// (MARKOV_RANDOM_AS_REPLY). MARKOV_COOLDOWN keeps it quiet in a channel
+// for a while after it talks; MARKOV_ALWAYS_REPLY_MENTION lets mentions
+// skip that. The chain lives in its own file, markov.db.
 
 const (
 	markovFlushEvery = 15 * time.Second
@@ -34,8 +38,41 @@ var markovMentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.Allowe
 
 type markovState struct {
 	mu      sync.Mutex
-	pending [][]string // learned messages not yet written to markov.db
+	pending [][]string           // learned messages not yet written to markov.db
+	spoke   map[string]time.Time // channel ID → last Markov message, for the cooldown
 	block   atomic.Pointer[markov.Blocklist]
+}
+
+// claim starts the cooldown in a channel and reports true, or reports
+// false when the cooldown is still running. force claims it anyway.
+func (st *markovState) claim(channelID string, cooldown time.Duration, force bool) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	now := time.Now()
+	if !force && now.Before(st.spoke[channelID].Add(cooldown)) {
+		return false
+	}
+	if st.spoke == nil {
+		st.spoke = map[string]time.Time{}
+	}
+	st.spoke[channelID] = now
+	return true
+}
+
+// cooldownLeft is how long the channel stays quiet.
+func (st *markovState) cooldownLeft(channelID string, cooldown time.Duration) time.Duration {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return max(0, time.Until(st.spoke[channelID].Add(cooldown)))
+}
+
+// percent is true with a chance of p percent (limited to 0-100).
+func percent(p int) bool {
+	return rand.IntN(100) < max(0, min(p, 100))
+}
+
+func (b *Bot) markovCooldown() time.Duration {
+	return time.Duration(max(0, b.cfg.Int("MARKOV_COOLDOWN"))) * time.Second
 }
 
 func (b *Bot) registerMarkov() {
@@ -124,8 +161,9 @@ func (b *Bot) markovChannel(key, channelID string) bool {
 	if slices.Contains(list, channelID) {
 		return true
 	}
-	ch := b.channel(channelID)
-	return ch != nil && ch.IsThread() && slices.Contains(list, ch.ParentID)
+	// State only: this runs for every message, so it must not call the API.
+	ch, err := b.s.State.Channel(channelID)
+	return err == nil && ch.IsThread() && slices.Contains(list, ch.ParentID)
 }
 
 // markovMessage learns from a message and replies to it when it should.
@@ -135,19 +173,25 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 	}
 	botID := b.s.State.User.ID
 	mentioned := slices.ContainsFunc(m.Mentions, func(u *discordgo.User) bool { return u.ID == botID })
-	if !mentioned && !b.env.MessageContent {
-		return // Discord may still send the text; it is not used
+	// Without Message Content, Discord may still send the text of other
+	// messages; it is not used.
+	var words []string
+	if mentioned || b.env.MessageContent {
+		text := m.Content
+		if mentioned {
+			text = regexp.MustCompile(`<@!?`+botID+`>`).ReplaceAllString(text, " ")
+		}
+		words = markov.Tokenize(text)
 	}
-	text := m.Content
-	if mentioned {
-		text = regexp.MustCompile(`<@!?`+botID+`>`).ReplaceAllString(text, " ")
-	}
-	words := markov.Tokenize(text)
 
 	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
-		chance := b.cfg.Int("MARKOV_REPLY_CHANCE")
-		if mentioned || rand.IntN(100) < chance {
-			b.markovReply(m, words, mentioned)
+		switch {
+		case mentioned:
+			if b.mk.claim(m.ChannelID, b.markovCooldown(), b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION")) {
+				b.markovReply(m, words, true)
+			}
+		case percent(b.cfg.Int("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
+			b.markovReply(m, words, percent(b.cfg.Int("MARKOV_RANDOM_AS_REPLY")))
 		}
 	}
 	if len(words) > 0 && !b.markovBlocks(words) && b.markovChannel("MARKOV_LEARN_CHANNELS", m.ChannelID) {
@@ -159,8 +203,8 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 	}
 }
 
-// markovReply posts a generated reply. It tries to start from a word of
-// the message, longer words first.
+// markovReply posts a generated message, as a reply to m when asReply is
+// set. It tries to start from a word of the message, longer words first.
 func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
 	seed := slices.Clone(words)
 	slices.SortStableFunc(seed, func(x, y string) int {
@@ -241,13 +285,22 @@ func (b *Bot) cmdMarkovStatus(c *Ctx) {
 		{Name: "Replies in", Value: channels("MARKOV_REPLY_CHANNELS")},
 		{Name: "Blocklist", Value: fmt.Sprintf("%d word(s) or phrase(s)", b.mk.block.Load().Len())},
 	}
-	if b.env.MessageContent {
-		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Mode",
-			Value: fmt.Sprintf("Learns from all messages. Random reply chance: **%d%%**.", b.cfg.Int("MARKOV_REPLY_CHANCE"))})
-	} else {
-		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Mode",
-			Value: "Message Content is off: learns only from messages that @mention the bot, and from `/markov import`."})
+	mention := "always, even during the cooldown"
+	if !b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
+		mention = "only when the cooldown is over"
 	}
+	talk := fmt.Sprintf("Replies to @mentions %s. Talks after **%d%%** of other messages (**%d%%** of those as a reply). "+
+		"Cooldown: **%ds**", mention, max(0, min(b.cfg.Int("MARKOV_REPLY_CHANCE"), 100)),
+		max(0, min(b.cfg.Int("MARKOV_RANDOM_AS_REPLY"), 100)), int(b.markovCooldown().Seconds()))
+	if left := b.mk.cooldownLeft(c.i.ChannelID, b.markovCooldown()); left > 0 {
+		talk += fmt.Sprintf(" (%ds left in this channel)", int(left.Seconds()+0.5))
+	}
+	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Talking", Value: talk + "."})
+	learn := "Message Content is off: learns only from messages that @mention the bot, and from `/markov import`."
+	if b.env.MessageContent {
+		learn = "Learns from all messages in the learn channels."
+	}
+	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Learning", Value: learn})
 	c.Reply(true, e)
 }
 
