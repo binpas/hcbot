@@ -25,8 +25,9 @@ import (
 // mentions, and after other messages it talks at random
 // (MARKOV_REPLY_CHANCE), as a reply or just in the channel
 // (MARKOV_RANDOM_AS_REPLY). MARKOV_COOLDOWN keeps it quiet in a channel
-// for a while after it talks; MARKOV_ALWAYS_REPLY_MENTION lets mentions
-// skip that; mentions from mods always skip it. The chain lives in its own
+// for a while after it talks. MARKOV_MENTION_REPLY decides who gets a
+// reply to a mention: always (skips the cooldown), cooldown, or mods only.
+// Mentions from mods always get a reply and skip the cooldown. The chain lives in its own
 // file, markov.db.
 
 const (
@@ -200,8 +201,8 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
 		switch {
 		case mentioned:
-			always := b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") || b.messageFromMod(m)
-			if b.mk.claim(m.ChannelID, b.markovCooldown(), always) {
+			mode, mod := b.cfg.Choice("MARKOV_MENTION_REPLY"), b.messageFromMod(m)
+			if (mod || mode != "mods") && b.mk.claim(m.ChannelID, b.markovCooldown(), mod || mode == "always") {
 				b.markovReply(m, words, true)
 			}
 		case percentF(b.cfg.Float("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
@@ -344,8 +345,11 @@ func (b *Bot) cmdMarkovStatus(c *Ctx) {
 		{Name: "Blocklist", Value: fmt.Sprintf("%d word(s) or phrase(s)", b.mk.block.Load().Len())},
 	}
 	mention := "always, even during the cooldown"
-	if !b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
+	switch b.cfg.Choice("MARKOV_MENTION_REPLY") {
+	case "cooldown":
 		mention = "only when the cooldown is over (mods: always)"
+	case "mods":
+		mention = "from mods only"
 	}
 	talk := fmt.Sprintf("Replies to @mentions %s. Talks after **%s** of other messages (**%d%%** of those as a reply). "+
 		"Cooldown: **%ds**", mention, chanceText(b.cfg.Float("MARKOV_REPLY_CHANCE")),

@@ -78,7 +78,8 @@ const (
 	KindRole     = "role"
 	KindRoleList = "role_list"
 	KindChanList = "channel_list"
-	KindBool     = "bool" // "on" or "off"
+	KindBool     = "bool"   // "on" or "off"
+	KindChoice   = "choice" // one value from Choices
 	KindEmoji    = "emoji"
 	KindInt      = "int"
 	KindDecimal  = "decimal" // a number that can have a decimal part, e.g. 0.05
@@ -153,10 +154,59 @@ var SetupKeys = []SetupKey{
 		"Percent (0-100) of those random messages sent as a reply to the message; the rest are posted in the channel"},
 	{"MARKOV_COOLDOWN", "MARKOV_COOLDOWN", KindInt, "60",
 		"Seconds after a Markov message before the chat talks again in that channel"},
-	{"MARKOV_ALWAYS_REPLY_MENTION", "MARKOV_ALWAYS_REPLY_MENTION", KindBool, "on",
-		"On: always reply to an @mention, even during the cooldown. Off: mentions obey the cooldown"},
+	{"MARKOV_MENTION_REPLY", "MARKOV_MENTION_REPLY", KindChoice, "always",
+		"Who gets a reply to an @mention: always (even during the cooldown), cooldown (only when the cooldown is over), or mods (only mods). Mods always get a reply"},
 	{"MARKOV_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB", KindInt, "25",
 		"Largest file /markov import accepts, in MB"},
+}
+
+// Choice is one value of a KindChoice setting.
+type Choice struct {
+	Value, Label string
+}
+
+// Choices lists the values of each KindChoice setting, in menu order.
+var Choices = map[string][]Choice{
+	"MARKOV_MENTION_REPLY": {
+		{"always", "Always reply, even during the cooldown"},
+		{"cooldown", "Reply only when the cooldown is over"},
+		{"mods", "Reply only to mods"},
+	},
+}
+
+// ChoiceLabel returns the label of a KindChoice value, or "".
+func ChoiceLabel(key, value string) string {
+	for _, c := range Choices[key] {
+		if c.Value == value {
+			return c.Label
+		}
+	}
+	return ""
+}
+
+// legacyMentionKey is the on/off setting that MARKOV_MENTION_REPLY replaced:
+// on meant always, off meant cooldown.
+const legacyMentionKey = "MARKOV_ALWAYS_REPLY_MENTION"
+
+func legacyMentionMode(raw string) string {
+	if on, ok := ParseBool(raw); ok && !on {
+		return "cooldown"
+	}
+	return "always"
+}
+
+// Migrate changes old settings in values to their new keys. It returns the
+// keys to set and the keys to remove; values itself does not change. A new
+// key that is already set wins over the old one.
+func Migrate(values map[string]string) (set map[string]string, remove []string) {
+	set = map[string]string{}
+	if old, ok := values[legacyMentionKey]; ok {
+		if values["MARKOV_MENTION_REPLY"] == "" && strings.TrimSpace(old) != "" {
+			set["MARKOV_MENTION_REPLY"] = legacyMentionMode(old)
+		}
+		remove = append(remove, legacyMentionKey)
+	}
+	return set, remove
 }
 
 // Extra keys the bot writes itself (not prompted for during /setup).
@@ -210,6 +260,14 @@ func CheckValue(key, value string) error {
 	case KindBool:
 		if _, ok := ParseBool(value); !ok {
 			return errors.New("must be on or off")
+		}
+	case KindChoice:
+		if ChoiceLabel(key, strings.ToLower(strings.TrimSpace(value))) == "" {
+			var names []string
+			for _, c := range Choices[key] {
+				names = append(names, c.Value)
+			}
+			return errors.New("must be one of: " + strings.Join(names, ", "))
 		}
 	case KindRoleList, KindChanList:
 		for _, tok := range listSep.Split(strings.TrimSpace(value), -1) {
@@ -322,6 +380,21 @@ func (s *Store) Bool(key string) bool {
 	}
 	v, _ := ParseBool(byKey[key].Default)
 	return v
+}
+
+// Choice returns a configured KindChoice value in lower case, falling back
+// to its default. MARKOV_MENTION_REPLY also reads the old
+// MARKOV_ALWAYS_REPLY_MENTION from .env when nothing newer is set.
+func (s *Store) Choice(key string) string {
+	if key == "MARKOV_MENTION_REPLY" && s.Source(key) == "default" {
+		if old := strings.TrimSpace(os.Getenv(legacyMentionKey)); old != "" {
+			return legacyMentionMode(old)
+		}
+	}
+	if v := strings.ToLower(strings.TrimSpace(s.Raw(key))); ChoiceLabel(key, v) != "" {
+		return v
+	}
+	return byKey[key].Default
 }
 
 // ParseBool reads an on/off value. It also accepts true/false, yes/no and

@@ -69,4 +69,13 @@ func TestConfigExportImport(t *testing.T) {
 	if tb.cfg.Int("WARN_KICK_THRESHOLD") != 9 {
 		t.Error("a refused file changed the settings")
 	}
+
+	// A file from an older version: the old key becomes the new one.
+	tb.run(tAdmin, "db configimport", tb.attachmentOpt("file", "old.json", `{"MARKOV_ALWAYS_REPLY_MENTION": "off"}`),
+		strOpt("mode", "merge"))
+	r = tb.expect(true, "**Add (1):** `MARKOV_MENTION_REPLY`")
+	tb.click(tAdmin, tb.componentID(r, "confirm:yes:cfgimport:"))
+	if tb.cfg.Get("MARKOV_MENTION_REPLY") != "cooldown" || tb.cfg.Get("MARKOV_ALWAYS_REPLY_MENTION") != "" {
+		t.Error("the old key was not changed to the new one")
+	}
 }

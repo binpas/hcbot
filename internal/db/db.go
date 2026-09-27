@@ -267,6 +267,26 @@ func (d *DB) ImportConfig(values map[string]string, replace bool) error {
 	return tx.Commit()
 }
 
+// UpdateConfig sets and removes config values in one transaction.
+func (d *DB) UpdateConfig(set map[string]string, remove []string) error {
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, k := range remove {
+		if _, err := tx.Exec(`DELETE FROM config WHERE key = ?`, k); err != nil {
+			return err
+		}
+	}
+	for k, v := range set {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`, k, v); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // SetConfig stores one config value.
 func (d *DB) SetConfig(key, value string) error {
 	_, err := d.sql.Exec(

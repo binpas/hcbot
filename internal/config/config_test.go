@@ -72,9 +72,9 @@ func TestCheckValue(t *testing.T) {
 		{"CURATED_EMOTE", "anything", true},
 		{"SOME_OLD_KEY", "anything", true},
 		{"MOD_LOG", "", true},
-		{"MARKOV_ALWAYS_REPLY_MENTION", "off", true},
-		{"MARKOV_ALWAYS_REPLY_MENTION", "Yes", true},
-		{"MARKOV_ALWAYS_REPLY_MENTION", "maybe", false},
+		{"MARKOV_MENTION_REPLY", "mods", true},
+		{"MARKOV_MENTION_REPLY", "Cooldown", true},
+		{"MARKOV_MENTION_REPLY", "off", false},
 		{"MARKOV_LEARN_CHANNELS", "123 456", true},
 		{"MARKOV_LEARN_CHANNELS", "general", false},
 		{"MARKOV_REPLY_CHANCE", "0.05", true},
@@ -92,19 +92,46 @@ func TestCheckValue(t *testing.T) {
 	}
 }
 
-func TestStoreBool(t *testing.T) {
+func TestParseBool(t *testing.T) {
+	for raw, want := range map[string]bool{"on": true, "Yes": true, "1": true, "off": false, "FALSE": false} {
+		if v, ok := ParseBool(raw); !ok || v != want {
+			t.Errorf("ParseBool(%q) = %v, %v", raw, v, ok)
+		}
+	}
+	if _, ok := ParseBool("maybe"); ok {
+		t.Error("ParseBool(maybe): want not ok")
+	}
+}
+
+func TestStoreChoice(t *testing.T) {
+	t.Setenv("MARKOV_MENTION_REPLY", "")
 	t.Setenv("MARKOV_ALWAYS_REPLY_MENTION", "")
 	s := NewStore(nil)
-	if !s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
-		t.Error("default: want on")
+	if s.Choice("MARKOV_MENTION_REPLY") != "always" {
+		t.Error("default: want always")
 	}
-	s.Set("MARKOV_ALWAYS_REPLY_MENTION", "off")
-	if s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
-		t.Error("off: want false")
+	t.Setenv("MARKOV_ALWAYS_REPLY_MENTION", "off")
+	if s.Choice("MARKOV_MENTION_REPLY") != "cooldown" {
+		t.Error("old .env off: want cooldown")
 	}
-	s.Set("MARKOV_ALWAYS_REPLY_MENTION", "garbage")
-	if !s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
-		t.Error("bad value: want the default (on)")
+	s.Set("MARKOV_MENTION_REPLY", " Mods ")
+	if s.Choice("MARKOV_MENTION_REPLY") != "mods" {
+		t.Error("saved Mods: want mods")
+	}
+	s.Set("MARKOV_MENTION_REPLY", "garbage")
+	if s.Choice("MARKOV_MENTION_REPLY") != "always" {
+		t.Error("bad value: want the default (always)")
+	}
+}
+
+func TestMigrate(t *testing.T) {
+	set, remove := Migrate(map[string]string{"MARKOV_ALWAYS_REPLY_MENTION": "off"})
+	if set["MARKOV_MENTION_REPLY"] != "cooldown" || len(remove) != 1 {
+		t.Errorf("off: set %v, remove %v", set, remove)
+	}
+	set, remove = Migrate(map[string]string{"MOD_LOG": "1"})
+	if len(set)+len(remove) != 0 {
+		t.Errorf("nothing old: set %v, remove %v", set, remove)
 	}
 }
 

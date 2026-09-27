@@ -74,6 +74,12 @@ func (b *Bot) cmdConfigImport(c *Ctx) {
 		}
 		job.Values[k] = v
 	}
+	// A file from an older version can hold old keys.
+	set, remove := config.Migrate(job.Values)
+	for _, k := range remove {
+		delete(job.Values, k)
+	}
+	maps.Copy(job.Values, set)
 	if len(problems) > 0 {
 		c.Reply(true, errEmbed("Nothing was imported. Fix these values and try again:\n"+listLines(problems, 15)))
 		return

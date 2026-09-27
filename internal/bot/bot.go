@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"sync"
 	"time"
 
@@ -52,6 +53,16 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	values, err := database.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
+	}
+	if set, remove := config.Migrate(values); len(set)+len(remove) > 0 {
+		if err := database.UpdateConfig(set, remove); err != nil {
+			return nil, fmt.Errorf("migrate config: %w", err)
+		}
+		for _, k := range remove {
+			delete(values, k)
+		}
+		maps.Copy(values, set)
+		log.Printf("Updated old settings: set %v, removed %v", set, remove)
 	}
 	s, err := discordgo.New("Bot " + env.BotToken)
 	if err != nil {

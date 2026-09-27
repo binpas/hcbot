@@ -76,6 +76,10 @@ func (v setupView) embed() *discordgo.MessageEmbed {
 		"Use the selects/buttons below to change a value — only you can see this.", colourBlurple)
 	for _, k := range v.b.setupPages()[v.page] {
 		shown := v.b.setupDisplay(v.guildID, k.Kind, v.b.cfg.Raw(k.Key))
+		if k.Kind == config.KindChoice {
+			value := v.b.cfg.Choice(k.Key)
+			shown = fmt.Sprintf("`%s`: %s", value, config.ChoiceLabel(k.Key, value))
+		}
 		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{
 			Name:  k.Key,
 			Value: fmt.Sprintf("%s\n%s\n%s", sourceLabels[v.b.cfg.Source(k.Key)], shown, k.Description),
@@ -159,6 +163,18 @@ func (v setupView) components(disabled bool) []discordgo.MessageComponent {
 				Label: truncate(k.Key+": "+label, 80), Style: style,
 				CustomID: v.id("toggle", k.Key), Disabled: disabled,
 			}
+		case config.KindChoice:
+			current := v.b.cfg.Choice(k.Key)
+			var options []discordgo.SelectMenuOption
+			for _, ch := range config.Choices[k.Key] {
+				options = append(options, discordgo.SelectMenuOption{
+					Label: truncate(ch.Value+": "+ch.Label, 100), Value: ch.Value, Default: ch.Value == current,
+				})
+			}
+			comp = discordgo.SelectMenu{
+				MenuType: discordgo.StringSelectMenu, CustomID: v.id("choice", k.Key),
+				Placeholder: "Set " + k.Key, Options: options, Disabled: disabled,
+			}
 		default: // int / emoji / text — no native select component, use a modal
 			comp = discordgo.Button{
 				Label: "Edit " + k.Key, Style: discordgo.SecondaryButton,
@@ -234,6 +250,10 @@ func (b *Bot) onSetupComponent(c *Ctx) {
 		}
 	case "rlist", "clist":
 		if b.setupSave(c, key, strings.Join(c.Values(), ",")) {
+			v.refresh(c)
+		}
+	case "choice":
+		if vals := c.Values(); len(vals) == 1 && b.setupSave(c, key, vals[0]) {
 			v.refresh(c)
 		}
 	case "toggle":

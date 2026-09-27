@@ -148,7 +148,7 @@ func TestMarkovCooldown(t *testing.T) {
 		t.Error("the cooldown of one channel stopped another")
 	}
 
-	// MARKOV_ALWAYS_REPLY_MENTION on (the default): mentions skip the cooldown.
+	// MARKOV_MENTION_REPLY always (the default): mentions skip the cooldown.
 	tb.say(tUser, tChGeneral, "hi", true)
 	tb.say(tUser, tChGeneral, "hi", true)
 	if count(tChGeneral) != 3 {
@@ -157,11 +157,11 @@ func TestMarkovCooldown(t *testing.T) {
 	tb.run(tMod, "markov status")
 	tb.expect(true, "Replies to @mentions always", "Cooldown: **60s** (", "s left in this channel)")
 
-	// Off: mentions obey the cooldown too.
-	tb.config(map[string]string{"MARKOV_ALWAYS_REPLY_MENTION": "off"})
+	// cooldown: mentions obey the cooldown too.
+	tb.config(map[string]string{"MARKOV_MENTION_REPLY": "cooldown"})
 	tb.say(tUser, tChGeneral, "hi", true)
 	if count(tChGeneral) != 3 {
-		t.Fatal("a mention skipped the cooldown with MARKOV_ALWAYS_REPLY_MENTION off")
+		t.Fatal("a mention skipped the cooldown with MARKOV_MENTION_REPLY cooldown")
 	}
 	// Mods (MOD_ROLE, Administrator, the owner) always get a reply.
 	tb.say(tMod, tChGeneral, "hi", true)
@@ -194,10 +194,28 @@ func TestMarkovCooldown(t *testing.T) {
 	if count(tChGeneral) != 7 {
 		t.Fatal("no reply to a mention after the cooldown")
 	}
+	// mods: only mods get a reply to a mention, also after the cooldown.
+	tb.config(map[string]string{"MARKOV_MENTION_REPLY": "mods"})
+	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second)
+	tb.say(tUser, tChGeneral, "hi", true)
+	if count(tChGeneral) != 7 {
+		t.Fatal("a reply to a non-mod mention with MARKOV_MENTION_REPLY mods")
+	}
+	if left := tb.mk.cooldownLeft(tChGeneral, time.Minute); left > 0 {
+		t.Error("an ignored mention started the cooldown")
+	}
+	tb.say(tMod, tChGeneral, "hi", true)
+	tb.say(tMod, tChGeneral, "hi", true)
+	if count(tChGeneral) != 9 {
+		t.Fatalf("replies to a mod with MARKOV_MENTION_REPLY mods = %d, want 2", count(tChGeneral)-7)
+	}
+	tb.run(tMod, "markov status")
+	tb.expect(true, "Replies to @mentions from mods only")
+
 	tb.mk.spoke[tChGeneral] = time.Now().Add(-61 * time.Second)
 	tb.config(map[string]string{"MARKOV_REPLY_CHANCE": "0"})
 	tb.say(tUser, tChGeneral, "quiet", false)
-	if count(tChGeneral) != 7 {
+	if count(tChGeneral) != 9 {
 		t.Error("talked with MARKOV_REPLY_CHANCE 0")
 	}
 }
@@ -211,27 +229,57 @@ func learn(t *testing.T, tb *testBot, lines ...string) {
 	}
 }
 
-func TestSetupToggle(t *testing.T) {
+func TestSetupChoice(t *testing.T) {
 	tb := newTestBot(t)
 	tb.run(tAdmin, "setup")
 	for page := 0; page < 20; page++ {
 		r := tb.last()
 		for _, c := range r.Components {
-			if strings.HasPrefix(c.CustomID, "setup:toggle:") && strings.HasSuffix(c.CustomID, ":MARKOV_ALWAYS_REPLY_MENTION") {
-				if !strings.Contains(r.text(), "✅ On") {
-					t.Errorf("default not shown as on: %q", r.text())
+			if strings.HasPrefix(c.CustomID, "setup:choice:") && strings.HasSuffix(c.CustomID, ":MARKOV_MENTION_REPLY") {
+				if !strings.Contains(r.text(), "`always`: Always reply") {
+					t.Errorf("default not shown as always: %q", r.text())
 				}
-				tb.click(tAdmin, c.CustomID)
-				if tb.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") || tb.cfg.Get("MARKOV_ALWAYS_REPLY_MENTION") != "off" {
-					t.Fatal("toggle did not save off")
+				tb.click(tAdmin, c.CustomID, "mods")
+				if tb.cfg.Choice("MARKOV_MENTION_REPLY") != "mods" || tb.cfg.Get("MARKOV_MENTION_REPLY") != "mods" {
+					t.Fatal("the menu did not save mods")
 				}
-				tb.expect(true, "❌ Off")
+				tb.expect(true, "`mods`: Reply only to mods")
 				return
 			}
 		}
 		tb.click(tAdmin, tb.componentID(r, "setup:next:"))
 	}
-	t.Fatal("no MARKOV_ALWAYS_REPLY_MENTION button in /setup")
+	t.Fatal("no MARKOV_MENTION_REPLY menu in /setup")
+}
+
+// The old on/off setting moves to MARKOV_MENTION_REPLY when the bot starts.
+func TestMentionReplyMigrate(t *testing.T) {
+	for _, tc := range []struct{ old, newValue, want string }{
+		{"off", "", "cooldown"},
+		{"on", "", "always"},
+		{"off", "mods", "mods"},
+	} {
+		tb := newTestBot(t)
+		values := map[string]string{"MARKOV_ALWAYS_REPLY_MENTION": tc.old}
+		if tc.newValue != "" {
+			values["MARKOV_MENTION_REPLY"] = tc.newValue
+		}
+		if err := tb.db.ImportConfig(values, false); err != nil {
+			t.Fatal(err)
+		}
+		b, err := New(tb.env, tb.db, tb.chain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved, _ := tb.db.LoadConfig()
+		if b.cfg.Choice("MARKOV_MENTION_REPLY") != tc.want || saved["MARKOV_MENTION_REPLY"] != tc.want {
+			t.Errorf("old %q, new %q: got %q, saved %q, want %q", tc.old, tc.newValue,
+				b.cfg.Choice("MARKOV_MENTION_REPLY"), saved["MARKOV_MENTION_REPLY"], tc.want)
+		}
+		if _, ok := saved["MARKOV_ALWAYS_REPLY_MENTION"]; ok {
+			t.Error("the old key was not removed")
+		}
+	}
 }
 
 func TestMarkovBlocklistAndForget(t *testing.T) {
