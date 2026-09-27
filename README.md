@@ -121,7 +121,7 @@ Keep `.env` private: the token gives full control of the bot. If a token is ever
 
 ### `/setup`
 
-Run `/setup` as a server administrator. It shows an ephemeral embed (only you see it) with a few settings on each page. Channel, category and role settings use a dropdown. Number, emote and text settings use an **Edit** button. Each change is saved at once. The session expires after 5 minutes without use.
+Run `/setup` as a server administrator. It shows an ephemeral embed (only you see it) with a few settings on each page. The settings are in sections (Logs, Mods and tickets, Jail, Warnings, Community, Markov chat, File and memory limits, Links and files). Use the **Go to a section** menu at the top to go to a section, or the page buttons at the bottom. Channel, category and role settings use a dropdown. Number, emote and text settings use an **Edit** button. Each change is saved at once. The session expires after 5 minutes without use.
 
 | Setting | What it is | Default |
 |---|---|---|

@@ -12,6 +12,7 @@ import (
 )
 
 // /setup — paginated, editable configuration UI (admin only, ephemeral).
+// The settings are in sections (setupSections); a menu jumps to a section.
 //
 // The UI keeps no server-side state: each component's custom ID carries
 // the invoker, the page, and an expiry, so it also survives a restart.
@@ -34,17 +35,51 @@ var contentOnlySettings = map[string]bool{
 	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
 }
 
-// setupPages splits the visible settings into pages.
-func (b *Bot) setupPages() [][]config.SetupKey {
-	var keys []config.SetupKey
+// setupSections sets the order of /setup: each section shows its settings
+// in this order, on one or more neighbouring pages. Every SetupKey must be
+// in exactly one section (TestSetupSectionsCoverEveryKey).
+var setupSections = []struct {
+	title string
+	keys  []string
+}{
+	{"Logs", []string{"MOD_LOG", "BIG_BROTHER", "SENSITIVE_LOG"}},
+	{"Mods and tickets", []string{"MOD_ROLE", "MOD_SUPPORT", "TICKET_CAT"}},
+	{"Jail", []string{"JAIL_ROLE", "JAIL_CHANNEL", "JAIL_PROTECTED_ROLES"}},
+	{"Warnings", []string{"WARN_ARREST_THRESHOLD", "WARN_ARREST_DURATION", "WARN_KICK_THRESHOLD"}},
+	{"Community", []string{"MOTD_ROLE", "CURATED", "CURATED_EMOTE", "CURATED_THRESHOLD", "ON_THE_REAL"}},
+	{"Markov chat", []string{"MARKOV_LEARN_CHANNELS", "MARKOV_REPLY_CHANNELS", "MARKOV_MENTION_REPLY",
+		"MARKOV_REPLY_CHANCE", "MARKOV_RANDOM_AS_REPLY", "MARKOV_COOLDOWN"}},
+	{"File and memory limits", []string{"TRIGGER_IMPORT_MAX_MB", "ASSETS_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB",
+		"MEDIA_CACHE_TOTAL_MB"}},
+	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
+}
+
+// setupPage is one page of /setup: part of one section.
+type setupPage struct {
+	section  int // index in setupSections
+	part, of int // this page is part 1..of of its section
+	keys     []config.SetupKey
+}
+
+// setupPages splits the visible settings of each section into pages.
+func (b *Bot) setupPages() []setupPage {
+	byKey := map[string]config.SetupKey{}
 	for _, k := range config.SetupKeys {
-		if b.env.MessageContent || !contentOnlySettings[k.Key] {
-			keys = append(keys, k)
-		}
+		byKey[k.Key] = k
 	}
-	var pages [][]config.SetupKey
-	for i := 0; i < len(keys); i += setupPageSize {
-		pages = append(pages, keys[i:min(i+setupPageSize, len(keys))])
+	var pages []setupPage
+	for si, sec := range setupSections {
+		var keys []config.SetupKey
+		for _, key := range sec.keys {
+			if k, ok := byKey[key]; ok && (b.env.MessageContent || !contentOnlySettings[key]) {
+				keys = append(keys, k)
+			}
+		}
+		of := (len(keys) + setupPageSize - 1) / setupPageSize
+		for i := 0; i < len(keys); i += setupPageSize {
+			pages = append(pages, setupPage{section: si, part: i/setupPageSize + 1, of: of,
+				keys: keys[i:min(i+setupPageSize, len(keys))]})
+		}
 	}
 	return pages
 }
@@ -72,9 +107,16 @@ type setupView struct {
 }
 
 func (v setupView) embed() *discordgo.MessageEmbed {
-	e := makeEmbed("⚙️ HEALTH Bot Setup",
-		"Use the selects/buttons below to change a value — only you can see this.", colourBlurple)
-	for _, k := range v.b.setupPages()[v.page] {
+	pages := v.b.setupPages()
+	page := pages[v.page]
+	title := "⚙️ HEALTH Bot Setup: " + setupSections[page.section].title
+	if page.of > 1 {
+		title += fmt.Sprintf(" (%d/%d)", page.part, page.of)
+	}
+	e := makeEmbed(title,
+		"Use the selects/buttons below to change a value, or the menu to go to a section. Only you can see this.",
+		colourBlurple)
+	for _, k := range page.keys {
 		shown := v.b.setupDisplay(v.guildID, k.Kind, v.b.cfg.Raw(k.Key))
 		if k.Kind == config.KindChoice {
 			value := v.b.cfg.Choice(k.Key)
@@ -85,7 +127,7 @@ func (v setupView) embed() *discordgo.MessageEmbed {
 			Value: fmt.Sprintf("%s\n%s\n%s", sourceLabels[v.b.cfg.Source(k.Key)], shown, k.Description),
 		})
 	}
-	e.Footer = &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Page %d/%d", v.page+1, len(v.b.setupPages()))}
+	e.Footer = &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Page %d/%d", v.page+1, len(pages))}
 	return e
 }
 
@@ -106,11 +148,27 @@ func (v setupView) id(action, key string) string {
 }
 
 func (v setupView) components(disabled bool) []discordgo.MessageComponent {
-	var rows []discordgo.MessageComponent
+	pages := v.b.setupPages()
+	// Row 1 jumps to a section, rows 2-4 hold settings, and row 5 turns pages.
+	var options []discordgo.SelectMenuOption
+	for i, p := range pages {
+		if p.part == 1 {
+			options = append(options, discordgo.SelectMenuOption{
+				Label: setupSections[p.section].title, Value: strconv.Itoa(i),
+				Default: p.section == pages[v.page].section,
+			})
+		}
+	}
+	rows := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		discordgo.SelectMenu{
+			MenuType: discordgo.StringSelectMenu, CustomID: v.id("sec", ""),
+			Placeholder: "Go to a section", Options: options, Disabled: disabled,
+		},
+	}}}
 	zero := 0
 	hasModSupport := false
 
-	for _, k := range v.b.setupPages()[v.page] {
+	for _, k := range pages[v.page].keys {
 		var comp discordgo.MessageComponent
 		switch k.Kind {
 		case config.KindChannel, config.KindCategory:
@@ -187,29 +245,27 @@ func (v setupView) components(disabled bool) []discordgo.MessageComponent {
 		}
 	}
 
-	if hasModSupport {
-		rows = append(rows, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-			discordgo.Button{
-				Label: "Post/Repost Mod Support Embed", Style: discordgo.SuccessButton,
-				CustomID: v.id("post", ""), Disabled: disabled,
-			},
-		}})
-	}
-
-	rows = append(rows, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+	nav := []discordgo.MessageComponent{
 		discordgo.Button{
 			Label: "◀ Back", Style: discordgo.PrimaryButton,
 			CustomID: v.id("back", ""), Disabled: disabled || v.page == 0,
 		},
 		discordgo.Button{
-			Label: fmt.Sprintf("Page %d/%d", v.page+1, len(v.b.setupPages())), Style: discordgo.SecondaryButton,
+			Label: fmt.Sprintf("Page %d/%d", v.page+1, len(pages)), Style: discordgo.SecondaryButton,
 			CustomID: v.id("page", ""), Disabled: true,
 		},
 		discordgo.Button{
 			Label: "Next ▶", Style: discordgo.PrimaryButton,
-			CustomID: v.id("next", ""), Disabled: disabled || v.page == len(v.b.setupPages())-1,
+			CustomID: v.id("next", ""), Disabled: disabled || v.page == len(pages)-1,
 		},
-	}})
+	}
+	if hasModSupport {
+		nav = append(nav, discordgo.Button{
+			Label: "Post/Repost Mod Support Embed", Style: discordgo.SuccessButton,
+			CustomID: v.id("post", ""), Disabled: disabled,
+		})
+	}
+	rows = append(rows, discordgo.ActionsRow{Components: nav})
 	return rows
 }
 
@@ -271,6 +327,13 @@ func (b *Bot) onSetupComponent(c *Ctx) {
 			c.Reply(true, okEmbed(msg))
 		} else {
 			c.Reply(true, errEmbed(msg))
+		}
+	case "sec":
+		if vals := c.Values(); len(vals) == 1 {
+			if to, err := strconv.Atoi(vals[0]); err == nil && to >= 0 && to < len(b.setupPages()) {
+				v.page = to
+			}
+			v.refresh(c)
 		}
 	case "back":
 		v.page = max(0, v.page-1)

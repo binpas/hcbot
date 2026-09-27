@@ -23,7 +23,7 @@ func (tb *testBot) componentID(r reply, prefix string) string {
 func TestSetupSelectSavesValue(t *testing.T) {
 	tb := newTestBot(t)
 	tb.run(tAdmin, "setup")
-	r := tb.expect(true, "HEALTH Bot Setup", "MOD_LOG", "Page 1/")
+	r := tb.expect(true, "HEALTH Bot Setup: Logs", "MOD_LOG", "Page 1/")
 	id := tb.componentID(r, "setup:ch:"+tAdmin+":0:")
 	if !strings.HasSuffix(id, ":MOD_LOG") {
 		t.Fatalf("first select is %q", id)
@@ -147,7 +147,7 @@ func TestSetupHidesMessageContentSettings(t *testing.T) {
 	names := func(tb *testBot) string {
 		var all []string
 		for _, page := range tb.setupPages() {
-			for _, k := range page {
+			for _, k := range page.keys {
 				all = append(all, k.Key)
 			}
 		}
@@ -199,5 +199,70 @@ func TestSetupShowsSource(t *testing.T) {
 		if !strings.HasPrefix(fields[key], want) {
 			t.Errorf("%s = %q, want it to start with %q", key, fields[key], want)
 		}
+	}
+}
+
+func TestSetupSectionsCoverEveryKey(t *testing.T) {
+	seen := map[string]int{}
+	for _, sec := range setupSections {
+		for _, key := range sec.keys {
+			seen[key]++
+		}
+	}
+	for _, k := range config.SetupKeys {
+		if seen[k.Key] != 1 {
+			t.Errorf("%s is in %d sections, want 1", k.Key, seen[k.Key])
+		}
+		delete(seen, k.Key)
+	}
+	for key := range seen {
+		t.Errorf("section key %s is not a setting", key)
+	}
+	for _, opt := range []func(*config.Env){func(*config.Env) {}, withMessageContent} {
+		tb := newTestBot(t, opt)
+		for i, p := range tb.setupPages() {
+			if len(p.keys) == 0 || len(p.keys) > setupPageSize {
+				t.Errorf("page %d has %d settings", i, len(p.keys))
+			}
+			v := setupView{b: tb.Bot, guildID: tGuild, invoker: tAdmin, page: i}
+			if rows := v.components(false); len(rows) > 5 {
+				t.Errorf("page %d has %d rows, over the limit of 5", i, len(rows))
+			}
+		}
+	}
+}
+
+func TestSetupSectionMenu(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.run(tAdmin, "setup")
+	sel := tb.componentID(tb.last(), "setup:sec:")
+	pages := tb.setupPages()
+	markov := -1
+	for i, p := range pages {
+		if setupSections[p.section].title == "Markov chat" && p.part == 1 {
+			markov = i
+		}
+	}
+	tb.click(tAdmin, sel, fmt.Sprint(markov))
+	r := tb.last()
+	if r.Kind != "update" || !strings.Contains(r.text(), "Setup: Markov chat (1/2)") ||
+		!strings.Contains(r.text(), "MARKOV_LEARN_CHANNELS") {
+		t.Fatalf("section jump: %s %q", r.Kind, r.text())
+	}
+	// Next goes to the second page of the section.
+	tb.click(tAdmin, tb.componentID(r, "setup:next:"))
+	if !strings.Contains(tb.last().text(), "Setup: Markov chat (2/2)") {
+		t.Errorf("next page: %q", tb.last().text())
+	}
+	// The last page ends with the privacy and terms links.
+	tb.click(tAdmin, tb.componentID(tb.last(), "setup:sec:"), fmt.Sprint(len(pages)-1))
+	last := pages[len(pages)-1].keys
+	if tb.last().Kind != "update" || last[len(last)-2].Key != "PRIVACY_URL" || last[len(last)-1].Key != "TERMS_URL" {
+		t.Errorf("last page: %+v", last)
+	}
+	// A bad page number stays on the page.
+	tb.click(tAdmin, tb.componentID(tb.last(), "setup:sec:"), "99")
+	if !strings.Contains(tb.last().text(), "Links and files") {
+		t.Errorf("bad page: %q", tb.last().text())
 	}
 }
