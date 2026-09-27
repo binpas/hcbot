@@ -3,8 +3,10 @@ package bot
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,6 +71,21 @@ func (st *markovState) cooldownLeft(channelID string, cooldown time.Duration) ti
 // percent is true with a chance of p percent (limited to 0-100).
 func percent(p int) bool {
 	return rand.IntN(100) < max(0, min(p, 100))
+}
+
+// percentF is percent for a decimal chance, e.g. 0.05.
+func percentF(p float64) bool {
+	return rand.Float64()*100 < max(0, min(p, 100))
+}
+
+// chanceText shows a decimal percent and, below 10%, the same as "1 in N".
+func chanceText(p float64) string {
+	p = max(0, min(p, 100))
+	s := strconv.FormatFloat(p, 'f', -1, 64) + "%"
+	if p > 0 && p < 10 {
+		s += fmt.Sprintf(" (about 1 in %d)", int(math.Round(100/p)))
+	}
+	return s
 }
 
 func (b *Bot) markovCooldown() time.Duration {
@@ -187,7 +204,7 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 			if b.mk.claim(m.ChannelID, b.markovCooldown(), always) {
 				b.markovReply(m, words, true)
 			}
-		case percent(b.cfg.Int("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
+		case percentF(b.cfg.Float("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
 			b.markovReply(m, words, percent(b.cfg.Int("MARKOV_RANDOM_AS_REPLY")))
 		}
 	}
@@ -330,8 +347,8 @@ func (b *Bot) cmdMarkovStatus(c *Ctx) {
 	if !b.cfg.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
 		mention = "only when the cooldown is over (mods: always)"
 	}
-	talk := fmt.Sprintf("Replies to @mentions %s. Talks after **%d%%** of other messages (**%d%%** of those as a reply). "+
-		"Cooldown: **%ds**", mention, max(0, min(b.cfg.Int("MARKOV_REPLY_CHANCE"), 100)),
+	talk := fmt.Sprintf("Replies to @mentions %s. Talks after **%s** of other messages (**%d%%** of those as a reply). "+
+		"Cooldown: **%ds**", mention, chanceText(b.cfg.Float("MARKOV_REPLY_CHANCE")),
 		max(0, min(b.cfg.Int("MARKOV_RANDOM_AS_REPLY"), 100)), int(b.markovCooldown().Seconds()))
 	if left := b.mk.cooldownLeft(c.i.ChannelID, b.markovCooldown()); left > 0 {
 		talk += fmt.Sprintf(" (%ds left in this channel)", int(left.Seconds()+0.5))

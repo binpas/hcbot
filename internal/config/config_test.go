@@ -77,6 +77,11 @@ func TestCheckValue(t *testing.T) {
 		{"MARKOV_ALWAYS_REPLY_MENTION", "maybe", false},
 		{"MARKOV_LEARN_CHANNELS", "123 456", true},
 		{"MARKOV_LEARN_CHANNELS", "general", false},
+		{"MARKOV_REPLY_CHANCE", "0.05", true},
+		{"MARKOV_REPLY_CHANCE", "0,05", true},
+		{"MARKOV_REPLY_CHANCE", "2", true},
+		{"MARKOV_REPLY_CHANCE", "1%", false},
+		{"MARKOV_REPLY_CHANCE", "NaN", false},
 	} {
 		if err := CheckValue(tc.key, tc.value); (err == nil) != tc.ok {
 			t.Errorf("CheckValue(%q, %q) = %v, want ok=%v", tc.key, tc.value, err, tc.ok)
@@ -100,5 +105,21 @@ func TestStoreBool(t *testing.T) {
 	s.Set("MARKOV_ALWAYS_REPLY_MENTION", "garbage")
 	if !s.Bool("MARKOV_ALWAYS_REPLY_MENTION") {
 		t.Error("bad value: want the default (on)")
+	}
+}
+
+func TestStoreFloat(t *testing.T) {
+	t.Setenv("MARKOV_REPLY_CHANCE", "")
+	s := NewStore(nil)
+	if s.Float("MARKOV_REPLY_CHANCE") != 0 {
+		t.Error("default: want 0")
+	}
+	s.Set("MARKOV_REPLY_CHANCE", "0.05")
+	if s.Float("MARKOV_REPLY_CHANCE") != 0.05 {
+		t.Errorf("got %v, want 0.05", s.Float("MARKOV_REPLY_CHANCE"))
+	}
+	s.Set("MARKOV_REPLY_CHANCE", "3") // a value saved before decimals were allowed
+	if s.Float("MARKOV_REPLY_CHANCE") != 3 {
+		t.Errorf("got %v, want 3", s.Float("MARKOV_REPLY_CHANCE"))
 	}
 }

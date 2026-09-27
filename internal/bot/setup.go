@@ -314,6 +314,14 @@ func (b *Bot) onSetupModal(c *Ctx) {
 			}
 			raw = strconv.Itoa(n)
 		}
+		if k.Key == key && k.Kind == config.KindDecimal {
+			f, err := config.ParseDecimal(raw)
+			if err != nil {
+				c.Reply(true, errEmbed(fmt.Sprintf("`%s` isn't a number. Use a form like `0.05`.", raw)))
+				return
+			}
+			raw = strconv.FormatFloat(f, 'f', -1, 64)
+		}
 	}
 	if b.setupSave(c, key, raw) {
 		v.refresh(c)

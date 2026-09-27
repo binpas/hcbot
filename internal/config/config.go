@@ -4,6 +4,7 @@ package config
 
 import (
 	"errors"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -80,6 +81,7 @@ const (
 	KindBool     = "bool" // "on" or "off"
 	KindEmoji    = "emoji"
 	KindInt      = "int"
+	KindDecimal  = "decimal" // a number that can have a decimal part, e.g. 0.05
 	KindText     = "text"
 )
 
@@ -145,8 +147,8 @@ var SetupKeys = []SetupKey{
 		"Channels the Markov chat learns from — pick up to 25"},
 	{"MARKOV_REPLY_CHANNELS", "MARKOV_REPLY_CHANNEL_IDS", KindChanList, "",
 		"Channels where the Markov chat replies to @mentions — pick up to 25"},
-	{"MARKOV_REPLY_CHANCE", "MARKOV_REPLY_CHANCE", KindInt, "0",
-		"Percent chance (0-100) that the Markov chat talks after a normal message in a reply channel"},
+	{"MARKOV_REPLY_CHANCE", "MARKOV_REPLY_CHANCE", KindDecimal, "0",
+		"Percent chance (0-100, decimals allowed, e.g. 0.05) that the Markov chat talks after a normal message in a reply channel"},
 	{"MARKOV_RANDOM_AS_REPLY", "MARKOV_RANDOM_AS_REPLY", KindInt, "50",
 		"Percent (0-100) of those random messages sent as a reply to the message; the rest are posted in the channel"},
 	{"MARKOV_COOLDOWN", "MARKOV_COOLDOWN", KindInt, "60",
@@ -196,6 +198,10 @@ func CheckValue(key, value string) error {
 	case KindInt:
 		if _, err := strconv.Atoi(value); err != nil {
 			return errors.New("must be a whole number")
+		}
+	case KindDecimal:
+		if _, err := ParseDecimal(value); err != nil {
+			return err
 		}
 	case KindChannel, KindCategory, KindRole:
 		if !isID(value) {
@@ -284,6 +290,24 @@ func (s *Store) Int(key string) int {
 	}
 	n, _ := strconv.Atoi(byKey[key].Default)
 	return n
+}
+
+// ParseDecimal reads a KindDecimal value. It accepts "0.05" and "0,05".
+func ParseDecimal(v string) (float64, error) {
+	f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(v), ",", "."), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, errors.New("must be a number, for example 0.05")
+	}
+	return f, nil
+}
+
+// Float returns a configured decimal setting, falling back to its default.
+func (s *Store) Float(key string) float64 {
+	if f, err := ParseDecimal(s.Raw(key)); err == nil {
+		return f
+	}
+	f, _ := ParseDecimal(byKey[key].Default)
+	return f
 }
 
 // Str returns a configured string setting (e.g. an emote).

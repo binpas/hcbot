@@ -150,7 +150,7 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `TERMS_URL` | Terms of Service link at the bottom of `/help`. Set to `none` to hide it. | the `TERMS.md` link in this repository |
 | `MARKOV_LEARN_CHANNELS` | Up to 25 channels the [Markov chat](#markov-chat) learns from | (list) |
 | `MARKOV_REPLY_CHANNELS` | Up to 25 channels where the Markov chat replies | (list) |
-| `MARKOV_REPLY_CHANCE` | Percent chance (0–100) that the Markov chat talks after a normal message in a reply channel | 0 |
+| `MARKOV_REPLY_CHANCE` | Percent chance (0–100) that the Markov chat talks after a normal message in a reply channel. Decimals are permitted: `0.1` is about 1 in 1000 messages, `0.05` is about 1 in 2000. | 0 |
 | `MARKOV_RANDOM_AS_REPLY` | Percent (0–100) of those random messages sent as a reply to the message. The rest are posted in the channel without a reply. | 50 |
 | `MARKOV_COOLDOWN` | Seconds after a Markov message before the chat talks again in the same channel | 60 |
 | `MARKOV_ALWAYS_REPLY_MENTION` | **On:** always reply to an @mention, also during the cooldown. **Off:** a mention gets a reply only when the cooldown is over; mods always get a reply. (A button in `/setup`.) | on |
@@ -385,7 +385,7 @@ The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and repl
 **Talking** (in the reply channels):
 
 - **Mentions:** the bot replies to `@BotName <text>`. With Message Content on or off, it tries to start from a word of your message.
-- **Random talk:** after a normal message, the bot talks with a chance of `MARKOV_REPLY_CHANCE` percent. `MARKOV_RANDOM_AS_REPLY` percent of these messages are replies to the message; the others are posted in the channel. This also works without Message Content, but then the bot cannot read the message, so it starts at a random place in the chain.
+- **Random talk:** after a normal message, the bot talks with a chance of `MARKOV_REPLY_CHANCE` percent. For a busy server, use a decimal value such as `0.1` (about 1 in 1000 messages). `MARKOV_RANDOM_AS_REPLY` percent of these messages are replies to the message; the others are posted in the channel. This also works without Message Content, but then the bot cannot read the message, so it starts at a random place in the chain.
 - **Cooldown:** after the bot talks in a channel, it waits `MARKOV_COOLDOWN` seconds before random talk in that channel again. Each channel has its own timer, and a restart resets the timers. With `MARKOV_ALWAYS_REPLY_MENTION` on, mentions always get a reply; with it off, mentions also wait for the cooldown. Mentions from mods (`MOD_ROLE`, the Administrator permission, or the server owner) always get a reply. Each Markov message starts the cooldown, also a reply to a mention.
 
 A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.

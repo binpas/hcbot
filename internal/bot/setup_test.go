@@ -108,6 +108,20 @@ func TestSetupModalInt(t *testing.T) {
 	}
 }
 
+func TestSetupModalDecimal(t *testing.T) {
+	tb := newTestBot(t)
+	tb.submit(tAdmin, "setupm:"+tAdmin+":0:MARKOV_REPLY_CHANCE", map[string]string{"value": "abc"})
+	tb.expect(true, "isn't a number")
+	if tb.cfg.Float("MARKOV_REPLY_CHANCE") != 0 {
+		t.Error("bad value saved")
+	}
+
+	tb.submit(tAdmin, "setupm:"+tAdmin+":0:MARKOV_REPLY_CHANCE", map[string]string{"value": " 0,050 "})
+	if got := tb.cfg.Raw("MARKOV_REPLY_CHANCE"); got != "0.05" {
+		t.Errorf("MARKOV_REPLY_CHANCE = %q, want 0.05", got)
+	}
+}
+
 func TestSetupPostModSupport(t *testing.T) {
 	tb := newTestBot(t)
 	tb.click(tAdmin, "setup:post:"+tAdmin+":1:9999999999")

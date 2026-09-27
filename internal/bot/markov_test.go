@@ -355,3 +355,17 @@ func TestMarkovLearnsNamesNotMentions(t *testing.T) {
 		t.Error("learned the bot's own name")
 	}
 }
+
+func TestMarkovChanceText(t *testing.T) {
+	for p, want := range map[float64]string{
+		0:    "0%",
+		0.05: "0.05% (about 1 in 2000)",
+		1:    "1% (about 1 in 100)",
+		25:   "25%",
+		150:  "100%",
+	} {
+		if got := chanceText(p); got != want {
+			t.Errorf("chanceText(%v) = %q, want %q", p, got, want)
+		}
+	}
+}
