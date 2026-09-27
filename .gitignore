@@ -53,3 +53,6 @@ Thumbs.db
 /build/
 /instances/
 config.mk
+
+# Local Markov training text (may hold chat logs or copyrighted text)
+/training/
