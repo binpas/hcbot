@@ -22,7 +22,8 @@ const maxTokenLen = 64
 
 // Tokenize splits a message into the words the chain learns. Words are
 // lowercased (custom emojis keep their case). Mentions, @everyone, @here,
-// URLs and very long words are left out.
+// URLs and very long words are left out, and a leading @ is removed
+// ("@justin" becomes "justin"), so a reply never looks like a mention.
 func Tokenize(text string) []string {
 	var out []string
 	for _, f := range strings.Fields(text) {
@@ -37,7 +38,9 @@ func Tokenize(text string) []string {
 		if strings.Contains(lower, "@everyone") || strings.Contains(lower, "@here") {
 			continue
 		}
-		out = append(out, lower)
+		if lower = strings.TrimLeft(lower, "@"); lower != "" {
+			out = append(out, lower)
+		}
 	}
 	return out
 }

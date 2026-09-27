@@ -390,7 +390,7 @@ The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and repl
 
 A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 
-**What it learns:** the words of each message, in lowercase, with the pairs of words that come before each word. It does not keep who said a message, or the full message. It leaves out mentions, `@everyone`, `@here`, links, and words longer than 64 characters. It ignores a full message that contains a blocked word or phrase. Replies cannot ping anyone.
+**What it learns:** the words of each message, in lowercase, with the pairs of words that come before each word. It does not keep who said a message, or the full message. A user mention is learned as that user's name (the global name or the username, without `@`), and a leading `@` is removed from other words, so a reply never pings anyone. It leaves out role and channel mentions, `@everyone`, `@here`, links, and words longer than 64 characters. It ignores a full message that contains a blocked word or phrase. Replies cannot ping anyone.
 
 **Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A phrase blocks those words in that sequence. The blocklist is in `hcbot.db`, so it stays when you delete the chain.
 

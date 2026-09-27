@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -178,11 +177,7 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 	// messages; it is not used.
 	var words []string
 	if mentioned || b.env.MessageContent {
-		text := m.Content
-		if mentioned {
-			text = regexp.MustCompile(`<@!?`+botID+`>`).ReplaceAllString(text, " ")
-		}
-		words = markov.Tokenize(text)
+		words = markov.Tokenize(markovNames(m, botID))
 	}
 
 	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
@@ -203,6 +198,25 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 		}
 		b.mk.mu.Unlock()
 	}
+}
+
+// markovNames returns a message's text with each user mention replaced by
+// that user's name, so the chat learns the name but can never ping. Mentions
+// of the bot itself are removed. Discord sends the mentioned users with the
+// message, so this needs no API call.
+func markovNames(m *discordgo.Message, botID string) string {
+	var pairs []string
+	for _, u := range m.Mentions {
+		name := u.GlobalName
+		if name == "" {
+			name = u.Username
+		}
+		if u.ID == botID {
+			name = ""
+		}
+		pairs = append(pairs, "<@"+u.ID+">", " "+name+" ", "<@!"+u.ID+">", " "+name+" ")
+	}
+	return strings.NewReplacer(pairs...).Replace(m.Content)
 }
 
 // messageFromMod reports whether a message's author is a mod: MOD_ROLE, the

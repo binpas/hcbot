@@ -26,8 +26,8 @@ func learn(t *testing.T, s *Store, lines ...string) {
 }
 
 func TestTokenize(t *testing.T) {
-	got := Tokenize("Hello <@123> <@&4> <#5> @everyone https://x.io www.y.com <:Pog:99> World!")
-	want := []string{"hello", "<:Pog:99>", "world!"}
+	got := Tokenize("Hello <@123> <@&4> <#5> @everyone https://x.io www.y.com <:Pog:99> World! @Justin @@ @")
+	want := []string{"hello", "<:Pog:99>", "world!", "justin"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Tokenize = %q, want %q", got, want)
 	}

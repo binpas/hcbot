@@ -334,3 +334,24 @@ func TestSetupChannelList(t *testing.T) {
 		tb.click(tAdmin, tb.componentID(r, "setup:next:"))
 	}
 }
+
+// A user mention is learned as the user's name, never as a mention.
+func TestMarkovLearnsNamesNotMentions(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral})
+	tb.seq++
+	tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
+		ID: "29999", ChannelID: tChGeneral, GuildID: tGuild, Author: &discordgo.User{ID: tUser, Username: "user"},
+		Content: "<@" + tBot + "> say hi to <@!" + tMod + "> and <@" + tTarget + "> @Lurker",
+		Mentions: []*discordgo.User{{ID: tBot, Username: "healthbot"}, {ID: tMod, Username: "moddy", GlobalName: "Big Mod"},
+			{ID: tTarget, Username: "target"}},
+	}})
+	tb.flushMarkov()
+	out, err := tb.chain.Generate([]string{"say"}, nil)
+	if err != nil || out != "say hi to big mod and target lurker" {
+		t.Fatalf("learned %q, %v", out, err)
+	}
+	if n, _ := tb.chain.CountPhrase([]string{"healthbot"}); n != 0 {
+		t.Error("learned the bot's own name")
+	}
+}
