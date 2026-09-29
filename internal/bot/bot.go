@@ -99,6 +99,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerSetup()
 	b.registerConfirm()
 	b.registerModeration()
+	b.registerNotes()
 	b.registerJail()
 	b.registerTickets()
 	b.registerTriggers()

@@ -24,9 +24,12 @@ const (
 var setupModeAllowed = map[string]bool{"setup": true, "permsreport": true}
 
 // command is one slash command, or one subcommand of a group when its name
-// has a space ("jail arrest"). Every command is slash-only and guild-only.
+// has a space ("jail arrest"). A command with a kind is a right-click
+// (context menu) command instead: its name is the menu label, and it has no
+// description or options. Every command is guild-only.
 type command struct {
 	name        string
+	kind        discordgo.ApplicationCommandType // 0 = slash command
 	description string
 	options     []*discordgo.ApplicationCommandOption
 	perm        permLevel
@@ -48,7 +51,7 @@ var guildOnly = &[]discordgo.InteractionContextType{discordgo.InteractionContext
 func (b *Bot) addCommand(c *command) {
 	b.commands[c.name] = c
 	top, sub, isSub := strings.Cut(c.name, " ")
-	if isSub {
+	if isSub && c.kind == 0 {
 		g := b.groups[top]
 		if g == nil {
 			panic("subcommand " + c.name + " registered before its group")
@@ -98,6 +101,9 @@ func (b *Bot) commandDefs() []*discordgo.ApplicationCommand {
 			}
 		} else {
 			c := b.commands[name]
+			if c.kind != 0 {
+				def.Type = c.kind
+			}
 			def.Description = c.description
 			def.Options = c.options
 			perm = c.defaultPerm
@@ -365,6 +371,24 @@ func (c *Ctx) Modal(customID, title string, components ...discordgo.MessageCompo
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{CustomID: customID, Title: title, Components: components},
 	}))
+}
+
+// TargetMessage returns the message a message command was used on, or nil.
+func (c *Ctx) TargetMessage() *discordgo.Message {
+	data := c.i.ApplicationCommandData()
+	if data.Resolved == nil {
+		return nil
+	}
+	return data.Resolved.Messages[data.TargetID]
+}
+
+// TargetUser returns the user a user command was used on, or nil.
+func (c *Ctx) TargetUser() *discordgo.User {
+	data := c.i.ApplicationCommandData()
+	if data.Resolved == nil {
+		return nil
+	}
+	return data.Resolved.Users[data.TargetID]
 }
 
 // Values returns a select menu's chosen values.

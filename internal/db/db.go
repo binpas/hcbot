@@ -173,6 +173,22 @@ var schema = []string{
 	)`,
 	// Words and phrases the Markov chat never learns or says. It is here,
 	// not in markov.db, so it stays when the chain is deleted. Go bot only.
+	// Mod notes on a member. A note made from a message (right-click) also
+	// keeps a copy of that message's text and where it was.
+	`CREATE TABLE IF NOT EXISTS user_notes (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		guild_id     INTEGER NOT NULL,
+		user_id      INTEGER NOT NULL,
+		author_id    INTEGER NOT NULL,
+		note         TEXT    NOT NULL DEFAULT '',
+		created_at   TEXT    DEFAULT (datetime('now')),
+		edited_by    INTEGER,
+		edited_at    TEXT,
+		channel_id   INTEGER,
+		message_id   INTEGER,
+		message_text TEXT,
+		message_time TEXT
+	)`,
 	`CREATE TABLE IF NOT EXISTS markov_blocklist (
 		phrase     TEXT PRIMARY KEY,
 		created_by INTEGER,

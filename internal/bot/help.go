@@ -104,6 +104,12 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/ticket notes <username-#>", "Show every note recorded for a ticket."},
 			{"/ticket search <query>", "Search ticket notes."},
 		}},
+		{"User Notes", []helpEntry{
+			{"/note add <user> <text>", "Add a private mod note to a member. The bot records who added it and when."},
+			{"/note list <user>", "Show a member's notes. Select a note to edit or delete it."},
+			{"Apps → " + noteMenuAdd, "Right-click a message to add it to its author's notes."},
+			{"Apps → " + noteMenuView, "Right-click a member to show their notes."},
+		}},
 		{"Reaction Roles", []helpEntry{
 			{"/reactionrole create", "Start the reaction-role creation wizard."},
 			{"/reactionrole list", "List all reaction roles and whether they have been posted."},

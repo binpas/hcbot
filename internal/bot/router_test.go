@@ -3,6 +3,8 @@ package bot
 import (
 	"strings"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestRouterPermissionChecks(t *testing.T) {
@@ -56,6 +58,12 @@ func TestCommandDefinitions(t *testing.T) {
 			t.Errorf("duplicate command %s", def.Name)
 		}
 		seen[def.Name] = true
+		if def.Type != discordgo.ChatApplicationCommand {
+			if def.Description != "" || len(def.Options) != 0 || len(def.Name) > 32 {
+				t.Errorf("%q: a context menu command has a description, options, or a long name", def.Name)
+			}
+			continue
+		}
 		if def.Description == "" || len(def.Description) > 100 {
 			t.Errorf("/%s: bad description length %d", def.Name, len(def.Description))
 		}

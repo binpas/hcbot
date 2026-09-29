@@ -9,6 +9,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Slash commands only.** Every command is a slash command. Triggers are the one exception: they fire on `@BotName <trigger>`.
 - **Moderation:** ban, tempban, kick, mute/unmute, purge, and a self-timeout for members.
 - **Warnings** with a rap sheet, single-warning removal, and automatic arrest and kick thresholds.
+- **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
 - **Tickets:** members open private mod-support tickets with a reaction; mods close, archive, list, note and search them.
 - **Triggers:** mod-defined keyword responses, with random picks from several responses and a Carl-bot import.
@@ -240,6 +241,19 @@ Trigger responses show `@everyone`, `@here` and role mentions but **do not ping*
 | `/userinfo [member]` | mod only | Member info, posted to `SENSITIVE_LOG`. |
 | `/serverinfo` | mod only | Server overview. |
 | `/readme` | mod only | Shows this README in pages. |
+
+### User notes
+
+Mods keep private notes on members. The bot records who added each note and when, and who edited it last. All replies are ephemeral. Each add, edit, and delete is logged to `MOD_LOG`.
+
+| Command | Access | Description |
+|---|---|---|
+| `/note add <user> <text>` | mod only | Adds a note to a member (up to 1500 characters). The member does not have to be in the server. |
+| `/note list <user>` | mod only | Shows a member's notes, newest first, 5 on each page. Select a note to see all of it, then **Edit** or **Delete** it (Delete asks to confirm). |
+| **Apps → Add to user notes** (right-click a message) | mod only | Adds the message to its author's notes: its text, the names of its files, a link to it, and the time it was sent. Use **Add comment** to add your own text. The saved message text does not change. |
+| **Apps → View user notes** (right-click a member) | mod only | Same as `/note list`. |
+
+The right-click command does not need the Message Content intent. Discord sends the text of the selected message in the interaction.
 
 ### Jail
 
@@ -531,6 +545,7 @@ make check
 |---|---|
 | `config` | Settings from `/setup` |
 | `warnings` | Warnings |
+| `user_notes` | Mod notes on members, with copies of the messages added from the right-click menu |
 | `sentences` | Jail sentences |
 | `tickets`, `ticket_notes` | Tickets and their notes |
 | `ticket_archive` | Transcripts of tickets archived by an older version (read only) |
