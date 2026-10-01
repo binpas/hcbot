@@ -32,6 +32,9 @@ type Env struct {
 
 	// MarkovDBPath is the separate database file for the Markov chat.
 	MarkovDBPath string
+
+	// GiphyKey is the GIPHY API key for Markov GIFs. Empty turns them off.
+	GiphyKey string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -46,6 +49,7 @@ func LoadEnv() Env {
 		MediaCacheSize:     envInt("MEDIA_CACHE_SIZE", 300),
 		MediaCacheMaxBytes: envInt("MEDIA_CACHE_MAX_BYTES", 8*1024*1024),
 		MarkovDBPath:       envStr("MARKOV_DB_PATH", "markov.db"),
+		GiphyKey:           strings.TrimSpace(os.Getenv("GIPHY_API_KEY")),
 	}
 }
 
@@ -158,6 +162,12 @@ var SetupKeys = []SetupKey{
 		"Seconds after a Markov message before the chat talks again in that channel"},
 	{"MARKOV_MENTION_REPLY", "MARKOV_MENTION_REPLY", KindChoice, "always",
 		"Who gets a reply to an @mention: always (even during the cooldown), cooldown (only when the cooldown is over), or mods (only mods). Mods always get a reply"},
+	{"MARKOV_GIF_CHANCE", "MARKOV_GIF_CHANCE", KindDecimal, "0",
+		"Percent chance (0-100, decimals allowed) that a Markov message also gets a GIF from GIPHY, found with the message text. Needs GIPHY_API_KEY in .env"},
+	{"MARKOV_GIF_COOLDOWN", "MARKOV_GIF_COOLDOWN", KindInt, "40",
+		"Seconds between GIPHY requests, for the full bot (the API key has an hourly limit)"},
+	{"MARKOV_GIF_RATING", "MARKOV_GIF_RATING", KindChoice, "pg-13",
+		"Highest GIPHY rating for Markov GIFs: g, pg, pg-13 or r"},
 	{"MARKOV_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB", KindInt, "25",
 		"Largest file /markov import accepts, in MB"},
 }
@@ -173,6 +183,12 @@ var Choices = map[string][]Choice{
 		{"always", "Always reply, even during the cooldown"},
 		{"cooldown", "Reply only when the cooldown is over"},
 		{"mods", "Reply only to mods"},
+	},
+	"MARKOV_GIF_RATING": {
+		{"g", "G: all ages"},
+		{"pg", "PG"},
+		{"pg-13", "PG-13"},
+		{"r", "R: adults"},
 	},
 }
 

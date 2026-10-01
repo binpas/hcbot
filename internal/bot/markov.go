@@ -279,6 +279,9 @@ func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
 		return
 	}
 	msg := &discordgo.MessageSend{Content: truncate(out, 2000), AllowedMentions: markovMentions}
+	if gif := b.markovGIF(out); gif != nil {
+		msg.Embeds = []*discordgo.MessageEmbed{gif}
+	}
 	if asReply {
 		msg.Reference = m.Reference()
 	}
@@ -358,6 +361,16 @@ func (b *Bot) cmdMarkovStatus(c *Ctx) {
 		talk += fmt.Sprintf(" (%ds left in this channel)", int(left.Seconds()+0.5))
 	}
 	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Talking", Value: talk + "."})
+	gifs := "Off: `GIPHY_API_KEY` is not set in `.env`."
+	if b.env.GiphyKey != "" {
+		gifs = fmt.Sprintf("Adds a GIF to **%s** of Markov messages. Rating up to **%s**. Cooldown: **%ds** for the full bot",
+			chanceText(b.cfg.Float("MARKOV_GIF_CHANCE")), b.cfg.Choice("MARKOV_GIF_RATING"), int(b.gifCooldown().Seconds()))
+		if left := b.gif.cooldownLeft(b.gifCooldown()); left > 0 {
+			gifs += fmt.Sprintf(" (%ds left)", int(left.Seconds()+0.5))
+		}
+		gifs += "."
+	}
+	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "GIFs", Value: gifs})
 	learn := "Message Content is off: learns only from messages that @mention the bot, and from `/markov import`."
 	if b.env.MessageContent {
 		learn = "Learns from all messages in the learn channels."

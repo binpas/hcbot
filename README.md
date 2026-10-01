@@ -106,6 +106,7 @@ SETUP_MODE=false
 ENABLE_MESSAGE_CONTENT_FEATURES=false
 MEDIA_CACHE_SIZE=300
 MEDIA_CACHE_MAX_BYTES=8388608
+GIPHY_API_KEY=
 ```
 
 | Key | Description |
@@ -117,8 +118,9 @@ MEDIA_CACHE_MAX_BYTES=8388608
 | `MEDIA_CACHE_SIZE` | How many messages' attachments the audit log keeps (default 300). |
 | `MEDIA_CACHE_MAX_BYTES` | Largest attachment it keeps, in bytes (default 8 MiB). |
 | `MARKOV_DB_PATH` | The database file for the [Markov chat](#markov-chat) (default `markov.db`). |
+| `GIPHY_API_KEY` | The GIPHY API key for [Markov GIFs](#markov-chat). When it is not set, Markov GIFs are off. |
 
-Keep `.env` private: the token gives full control of the bot. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
+Keep `.env` private: the token gives full control of the bot, and the GIPHY key is also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
 ### `/setup`
 
@@ -156,6 +158,9 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MARKOV_RANDOM_AS_REPLY` | Percent (0–100) of those random messages sent as a reply to the message. The rest are posted in the channel without a reply. | 50 |
 | `MARKOV_COOLDOWN` | Seconds after a Markov message before the chat talks again in the same channel | 60 |
 | `MARKOV_MENTION_REPLY` | Who gets a reply to an @mention. **`always`:** everyone, also during the cooldown. **`cooldown`:** a mention gets a reply only when the cooldown is over. **`mods`:** only mods get a reply; other people get no reply to a mention. Mods always get a reply. (A menu in `/setup`.) This setting replaces `MARKOV_ALWAYS_REPLY_MENTION`: at start, the bot changes an old saved value (on → `always`, off → `cooldown`). | always |
+| `MARKOV_GIF_CHANCE` | Percent chance (0–100) that a Markov message also gets a GIF from GIPHY. Decimals are permitted. Needs `GIPHY_API_KEY` in `.env`. | 0 |
+| `MARKOV_GIF_COOLDOWN` | Seconds between GIPHY requests, for the full bot | 40 |
+| `MARKOV_GIF_RATING` | Highest GIPHY rating for Markov GIFs: `g`, `pg`, `pg-13`, or `r` (a menu in `/setup`) | pg-13 |
 | `MARKOV_IMPORT_MAX_MB` | Largest file for `/markov import`, in MB | 25 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
@@ -318,7 +323,7 @@ A trigger with the same name as a command does not fire. The `/autoreact` comman
 
 | Command | Access | Description |
 |---|---|---|
-| `/markov status` | mod only | The size of the chain, its channels and the mode. |
+| `/markov status` | mod only | The size of the chain, its channels, the mode, and the GIF settings. |
 | `/markov forget <text>` | mod only | Removes a word, or a phrase, from the chain, after you confirm. |
 | `/markov blockadd <text>` | mod only | Blocks a word or phrase. Then offers to remove it from the chain. |
 | `/markov blockremove <text>` | mod only | Removes a word or phrase from the blocklist. |
@@ -404,6 +409,8 @@ The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and repl
 - **Mentions:** the bot replies to `@BotName <text>`. With Message Content on or off, it tries to start from a word of your message.
 - **Random talk:** after a normal message, the bot talks with a chance of `MARKOV_REPLY_CHANCE` percent. For a busy server, use a decimal value such as `0.1` (about 1 in 1000 messages). `MARKOV_RANDOM_AS_REPLY` percent of these messages are replies to the message; the others are posted in the channel. This also works without Message Content, but then the bot cannot read the message, so it starts at a random place in the chain.
 - **Cooldown:** after the bot talks in a channel, it waits `MARKOV_COOLDOWN` seconds before random talk in that channel again. Each channel has its own timer, and a restart resets the timers. With `MARKOV_MENTION_REPLY` set to `always`, mentions always get a reply; with `cooldown`, mentions also wait for the cooldown; with `mods`, only mods get a reply to a mention. Mentions from mods (`MOD_ROLE`, the Administrator permission, or the server owner) always get a reply. Each Markov message starts the cooldown, also a reply to a mention.
+
+**GIFs:** with `GIPHY_API_KEY` in `.env`, each Markov message has a chance of `MARKOV_GIF_CHANCE` percent to get a GIF. The bot uses the text of its message (at most 50 characters, cut at a full word) as a GIPHY search, and puts the first result in an embed on the same message. `MARKOV_GIF_RATING` is the highest rating. `MARKOV_GIF_COOLDOWN` is the time between GIPHY requests for the full bot, because the API key has an hourly limit. For example, a key with 100 requests each hour needs a cooldown of at least 36 seconds. The cooldown starts at each request, also a failed request. If GIPHY sends an error, finds nothing, or does not answer in 3 seconds, the bot posts the message without a GIF. The bot sends the Markov text to GIPHY, but not who wrote the words.
 
 A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 

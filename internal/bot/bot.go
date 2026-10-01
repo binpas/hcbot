@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type Bot struct {
 	env   config.Env
 	cfg   *config.Store
 	mk    markovState
+	gif   gifState
 
 	commands   map[string]*command // keyed by qualified name, e.g. "jail arrest"
 	groups     map[string]*group
@@ -39,6 +41,9 @@ type Bot struct {
 
 	backupDir  string        // where /db backup writes
 	assetDelay time.Duration // pause between emoji/sticker creates
+
+	giphyURL  string // the GIPHY search endpoint (a fake server in tests)
+	giphyHTTP *http.Client
 
 	// forwardRetry is how long forwardOrLink waits before it checks a
 	// forward again (short in tests).
@@ -90,6 +95,8 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		confirms:     map[string]func(*Ctx, []string){},
 		stop:         make(chan struct{}),
 		forwardRetry: 2 * time.Second,
+		giphyURL:     giphySearchURL,
+		giphyHTTP:    &http.Client{Timeout: giphyTimeout},
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
 		msgs:         newLRU[cachedMessage](),
