@@ -286,3 +286,106 @@ func TestAuditReasonEncoding(t *testing.T) {
 		t.Errorf("decoded reason = %q, want %q", c[0].Reason, reason)
 	}
 }
+
+// dmText returns the punishment DMs sent to the fake DM channel.
+func dmText(tb *testBot) string { return strings.Join(tb.sent("7000"), "\n") }
+
+func TestPunishmentDMs(t *testing.T) {
+	tb := newTestBot(t)
+
+	// Ban: the DM goes out before the ban, and does not name the mod.
+	tb.run(tMod, "ban", userOpt("member", tTarget), strOpt("reason", "spam"))
+	tb.expect(false, "Member Banned", "DM sent")
+	dm := dmText(tb)
+	for _, want := range []string{"banned", "Test Guild", "permanent", "spam"} {
+		if !strings.Contains(dm, want) {
+			t.Errorf("ban DM missing %q: %s", want, dm)
+		}
+	}
+	if strings.Contains(dm, tMod) || strings.Contains(dm, "moddy") {
+		t.Errorf("ban DM names the moderator: %s", dm)
+	}
+	calls := strings.Join(tb.callList(), "\n")
+	if i, j := strings.Index(calls, "POST /channels/7000/messages"), strings.Index(calls, "PUT /guilds/100/bans/"); i < 0 || j < i {
+		t.Errorf("DM not sent before the ban:\n%s", calls)
+	}
+	if !contains(tb.sent(tChModLog), "DM sent") {
+		t.Error("mod log has no DM result")
+	}
+
+	// Tempban and mute: the length and end time.
+	for _, cmd := range []string{"tempban", "mute"} {
+		tb.api.reset()
+		tb.run(tMod, cmd, userOpt("member", tTarget), intOpt("duration", 90), strOpt("reason", "cool off"))
+		if dm := dmText(tb); !strings.Contains(dm, "1h 30m") || !strings.Contains(dm, "<t:") || !strings.Contains(dm, "cool off") {
+			t.Errorf("%s DM = %s", cmd, dm)
+		}
+	}
+
+	// Kick: no length.
+	tb.api.reset()
+	tb.run(tMod, "kick", userOpt("member", tTarget))
+	if dm := dmText(tb); !strings.Contains(dm, "kicked") || strings.Contains(dm, "Length") || !strings.Contains(dm, noReason) {
+		t.Errorf("kick DM = %s", dm)
+	}
+
+	// Jail: indefinite and timed.
+	tb.api.reset()
+	tb.run(tMod, "jail arrest", userOpt("member", tTarget), strOpt("reason", "rude"))
+	tb.expect(false, "Member Arrested", "DM sent")
+	if dm := dmText(tb); !strings.Contains(dm, "jailed") || !strings.Contains(dm, "indefinite") || !strings.Contains(dm, "rude") {
+		t.Errorf("jail DM = %s", dm)
+	}
+
+	// Warn: the reason and the total.
+	tb.api.reset()
+	tb.run(tMod, "warn add", userOpt("member", tVIPUser), strOpt("reason", "noise"))
+	if dm := dmText(tb); !strings.Contains(dm, "warned") || !strings.Contains(dm, "noise") || !strings.Contains(dm, "Total warnings:** 1") {
+		t.Errorf("warn DM = %s", dm)
+	}
+}
+
+func TestPunishmentDMFailures(t *testing.T) {
+	tb := newTestBot(t)
+
+	// The member does not accept DMs: the action still happens.
+	tb.api.fail("POST", "/channels/7000/messages")
+	tb.run(tMod, "mute", userOpt("member", tTarget), intOpt("duration", 5))
+	tb.expect(false, "Member Muted", "DM failed")
+	tb.expectCall(1, "PATCH", "/guilds/100/members/"+tTarget)
+
+	// The ban fails after the DM: the DM is deleted.
+	tb = newTestBot(t)
+	tb.api.fail("PUT", "/guilds/100/bans/.*")
+	tb.run(tMod, "ban", userOpt("member", tTarget))
+	tb.expect(true, "I couldn't ban target")
+	tb.expectCall(1, "DELETE", "/channels/7000/messages/8000")
+
+	// The setting is off: no DM.
+	tb = newTestBot(t)
+	tb.config(map[string]string{"MOD_DM_PUNISHMENT": "off"})
+	tb.run(tMod, "kick", userOpt("member", tTarget))
+	r := tb.expect(false, "Member Kicked")
+	if strings.Contains(r.Embeds[0].Description, "DM") {
+		t.Errorf("kick reply has a DM note with the setting off: %s", r.Embeds[0].Description)
+	}
+	tb.expectCall(0, "POST", "/users/@me/channels")
+}
+
+func TestWarnAutoActionDMs(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"WARN_ARREST_THRESHOLD": "1", "WARN_KICK_THRESHOLD": "2", "WARN_ARREST_DURATION": "30"})
+
+	tb.run(tMod, "warn add", userOpt("member", tTarget))
+	tb.expect(false, "Auto-Arrested", "DM sent")
+	if dm := dmText(tb); !strings.Contains(dm, "jailed") || !strings.Contains(dm, "30m") || !strings.Contains(dm, "reached 1 warnings") {
+		t.Errorf("auto-arrest DM = %s", dm)
+	}
+
+	tb.api.reset()
+	tb.run(tMod, "warn add", userOpt("member", tTarget))
+	tb.expect(false, "Auto-Kicked", "DM sent")
+	if dm := dmText(tb); !strings.Contains(dm, "kicked") || !strings.Contains(dm, "Auto-kick: reached 2 warnings") {
+		t.Errorf("auto-kick DM = %s", dm)
+	}
+}

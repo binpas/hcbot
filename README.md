@@ -133,6 +133,7 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `TICKET_CAT` | **Category** for new tickets | — |
 | `MOD_SUPPORT` | Channel for the mod support embed | — |
 | `MOD_ROLE` | The moderator role | — |
+| `MOD_DM_PUNISHMENT` | Send a DM to a member when they are banned, kicked, muted, warned, or jailed. The DM shows the server, the action, the length, and the reason. It does not show the moderator. | on |
 | `ON_THE_REAL` | Channel where autoreacts are off ¹ | — |
 | `MOTD_ROLE` | Member Of The Day role | — |
 | `CURATED_EMOTE` | Emote that counts toward curation ¹ | ⭐ |
@@ -241,6 +242,8 @@ Trigger responses show `@everyone`, `@here` and role mentions but **do not ping*
 | `/userinfo [member]` | mod only | Member info, posted to `SENSITIVE_LOG`. |
 | `/serverinfo` | mod only | Server overview. |
 | `/readme` | mod only | Shows this README in pages. |
+
+When `MOD_DM_PUNISHMENT` is on, the bot sends a DM to the member after `/ban`, `/tempban`, `/kick`, `/mute`, `/warn add`, `/jail arrest`, and the automatic arrest and kick from warnings. The DM shows the server, the action, the length (with the end time), and the reason. It does not show the moderator. For a ban or a kick, the bot sends the DM before the action, because it cannot send a DM after the member leaves. If the action then fails, the bot deletes the DM. The mod reply and the mod log show if the DM was sent or failed. A failed DM (for example, the member does not accept DMs) does not stop the action.
 
 ### User notes
 

@@ -112,6 +112,8 @@ var SetupKeys = []SetupKey{
 		"Channel ID for the channel to use for the mod support embed"},
 	{"MOD_ROLE", "MOD_ROLE_ID", KindRole, "",
 		"Role ID for the moderator role"},
+	{"MOD_DM_PUNISHMENT", "MOD_DM_PUNISHMENT", KindBool, "on",
+		"DM a member the reason and length when they are banned, kicked, muted, warned or jailed"},
 	{"ON_THE_REAL", "ON_THE_REAL_CHANNEL_ID", KindChannel, "",
 		"Channel ID for the channel where autoreacts are disabled"},
 	{"MOTD_ROLE", "MOTD_ROLE_ID", KindRole, "",

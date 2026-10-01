@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -198,6 +199,87 @@ func (c *Ctx) actionFailed(what string, err error) {
 	c.Reply(true, errEmbed(fmt.Sprintf("I couldn't %s — check my permissions and role position.", what)))
 }
 
+// punishDM is the result of dmPunishment.
+type punishDM struct {
+	tried     bool               // false when MOD_DM_PUNISHMENT is off
+	channelID string             // the DM channel
+	msg       *discordgo.Message // nil when the DM failed
+}
+
+// note is the line added to the mod reply and the mod log.
+func (d punishDM) note() string {
+	switch {
+	case !d.tried:
+		return ""
+	case d.msg != nil:
+		return "\n*DM sent to the member.*"
+	}
+	return "\n*DM failed — the member does not accept DMs from the bot.*"
+}
+
+// addTo adds the DM result to an action embed.
+func (d punishDM) addTo(embed *discordgo.MessageEmbed) *discordgo.MessageEmbed {
+	embed.Description += d.note()
+	return embed
+}
+
+// dmPunishment tells a member what was done to them, why, and for how
+// long. It does not name the moderator. length may be empty (kick, warn).
+// Ban and kick must call it before the action: after the member leaves,
+// the bot usually shares no server with them and cannot DM them.
+func (b *Bot) dmPunishment(guildID, userID, action, length, reason string, colour int) punishDM {
+	if !b.cfg.Bool("MOD_DM_PUNISHMENT") {
+		return punishDM{}
+	}
+	server := "the server"
+	if g, err := b.s.State.Guild(guildID); err == nil && g.Name != "" {
+		server = "**" + g.Name + "**"
+	}
+	if reason == "" {
+		reason = noReason
+	}
+	desc := fmt.Sprintf("You were %s in %s.", action, server)
+	if length != "" {
+		desc += "\n**Length:** " + length
+	}
+	desc += "\n**Reason:** " + reason
+	d := punishDM{tried: true}
+	dm, err := b.s.UserChannelCreate(userID)
+	if err != nil {
+		log.Printf("punishment DM to %s: open DM: %v", userID, err)
+		return d
+	}
+	d.channelID = dm.ID
+	if d.msg, err = b.s.ChannelMessageSendEmbed(dm.ID, makeEmbed("Moderation notice", desc, colour)); err != nil {
+		log.Printf("punishment DM to %s: %v", userID, err)
+	}
+	return d
+}
+
+// undo deletes a DM sent before an action that then failed.
+func (b *Bot) undoDM(d punishDM) {
+	if d.msg == nil {
+		return
+	}
+	if err := b.s.ChannelMessageDelete(d.channelID, d.msg.ID); err != nil {
+		log.Printf("delete punishment DM: %v", err)
+	}
+}
+
+// lengthUntil formats a timed punishment length with its end time.
+func lengthUntil(seconds int64) string {
+	end := time.Now().Add(time.Duration(seconds) * time.Second).Unix()
+	return fmt.Sprintf("%s (ends %s)", humaniseDuration(seconds), discordTimestamp(end, "f"))
+}
+
+// jailLength is lengthUntil, or "indefinite" for a sentence with no end.
+func jailLength(seconds int64) string {
+	if seconds <= 0 {
+		return "indefinite"
+	}
+	return lengthUntil(seconds)
+}
+
 func (b *Bot) cmdSelfTimeout(c *Ctx) {
 	minutes := c.Int("minutes", 10)
 	if minutes < 1 || minutes > 1440 {
@@ -221,13 +303,15 @@ func (b *Bot) cmdBan(c *Ctx) {
 		return
 	}
 	reason := c.reason()
+	dm := b.dmPunishment(c.GuildID(), m.User.ID, "banned", "permanent", reason, colourRed)
 	if err := b.s.GuildBanCreateWithReason(c.GuildID(), m.User.ID, reason, 0, auditReason(reason)); err != nil {
+		b.undoDM(dm)
 		c.actionFailed("ban "+m.User.String(), err)
 		return
 	}
-	c.replyAndLog(makeEmbed("🔨 Member Banned",
+	c.replyAndLog(dm.addTo(makeEmbed("🔨 Member Banned",
 		fmt.Sprintf("**%s** was banned by %s.\n**Reason:** %s", m.User, userMention(c.UserID()), reason),
-		colourRed), true)
+		colourRed)), true)
 }
 
 func (b *Bot) cmdKick(c *Ctx) {
@@ -236,13 +320,15 @@ func (b *Bot) cmdKick(c *Ctx) {
 		return
 	}
 	reason := c.reason()
+	dm := b.dmPunishment(c.GuildID(), m.User.ID, "kicked", "", reason, colourOrange)
 	if err := b.s.GuildMemberDeleteWithReason(c.GuildID(), m.User.ID, reason, auditReason(reason)); err != nil {
+		b.undoDM(dm)
 		c.actionFailed("kick "+m.User.String(), err)
 		return
 	}
-	c.replyAndLog(makeEmbed("👢 Member Kicked",
+	c.replyAndLog(dm.addTo(makeEmbed("👢 Member Kicked",
 		fmt.Sprintf("**%s** was kicked by %s.\n**Reason:** %s", m.User, userMention(c.UserID()), reason),
-		colourOrange), true)
+		colourOrange)), true)
 }
 
 func (b *Bot) cmdTempban(c *Ctx) {
@@ -253,14 +339,16 @@ func (b *Bot) cmdTempban(c *Ctx) {
 	duration := c.Int("duration", 60)
 	reason := c.reason()
 	banReason := fmt.Sprintf("[Temp-ban: %d min] %s", duration, reason)
+	dm := b.dmPunishment(c.GuildID(), m.User.ID, "temporarily banned", lengthUntil(duration*60), reason, colourRed)
 	if err := b.s.GuildBanCreateWithReason(c.GuildID(), m.User.ID, banReason, 0, auditReason(banReason)); err != nil {
+		b.undoDM(dm)
 		c.actionFailed("ban "+m.User.String(), err)
 		return
 	}
-	c.replyAndLog(makeEmbed("⏱️ Member Temp-Banned",
+	c.replyAndLog(dm.addTo(makeEmbed("⏱️ Member Temp-Banned",
 		fmt.Sprintf("**%s** was temp-banned by %s for **%d min**.\n**Reason:** %s",
 			m.User, userMention(c.UserID()), duration, reason),
-		colourRed), true)
+		colourRed)), true)
 
 	// Stored so the unban survives a restart; runScheduledActions does it.
 	if err := b.db.ScheduleAction(c.GuildID(), m.User.ID, m.User.String(), db.ActionUnban, "",
@@ -282,10 +370,11 @@ func (b *Bot) cmdMute(c *Ctx) {
 		c.actionFailed("mute "+m.User.String(), err)
 		return
 	}
-	c.replyAndLog(makeEmbed("🔇 Member Muted",
+	dm := b.dmPunishment(c.GuildID(), m.User.ID, "muted", lengthUntil(duration*60), reason, colourDarkGrey)
+	c.replyAndLog(dm.addTo(makeEmbed("🔇 Member Muted",
 		fmt.Sprintf("**%s** was muted by %s for **%d min**.\n**Reason:** %s",
 			m.User, userMention(c.UserID()), duration, reason),
-		colourDarkGrey), true)
+		colourDarkGrey)), true)
 }
 
 func (b *Bot) cmdUnmute(c *Ctx) {
@@ -399,34 +488,38 @@ func (b *Bot) cmdWarnAdd(c *Ctx) {
 		c.Reply(true, errEmbed("Couldn't save the warning — check the bot's log."))
 		return
 	}
-	c.replyAndLog(makeEmbed("⚠️ Member Warned",
+	dm := b.dmPunishment(guildID, m.User.ID, "warned", "", fmt.Sprintf("%s\n**Total warnings:** %d", reason, total), colourYellow)
+	c.replyAndLog(dm.addTo(makeEmbed("⚠️ Member Warned",
 		fmt.Sprintf("**%s** was warned by %s.\n**Reason:** %s\n**Total warnings:** %d",
 			m.User, userMention(c.UserID()), reason, total),
-		colourYellow), true)
+		colourYellow)), true)
 
 	// Warning thresholds
 	var result *discordgo.MessageEmbed
 	switch total {
 	case b.cfg.Int("WARN_KICK_THRESHOLD"):
 		kickReason := fmt.Sprintf("Auto-kick: reached %d warnings", total)
+		dm := b.dmPunishment(guildID, m.User.ID, "kicked", "", kickReason, colourRed)
 		if err := b.s.GuildMemberDeleteWithReason(guildID, m.User.ID, kickReason, auditReason(kickReason)); err != nil {
+			b.undoDM(dm)
 			c.logErr("auto-kick", err)
 			result = makeEmbed("⚠️ Auto-Kick Failed",
 				fmt.Sprintf("%s hit **%d warnings** but couldn't be kicked.", userMention(m.User.ID), total), colourRed)
 		} else {
-			result = makeEmbed("👢 Auto-Kicked",
+			result = dm.addTo(makeEmbed("👢 Auto-Kicked",
 				fmt.Sprintf("%s was automatically kicked after reaching **%d warnings**.", userMention(m.User.ID), total),
-				colourRed)
+				colourRed))
 		}
 	case b.cfg.Int("WARN_ARREST_THRESHOLD"):
 		minutes := int64(b.cfg.Int("WARN_ARREST_DURATION"))
-		ok, problem, sentenceID := b.arrestMember(guildID, m, b.s.State.User.ID, minutes*60,
-			fmt.Sprintf("Automatic arrest: reached %d warnings", total))
+		arrestReason := fmt.Sprintf("Automatic arrest: reached %d warnings", total)
+		ok, problem, sentenceID := b.arrestMember(guildID, m, b.s.State.User.ID, minutes*60, arrestReason)
 		if ok {
-			result = makeEmbed("🚔 Auto-Arrested",
+			dm := b.dmPunishment(guildID, m.User.ID, "jailed", jailLength(minutes*60), arrestReason, colourDarkOrange)
+			result = dm.addTo(makeEmbed("🚔 Auto-Arrested",
 				fmt.Sprintf("%s was automatically jailed for **%s** after reaching **%d warnings**.\n**Sentence:** `#%d`",
 					userMention(m.User.ID), humaniseDuration(minutes*60), total, sentenceID),
-				colourDarkOrange)
+				colourDarkOrange))
 		} else {
 			result = makeEmbed("⚠️ Auto-Arrest Failed",
 				fmt.Sprintf("%s hit **%d warnings** but couldn't be jailed: %s", userMention(m.User.ID), total, problem),

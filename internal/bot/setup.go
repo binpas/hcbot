@@ -43,7 +43,7 @@ var setupSections = []struct {
 	keys  []string
 }{
 	{"Logs", []string{"MOD_LOG", "BIG_BROTHER", "SENSITIVE_LOG"}},
-	{"Mods and tickets", []string{"MOD_ROLE", "MOD_SUPPORT", "TICKET_CAT"}},
+	{"Mods and tickets", []string{"MOD_ROLE", "MOD_DM_PUNISHMENT", "MOD_SUPPORT", "TICKET_CAT"}},
 	{"Jail", []string{"JAIL_ROLE", "JAIL_CHANNEL", "JAIL_PROTECTED_ROLES"}},
 	{"Warnings", []string{"WARN_ARREST_THRESHOLD", "WARN_ARREST_DURATION", "WARN_KICK_THRESHOLD"}},
 	{"Community", []string{"MOTD_ROLE", "CURATED", "CURATED_EMOTE", "CURATED_THRESHOLD", "ON_THE_REAL"}},

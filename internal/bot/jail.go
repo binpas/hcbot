@@ -388,10 +388,11 @@ func (b *Bot) cmdArrest(c *Ctx) {
 	if reason == "" {
 		reason = noReason
 	}
-	embed := makeEmbed("🚔 Member Arrested",
+	dm := b.dmPunishment(c.GuildID(), m.User.ID, "jailed", jailLength(seconds), reason, colourDarkOrange)
+	embed := dm.addTo(makeEmbed("🚔 Member Arrested",
 		fmt.Sprintf("**%s** was jailed by %s.\n**Sentence:** `#%d` • **Length:** %s\n**Reason:** %s",
 			m.User.String(), userMention(c.UserID()), sentenceID, length, reason),
-		colourDarkOrange)
+		colourDarkOrange))
 	c.Reply(false, embed)
 	b.modLog(embed)
 }
