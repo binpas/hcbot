@@ -148,3 +148,46 @@ func TestParseImport(t *testing.T) {
 		t.Fatalf("invalid UTF-8 = %q", lines)
 	}
 }
+
+func TestNormalize(t *testing.T) {
+	cases := map[string]string{
+		"Cat!": "cat", "(cat)": "cat", `"cat,"`: "cat", "...cat": "cat", "don't": "don't",
+		"lol😂": "lol", "🍆": "🍆", "🍆!": "🍆", "🍆🍆": "🍆🍆", ":3": ":3", ":D": ":d",
+		":)": ":)", ":(": ":(", "-": "-", "!!!": "!!!", "<:Pog:99>": ":pog:99",
+	}
+	for in, want := range cases {
+		if got := Normalize(in); got != want {
+			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
+		}
+	}
+	bl := NewBlocklist([]string{"🍆", ":3"})
+	if !bl.Blocks(Tokenize("nice 🍆!")) || !bl.Blocks(Tokenize("ok :3")) || bl.Blocks(Tokenize("3 cats")) {
+		t.Error("emoji and emoticon blocks do not match correctly")
+	}
+}
+
+func TestLookupWord(t *testing.T) {
+	s := openTest(t)
+	learn(t, s, "i like Cats a lot", "cats, again", "my cats", "i like 🍆 a lot", "nice 🍆!")
+	info, err := s.LookupWord("cats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Form{{"cats", 2}, {"cats,", 1}}
+	if !slices.Equal(info.Forms, want) || !slices.Equal(info.Before, []string{"like", "my"}) ||
+		!slices.Equal(info.After, []string{"a", "again"}) {
+		t.Fatalf("LookupWord(cats) = %+v", info)
+	}
+	if info, _ := s.LookupWord(Phrase("🍆")[0]); len(info.Forms) != 2 {
+		t.Fatalf("LookupWord(🍆) = %+v", info)
+	}
+	if n, _ := s.Forget(Phrase("🍆")); n == 0 {
+		t.Fatal("Forget(🍆) removed nothing")
+	}
+	if info, _ := s.LookupWord("🍆"); len(info.Forms) != 0 {
+		t.Fatalf("after Forget: %+v", info)
+	}
+	if info, _ := s.LookupWord("unknown"); len(info.Forms) != 0 {
+		t.Fatalf("LookupWord(unknown) = %+v", info)
+	}
+}

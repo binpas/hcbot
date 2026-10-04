@@ -45,12 +45,26 @@ func Tokenize(text string) []string {
 	return out
 }
 
-// Normalize is the form used to match a word against the blocklist and
-// /markov forget: lowercase, without punctuation at either end.
+// Normalize is the form used to match a word against the blocklist,
+// /markov forget and /markov lookup: lowercase, without punctuation and
+// symbols at either end ("Cat!" and "(cat)" become "cat"). A colon,
+// semicolon or equals sign at the start stays, so emoticons such as ":3"
+// and ":D" do not become "3" and "d". A word made only of symbols, such as
+// an emoji or ":)", loses only the sentence punctuation at its end ("🍆!"
+// becomes "🍆").
 func Normalize(word string) string {
-	return strings.TrimFunc(strings.ToLower(word), func(r rune) bool {
-		return unicode.IsPunct(r) || unicode.IsSymbol(r)
-	})
+	lower := strings.ToLower(word)
+	edge := func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSymbol(r) }
+	core := strings.TrimRightFunc(strings.TrimLeftFunc(lower, func(r rune) bool {
+		return edge(r) && r != ':' && r != ';' && r != '='
+	}), edge)
+	if strings.IndexFunc(core, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }) >= 0 {
+		return core
+	}
+	if t := strings.TrimRight(lower, ".,!?"); t != "" {
+		return t
+	}
+	return lower
 }
 
 // Phrase splits text into normalized words, for the blocklist and forget.

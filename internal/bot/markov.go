@@ -113,6 +113,13 @@ func (b *Bot) registerMarkov() {
 		handler:     b.cmdMarkovForget,
 	})
 	b.addCommand(&command{
+		name:        "markov lookup",
+		description: "Look up a word or phrase in the Markov chain.",
+		options:     []*discordgo.ApplicationCommandOption{text("The word or phrase to look up")},
+		perm:        permMod,
+		handler:     b.cmdMarkovLookup,
+	})
+	b.addCommand(&command{
 		name:        "markov blockadd",
 		description: "Block a word or phrase: the Markov chat never learns or says it.",
 		options:     []*discordgo.ApplicationCommandOption{text("The word or phrase to block")},
@@ -151,6 +158,7 @@ func (b *Bot) registerMarkov() {
 		perm:        permAdmin,
 		handler:     b.cmdMarkovReset,
 	})
+	b.addComponent("mklookup", b.onMarkovLookupForget)
 	b.addConfirm("mkforget", b.onMarkovForgetConfirm)
 	b.addConfirm("mkprune", b.onMarkovPruneConfirm)
 	b.addConfirm("mkreset", b.onMarkovResetConfirm)
@@ -396,12 +404,20 @@ func (b *Bot) cmdMarkovForget(c *Ctx) {
 	if !ok {
 		return
 	}
-	b.askMarkovForget(c, phrase, "")
+	b.askMarkovForget(c, phrase, "", false)
 }
 
 // askMarkovForget counts the steps a phrase makes and asks to remove them.
-// intro goes before the question.
-func (b *Bot) askMarkovForget(c *Ctx, phrase []string, intro string) {
+// intro goes before the question. With update, the question replaces the
+// message of the clicked button.
+func (b *Bot) askMarkovForget(c *Ctx, phrase []string, intro string, update bool) {
+	respond := func(e *discordgo.MessageEmbed, components []discordgo.MessageComponent) {
+		if update {
+			c.Update([]*discordgo.MessageEmbed{e}, components)
+		} else {
+			c.ReplyComplex(true, []*discordgo.MessageEmbed{e}, components)
+		}
+	}
 	b.flushMarkov()
 	quoted := "`" + strings.Join(phrase, " ") + "`"
 	n, err := b.chain.CountPhrase(phrase)
@@ -410,7 +426,7 @@ func (b *Bot) askMarkovForget(c *Ctx, phrase []string, intro string) {
 		return
 	}
 	if n == 0 {
-		c.Reply(true, okEmbed(intro+"The Markov chain does not contain "+quoted+"."))
+		respond(okEmbed(intro+"The Markov chain does not contain "+quoted+"."), []discordgo.MessageComponent{})
 		return
 	}
 	id, err := b.savePending("mkforget", c.UserID(), phrase)
@@ -418,9 +434,89 @@ func (b *Bot) askMarkovForget(c *Ctx, phrase []string, intro string) {
 		c.dbFailed("save pending forget", err)
 		return
 	}
-	c.ReplyComplex(true, []*discordgo.MessageEmbed{makeEmbed("🧹 Remove from the Markov chain?",
-		fmt.Sprintf("%sRemove **%d** word step(s) that contain %s?", intro, n, quoted), colourOrange)},
+	respond(makeEmbed("🧹 Remove from the Markov chain?",
+		fmt.Sprintf("%sRemove **%d** word step(s) that contain %s?", intro, n, quoted), colourOrange),
 		confirmButtons("mkforget", c.UserID(), id))
+}
+
+// cmdMarkovLookup shows if the chain contains a word or phrase. For one
+// word it shows each stored form ("cat", "cat!") and the words around it.
+func (b *Bot) cmdMarkovLookup(c *Ctx) {
+	phrase, ok := markovPhrase(c)
+	if !ok {
+		return
+	}
+	b.flushMarkov()
+	quoted := "`" + strings.Join(phrase, " ") + "`"
+	e := makeEmbed("🔎 Markov lookup", "", colourBlurple)
+	list := func(words []string) string {
+		if len(words) == 0 {
+			return "*none*"
+		}
+		return truncate("`"+strings.Join(words, "`, `")+"`", 1000)
+	}
+	var found bool
+	if len(phrase) == 1 {
+		info, err := b.chain.LookupWord(phrase[0])
+		if err != nil {
+			c.dbFailed("markov lookup", err)
+			return
+		}
+		if found = len(info.Forms) > 0; found {
+			forms := make([]string, len(info.Forms))
+			for i, f := range info.Forms {
+				forms[i] = fmt.Sprintf("`%s` (%d×)", f.Word, f.Seen)
+			}
+			e.Fields = append(e.Fields,
+				&discordgo.MessageEmbedField{Name: "Stored forms (times seen)", Value: truncate(strings.Join(forms, ", "), 1000)},
+				&discordgo.MessageEmbedField{Name: "Often before it", Value: list(info.Before), Inline: true},
+				&discordgo.MessageEmbedField{Name: "Often after it", Value: list(info.After), Inline: true})
+		}
+	} else {
+		n, err := b.chain.CountPhrase(phrase)
+		if err != nil {
+			c.dbFailed("markov lookup", err)
+			return
+		}
+		if found = n > 0; found {
+			e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Word steps", Value: fmt.Sprint(n)})
+		}
+	}
+	e.Description = "The Markov chain does not contain " + quoted + "."
+	if found {
+		e.Description = "The Markov chain contains " + quoted + "."
+	}
+	blocked := "No"
+	if b.markovBlocks(phrase) {
+		blocked = "Yes: the bot does not learn or say it."
+	}
+	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Blocked", Value: blocked})
+	var components []discordgo.MessageComponent
+	if found {
+		id, err := b.savePending("mklookup", c.UserID(), phrase)
+		if err != nil {
+			c.dbFailed("save pending lookup", err)
+			return
+		}
+		components = []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{Label: "Forget this", Style: discordgo.DangerButton,
+				Emoji: &discordgo.ComponentEmoji{Name: "🧹"}, CustomID: "mklookup:" + id},
+		}}}
+	}
+	c.ReplyComplex(true, []*discordgo.MessageEmbed{e}, components)
+}
+
+// onMarkovLookupForget is the "Forget this" button of /markov lookup. It
+// replaces the lookup with the usual forget question.
+func (b *Bot) onMarkovLookupForget(c *Ctx) {
+	if len(c.Args) < 1 {
+		return
+	}
+	var phrase []string
+	if !b.takePending(c, "mklookup", c.Args[0], &phrase) {
+		return
+	}
+	b.askMarkovForget(c, phrase, "", true)
 }
 
 func (b *Bot) onMarkovForgetConfirm(c *Ctx, extra []string) {
@@ -460,7 +556,7 @@ func (b *Bot) cmdMarkovBlockAdd(c *Ctx) {
 	if !added {
 		intro = "`" + entry + "` was already blocked.\n\n"
 	}
-	b.askMarkovForget(c, phrase, intro)
+	b.askMarkovForget(c, phrase, intro, false)
 }
 
 func (b *Bot) cmdMarkovBlockRemove(c *Ctx) {

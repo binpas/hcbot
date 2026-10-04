@@ -323,6 +323,37 @@ func TestMarkovBlocklistAndForget(t *testing.T) {
 	tb.expect(true, "not on the blocklist")
 }
 
+func TestMarkovLookup(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral})
+	tb.say(tUser, tChGeneral, "i like cats a lot", true)
+	tb.say(tUser, tChGeneral, "nice 🍆!", true)
+
+	tb.run(tUser, "markov lookup", strOpt("text", "cats"))
+	tb.expect(true, "must be a moderator")
+
+	tb.run(tMod, "markov lookup", strOpt("text", "Cats!"))
+	tb.expect(true, "contains `cats`", "`cats` (1×)", "`like`", "`a`", "Blocked", "No")
+	tb.run(tMod, "markov lookup", strOpt("text", "dogs"))
+	tb.expect(true, "does not contain `dogs`")
+	tb.run(tMod, "markov lookup", strOpt("text", "like cats"))
+	tb.expect(true, "contains `like cats`", "Word steps")
+
+	// An emoji: look it up, then forget it with the button.
+	tb.run(tMod, "markov lookup", strOpt("text", "🍆"))
+	r := tb.expect(true, "contains `🍆`", "`🍆!` (1×)")
+	tb.click(tMod, tb.componentID(r, "mklookup:"))
+	r = tb.expect(true, "Remove **")
+	tb.click(tMod, tb.componentID(r, "confirm:yes:mkforget:"))
+	tb.expect(true, "word step(s) with `🍆`")
+	tb.run(tMod, "markov lookup", strOpt("text", "🍆"))
+	tb.expect(true, "does not contain `🍆`")
+
+	tb.run(tMod, "markov blockadd", strOpt("text", "cats"))
+	tb.run(tMod, "markov lookup", strOpt("text", "cats"))
+	tb.expect(true, "Yes: the bot does not learn or say it.")
+}
+
 func TestMarkovImportPruneReset(t *testing.T) {
 	tb := newTestBot(t)
 	if _, err := tb.db.AddMarkovBlock("nope", tMod); err != nil {

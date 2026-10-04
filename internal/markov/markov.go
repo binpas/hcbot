@@ -322,6 +322,83 @@ func (s *Store) forgetWhere(phrase []string) (string, error) {
 	return strings.Join(conds, " OR "), nil
 }
 
+// Form is one stored form of a word and how often the chain has seen it.
+type Form struct {
+	Word string
+	Seen int64
+}
+
+// WordInfo is what LookupWord finds.
+type WordInfo struct {
+	Forms  []Form   // the stored forms that match, most seen first
+	Before []string // the words seen most often just before it
+	After  []string // the words seen most often just after it
+}
+
+// lookupLimit is the most forms, and words before and after, LookupWord
+// returns.
+const lookupLimit = 10
+
+// LookupWord finds the stored forms of a normalized word (see matchIDs). A
+// form counts each time a learned message used it, so a form that forget
+// or prune removed from every step is not shown.
+func (s *Store) LookupWord(w string) (WordInfo, error) {
+	var info WordInfo
+	ids, err := s.matchIDs(w)
+	if err != nil || len(ids) == 0 {
+		return info, err
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = fmt.Sprint(id)
+	}
+	in := "(" + strings.Join(parts, ",") + ")"
+	// The IDs come from the database, so they are safe to put in the SQL.
+	rows, err := s.sql.Query(`SELECT w.word, SUM(t.count) FROM transitions t JOIN words w ON w.id = t.next
+		WHERE t.next IN `+in+` GROUP BY t.next ORDER BY 2 DESC, 1 LIMIT ?`, lookupLimit)
+	if err != nil {
+		return info, err
+	}
+	for rows.Next() {
+		var f Form
+		if err := rows.Scan(&f.Word, &f.Seen); err != nil {
+			_ = rows.Close()
+			return info, err
+		}
+		info.Forms = append(info.Forms, f)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil || len(info.Forms) == 0 {
+		return info, err
+	}
+	if info.Before, err = s.topWords(`SELECT w.word, SUM(t.count) FROM transitions t JOIN words w ON w.id = t.w2
+		WHERE t.next IN ` + in + ` AND t.w2 != 0 GROUP BY t.w2 ORDER BY 2 DESC, 1 LIMIT ?`); err != nil {
+		return info, err
+	}
+	info.After, err = s.topWords(`SELECT w.word, SUM(t.count) FROM transitions t JOIN words w ON w.id = t.next
+		WHERE t.w2 IN ` + in + ` AND t.next != 0 GROUP BY t.next ORDER BY 2 DESC, 1 LIMIT ?`)
+	return info, err
+}
+
+// topWords runs a query of (word, weight) rows and returns the words.
+func (s *Store) topWords(query string) ([]string, error) {
+	rows, err := s.sql.Query(query, lookupLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var w string
+		var n int64
+		if err := rows.Scan(&w, &n); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 // CountPhrase counts the transitions Forget would remove.
 func (s *Store) CountPhrase(phrase []string) (int64, error) {
 	where, err := s.forgetWhere(phrase)

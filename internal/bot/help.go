@@ -67,6 +67,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 		}},
 		{"Markov Chat", []helpEntry{
 			{"/markov status", "Show the size of the chain, its channels and the mode."},
+			{"/markov lookup <text>", "Look up a word or phrase in the chain."},
 			{"/markov forget <text>", "Remove a word or phrase from the chain."},
 			{"/markov blockadd <text>", "Block a word or phrase, and offer to remove it from the chain."},
 			{"/markov blockremove <text>", "Unblock a word or phrase."},
