@@ -380,6 +380,52 @@ func TestMarkovPrefixBlock(t *testing.T) {
 	}
 }
 
+func TestMarkovLearnLog(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_LOG_CHANNEL": tChSens})
+	if _, err := tb.db.AddMarkovBlock("heck*", tMod); err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.loadMarkovBlocklist(); err != nil {
+		t.Fatal(err)
+	}
+
+	tb.say(tUser, tChGeneral, "hello there friend", false)
+	tb.say(tUser, tChGeneral, "what the hecking", false)
+	tb.say(tUser, tChGeneral, "https://x.io", false)
+	tb.say(tUser, tChVIP, "not a learn channel", false)
+	// Each logged message: a forward, then the result.
+	sent := tb.sent(tChSens)
+	if len(sent) != 6 || sent[0] != "" || !strings.Contains(sent[1], "Learned** (3 words)") ||
+		!strings.Contains(sent[1], "<@"+tUser+">") || !strings.Contains(sent[3], "blocked by ||`heck*`||") ||
+		!strings.Contains(sent[5], "no words") {
+		t.Fatalf("log = %q", sent)
+	}
+	calls := tb.api.find("POST", "/channels/"+tChSens+"/messages")
+	if !strings.Contains(string(calls[0].Body), `"type":1`) {
+		t.Errorf("first post is not a forward: %s", calls[0].Body)
+	}
+
+	tb.config(map[string]string{"MARKOV_LOG_MODE": "skipped"})
+	tb.say(tUser, tChGeneral, "learned again", false)
+	tb.say(tUser, tChGeneral, "heck", false)
+	if sent := tb.sent(tChSens); len(sent) != 8 || !strings.Contains(sent[7], "heck*") {
+		t.Fatalf("skipped mode log = %q", sent[6:])
+	}
+}
+
+// Without Message Content only mentions are read: no forward, and other
+// messages are not logged.
+func TestMarkovLearnLogWithoutMessageContent(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_LOG_CHANNEL": tChSens})
+	tb.say(tUser, tChGeneral, "not read", false)
+	tb.say(tUser, tChGeneral, "hello bot", true)
+	if sent := tb.sent(tChSens); len(sent) != 1 || !strings.Contains(sent[0], "Learned** (2 words)") {
+		t.Fatalf("log = %q", sent)
+	}
+}
+
 func TestMarkovImportPruneReset(t *testing.T) {
 	tb := newTestBot(t)
 	if _, err := tb.db.AddMarkovBlock("nope", tMod); err != nil {

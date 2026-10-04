@@ -162,6 +162,8 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MARKOV_GIF_COOLDOWN` | Seconds between GIPHY requests, for the full bot | 40 |
 | `MARKOV_GIF_RATING` | Highest GIPHY rating for Markov GIFs: `g`, `pg`, `pg-13`, or `r` (a menu in `/setup`) | pg-13 |
 | `MARKOV_IMPORT_MAX_MB` | Largest file for `/markov import`, in MB | 25 |
+| `MARKOV_LOG_CHANNEL` | Mod-only channel where the Markov chat logs each message that it reads in a learn channel, and if it learned the message. Empty: no log. See "Learn log" below. | |
+| `MARKOV_LOG_MODE` | Which messages go to `MARKOV_LOG_CHANNEL`: `all`, or `skipped` (only the messages that it did not learn). A menu in `/setup`. | all |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -417,7 +419,9 @@ A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 
 **What it learns:** the words of each message, in lowercase, with the pairs of words that come before each word. It does not keep who said a message, or the full message. A user mention is learned as that user's name (the global name or the username, without `@`), and a leading `@` is removed from other words, so a reply never pings anyone. It leaves out role and channel mentions, `@everyone`, `@here`, links, and words longer than 64 characters. It ignores a full message that contains a blocked word or phrase. Replies cannot ping anyone.
 
-**Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A phrase blocks those words in that sequence. The blocklist is in `hcbot.db`, so it stays when you delete the chain.
+**Blocklist:** a blocked entry matches whole words, without case and without punctuation at either end. For example, `cat` blocks `Cat!` but not `cats`. A word that ends with `*` is a prefix: `cat*` blocks `cat`, `cats`, and `catch`. A phrase blocks those words in that sequence. The blocklist is in `hcbot.db`, so it stays when you delete the chain.
+
+**Learn log:** set `MARKOV_LOG_CHANNEL` to a channel that only mods can see. For each message that the bot reads in a learn channel, it posts the result: **Learned** (with the number of words), or **Not learned** and the reason (a blocked entry, no words, or a full learn queue). The result shows the author, the channel, and a jump link. With Message Content on, the bot first forwards the message to the log channel. Without Message Content, it reads only messages that mention it, so it logs only those, with a jump link and no forward. With Message Content on and `MARKOV_LOG_MODE` set to `all`, the bot posts two messages for each message in the learn channels; on a busy server, use `skipped`.
 
 **Remove data:** `/markov forget` removes a word or phrase. `/markov reset` removes everything. You can also stop the bot, delete `markov.db`, `markov.db-wal` and `markov.db-shm`, and start the bot again. **Do not delete the file while the bot runs.**
 

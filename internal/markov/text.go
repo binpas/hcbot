@@ -156,8 +156,13 @@ func (bl *Blocklist) Len() int {
 // Blocks reports whether words contain a blocked word or phrase. Words
 // match whole, after Normalize, or by their start for a prefix ("word*").
 func (bl *Blocklist) Blocks(words []string) bool {
+	return bl.Match(words) != ""
+}
+
+// Match returns the first blocked word or phrase that words contain, or "".
+func (bl *Blocklist) Match(words []string) string {
 	if bl.Len() == 0 {
-		return false
+		return ""
 	}
 	norm := make([]string, len(words))
 	for i, w := range words {
@@ -173,11 +178,11 @@ func (bl *Blocklist) Blocks(words []string) bool {
 				}
 			}
 			if match {
-				return true
+				return strings.Join(p, " ")
 			}
 		}
 	}
-	return false
+	return ""
 }
 
 // ParseImport reads training text. A .json file is a DiscordChatExporter

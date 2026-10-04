@@ -44,6 +44,7 @@ type markovState struct {
 	pending [][]string           // learned messages not yet written to markov.db
 	spoke   map[string]time.Time // channel ID → last Markov message, for the cooldown
 	block   atomic.Pointer[markov.Blocklist]
+	logMu   sync.Mutex // keeps each forward and its result together in MARKOV_LOG_CHANNEL
 }
 
 // claim starts the cooldown in a channel and reports true, or reports
@@ -219,12 +220,62 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 			b.markovReply(m, words, percent(b.cfg.Int("MARKOV_RANDOM_AS_REPLY")))
 		}
 	}
-	if len(words) > 0 && !b.markovBlocks(words) && b.markovChannel("MARKOV_LEARN_CHANNELS", m.ChannelID) {
+	// Without Message Content, only mentions are read, so only they are
+	// learned or logged.
+	if (!mentioned && !b.env.MessageContent) || !b.markovChannel("MARKOV_LEARN_CHANNELS", m.ChannelID) {
+		return
+	}
+	var skipped string
+	switch match := b.mk.block.Load().Match(words); {
+	case len(words) == 0:
+		skipped = "no words (only mentions, links, or attachments)"
+	case match != "":
+		skipped = "blocked by ||`" + match + "`||"
+	default:
 		b.mk.mu.Lock()
 		if len(b.mk.pending) < markovMaxPending {
 			b.mk.pending = append(b.mk.pending, words)
+		} else {
+			skipped = "the learn queue is full (writes to markov.db fail; examine the bot's log)"
 		}
 		b.mk.mu.Unlock()
+	}
+	b.markovLog(m, len(words), skipped)
+}
+
+// markovLog posts the result of a learn to MARKOV_LOG_CHANNEL: a forward
+// of the message (only with Message Content; Discord refuses to forward a
+// message the bot cannot read), then an embed with the author and the
+// result. skipped is why the message was not learned, or "".
+func (b *Bot) markovLog(m *discordgo.Message, words int, skipped string) {
+	channelID := b.cfg.ID("MARKOV_LOG_CHANNEL")
+	if channelID == "" || (skipped == "" && b.cfg.Choice("MARKOV_LOG_MODE") == "skipped") {
+		return
+	}
+	e := makeEmbed("", fmt.Sprintf("✅ **Learned** (%d words)", words), colourGreen)
+	if skipped != "" {
+		e = makeEmbed("", "🚫 **Not learned:** "+skipped, colourRed)
+	}
+	e.Fields = []*discordgo.MessageEmbedField{
+		{Name: "Author", Value: "<@" + m.Author.ID + ">", Inline: true},
+		{Name: "Channel", Value: channelMention(m.ChannelID), Inline: true},
+		{Name: "Message", Value: fmt.Sprintf("[Jump](https://discord.com/channels/%s/%s/%s)", m.GuildID, m.ChannelID, m.ID), Inline: true},
+	}
+	b.mk.logMu.Lock()
+	defer b.mk.logMu.Unlock()
+	if b.env.MessageContent {
+		if _, err := b.s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+			Reference: &discordgo.MessageReference{
+				Type: discordgo.MessageReferenceTypeForward, MessageID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID,
+			},
+		}); err != nil {
+			log.Printf("markov log forward %s: %v", m.ID, err)
+		}
+	}
+	if _, err := b.s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		Embeds: []*discordgo.MessageEmbed{e}, AllowedMentions: markovMentions,
+	}); err != nil {
+		log.Printf("markov log: %v", err)
 	}
 }
 
