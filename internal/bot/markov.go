@@ -97,7 +97,9 @@ func (b *Bot) registerMarkov() {
 	if err := b.loadMarkovBlocklist(); err != nil {
 		log.Printf("load markov blocklist: %v", err)
 	}
-	text := func(desc string) *discordgo.ApplicationCommandOption { return optStr("text", desc, true) }
+	text := func(desc string) *discordgo.ApplicationCommandOption {
+		return optStr("text", desc+" (end a word with * to match its start)", true)
+	}
 	b.addGroup(&group{name: "markov", description: "Manage the Markov chat (mod only).", defaultPerm: manageMessages})
 	b.addCommand(&command{
 		name:        "markov status",
@@ -396,6 +398,10 @@ func markovPhrase(c *Ctx) ([]string, bool) {
 		c.Reply(true, errEmbed("That has no words to use (mentions and links are ignored)."))
 		return nil, false
 	}
+	if w := markov.ShortPrefix(phrase); w != "" {
+		c.Reply(true, errEmbed(fmt.Sprintf("`%s` is too short. Put at least %d letters before the `*`.", w, markov.MinPrefix)))
+		return nil, false
+	}
 	return phrase, true
 }
 
@@ -468,7 +474,8 @@ func (b *Bot) cmdMarkovLookup(c *Ctx) {
 				forms[i] = fmt.Sprintf("`%s` (%d×)", f.Word, f.Seen)
 			}
 			e.Fields = append(e.Fields,
-				&discordgo.MessageEmbedField{Name: "Stored forms (times seen)", Value: truncate(strings.Join(forms, ", "), 1000)},
+				&discordgo.MessageEmbedField{Name: fmt.Sprintf("Stored forms (times seen): %d", info.Total),
+					Value: truncate(strings.Join(forms, ", "), 1000)},
 				&discordgo.MessageEmbedField{Name: "Often before it", Value: list(info.Before), Inline: true},
 				&discordgo.MessageEmbedField{Name: "Often after it", Value: list(info.After), Inline: true})
 		}

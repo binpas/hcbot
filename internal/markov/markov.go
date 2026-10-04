@@ -268,7 +268,8 @@ func (s *Store) Stats() (Stats, error) {
 }
 
 // matchIDs returns the IDs of every stored word that matches w after
-// Normalize ("cat" matches "Cat", "cat!" and "cat,").
+// Normalize ("cat" matches "Cat", "cat!" and "cat,"). A prefix such as
+// "cat*" also matches "cats" and "catch".
 func (s *Store) matchIDs(w string) ([]int64, error) {
 	rows, err := s.sql.Query(`SELECT id, word FROM words`)
 	if err != nil {
@@ -282,7 +283,7 @@ func (s *Store) matchIDs(w string) ([]int64, error) {
 		if err := rows.Scan(&id, &word); err != nil {
 			return nil, err
 		}
-		if Normalize(word) == w {
+		if wordMatches(w, Normalize(word)) {
 			ids = append(ids, id)
 		}
 	}
@@ -331,6 +332,7 @@ type Form struct {
 // WordInfo is what LookupWord finds.
 type WordInfo struct {
 	Forms  []Form   // the stored forms that match, most seen first
+	Total  int64    // how many forms match; Forms has only the first few
 	Before []string // the words seen most often just before it
 	After  []string // the words seen most often just after it
 }
@@ -369,6 +371,9 @@ func (s *Store) LookupWord(w string) (WordInfo, error) {
 	}
 	_ = rows.Close()
 	if err := rows.Err(); err != nil || len(info.Forms) == 0 {
+		return info, err
+	}
+	if err := s.sql.QueryRow(`SELECT COUNT(DISTINCT next) FROM transitions WHERE next IN ` + in).Scan(&info.Total); err != nil {
 		return info, err
 	}
 	if info.Before, err = s.topWords(`SELECT w.word, SUM(t.count) FROM transitions t JOIN words w ON w.id = t.w2

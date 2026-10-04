@@ -326,7 +326,7 @@ A trigger with the same name as a command does not fire. The `/autoreact` comman
 | `/markov status` | mod only | The size of the chain, its channels, the mode, and the GIF settings. |
 | `/markov lookup <text>` | mod only | Shows if the chain contains a word or phrase. For one word, it shows each stored form (for example `cat` and `cat!`) and the words often before and after it. A button starts a forget. |
 | `/markov forget <text>` | mod only | Removes a word, or a phrase, from the chain, after you confirm. |
-| `/markov blockadd <text>` | mod only | Blocks a word or phrase. Then offers to remove it from the chain. |
+| `/markov blockadd <text>` | mod only | Blocks a word or phrase. Then offers to remove it from the chain. A word that ends with `*` is a prefix: `word*` also blocks "words" and "wordy". Put at least 3 letters before the `*`. A short prefix can block normal words, so examine it with `/markov lookup` first. `forget` and `lookup` also accept a prefix. |
 | `/markov blockremove <text>` | mod only | Removes a word or phrase from the blocklist. |
 | `/markov blocklist` | mod only | All blocked words and phrases (hidden as spoilers). |
 | `/markov import <file>` | mod only | Trains the chain from a `.txt` file (one message on each line) or a DiscordChatExporter `.json` export. |

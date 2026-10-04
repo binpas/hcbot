@@ -191,3 +191,38 @@ func TestLookupWord(t *testing.T) {
 		t.Fatalf("LookupWord(unknown) = %+v", info)
 	}
 }
+
+func TestPrefix(t *testing.T) {
+	if got := Phrase("Heck* you :* ab* **"); !slices.Equal(got, []string{"heck*", "you", ":*", "ab*", "**"}) {
+		t.Fatalf("Phrase = %q", got)
+	}
+	if ShortPrefix(Phrase("heck* you :*")) != "" || ShortPrefix(Phrase("heck ab*")) != "ab*" {
+		t.Error("ShortPrefix is wrong")
+	}
+	bl := NewBlocklist([]string{"heck*", "you dumb*"})
+	cases := map[string]bool{
+		"what the HECKING": true, "heck!": true, "oh heckers": true, "check it": false,
+		"you dumbo": true, "dumbo": false, "you are dumb": false,
+	}
+	for text, want := range cases {
+		if got := bl.Blocks(Tokenize(text)); got != want {
+			t.Errorf("Blocks(%q) = %v, want %v", text, got, want)
+		}
+	}
+
+	s := openTest(t)
+	learn(t, s, "heck no", "hecking yes", "a heckin good dog", "check this")
+	info, err := s.LookupWord("heck*")
+	if err != nil || info.Total != 3 || len(info.Forms) != 3 {
+		t.Fatalf("LookupWord(heck*) = %+v, %v", info, err)
+	}
+	if n, _ := s.Forget(Phrase("heck*")); n == 0 {
+		t.Fatal("Forget(heck*) removed nothing")
+	}
+	if info, _ := s.LookupWord("heck*"); info.Total != 0 {
+		t.Fatalf("after Forget: %+v", info)
+	}
+	if info, _ := s.LookupWord("check"); info.Total != 1 {
+		t.Fatalf("Forget(heck*) removed check: %+v", info)
+	}
+}

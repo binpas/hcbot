@@ -354,6 +354,32 @@ func TestMarkovLookup(t *testing.T) {
 	tb.expect(true, "Yes: the bot does not learn or say it.")
 }
 
+func TestMarkovPrefixBlock(t *testing.T) {
+	tb := newTestBot(t)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral})
+	tb.say(tUser, tChGeneral, "what the hecking heck", true)
+	tb.say(tUser, tChGeneral, "check this out", true)
+
+	tb.run(tMod, "markov blockadd", strOpt("text", "he*"))
+	tb.expect(true, "`he*` is too short")
+	tb.run(tMod, "markov lookup", strOpt("text", "Heck*"))
+	tb.expect(true, "contains `heck*`", "Stored forms (times seen): 2", "`hecking` (1×)", "`heck` (1×)")
+
+	tb.run(tMod, "markov blockadd", strOpt("text", "heck*"))
+	r := tb.expect(true, "`heck*` is now blocked", "Remove **")
+	tb.click(tMod, tb.componentID(r, "confirm:yes:mkforget:"))
+	tb.expect(true, "word step(s) with `heck*`")
+	tb.run(tMod, "markov lookup", strOpt("text", "heck*"))
+	tb.expect(true, "does not contain `heck*`", "Yes: the bot does not learn or say it.")
+	tb.run(tMod, "markov lookup", strOpt("text", "check"))
+	tb.expect(true, "contains `check`")
+
+	tb.say(tUser, tChGeneral, "oh heckers please", true)
+	if n, _ := tb.chain.CountPhrase([]string{"please"}); n != 0 {
+		t.Error("learned a message with a blocked prefix")
+	}
+}
+
 func TestMarkovImportPruneReset(t *testing.T) {
 	tb := newTestBot(t)
 	if _, err := tb.db.AddMarkovBlock("nope", tMod); err != nil {

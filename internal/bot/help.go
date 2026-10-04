@@ -69,7 +69,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/markov status", "Show the size of the chain, its channels and the mode."},
 			{"/markov lookup <text>", "Look up a word or phrase in the chain."},
 			{"/markov forget <text>", "Remove a word or phrase from the chain."},
-			{"/markov blockadd <text>", "Block a word or phrase, and offer to remove it from the chain."},
+			{"/markov blockadd <text>", "Block a word or phrase, and offer to remove it from the chain. `word*` also blocks each word that starts with `word`."},
 			{"/markov blockremove <text>", "Unblock a word or phrase."},
 			{"/markov blocklist", "List the blocked words and phrases."},
 			{"/markov import <file>", "Train from a .txt file (one message per line) or a DiscordChatExporter .json."},

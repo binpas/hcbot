@@ -58,7 +58,7 @@ func Normalize(word string) string {
 	core := strings.TrimRightFunc(strings.TrimLeftFunc(lower, func(r rune) bool {
 		return edge(r) && r != ':' && r != ';' && r != '='
 	}), edge)
-	if strings.IndexFunc(core, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }) >= 0 {
+	if letters(core) > 0 {
 		return core
 	}
 	if t := strings.TrimRight(lower, ".,!?"); t != "" {
@@ -67,15 +67,66 @@ func Normalize(word string) string {
 	return lower
 }
 
-// Phrase splits text into normalized words, for the blocklist and forget.
+// letters counts the letters and numbers in s.
+func letters(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			n++
+		}
+	}
+	return n
+}
+
+// MinPrefix is the fewest letters a prefix ("word*") needs, so that a
+// mistake such as "a*" cannot match almost every word.
+const MinPrefix = 3
+
+// prefix returns the start a pattern word matches ("retard*" gives
+// "retard"), or false when the pattern is a whole word. A "*" after only
+// symbols (":*") is an emoticon, not a prefix.
+func prefix(pattern string) (string, bool) {
+	p, ok := strings.CutSuffix(pattern, "*")
+	return p, ok && letters(p) > 0
+}
+
+// wordMatches reports whether a normalized word matches a pattern word
+// from Phrase: the same word, or for a prefix, any word that starts with it.
+func wordMatches(pattern, word string) bool {
+	if p, ok := prefix(pattern); ok {
+		return strings.HasPrefix(word, p)
+	}
+	return pattern == word
+}
+
+// Phrase splits text into normalized words, for the blocklist, forget and
+// lookup. A word that ends with "*" stays a prefix ("Retard*" becomes
+// "retard*").
 func Phrase(text string) []string {
 	var out []string
 	for _, w := range Tokenize(text) {
+		if base := strings.TrimRight(w, "*"); base != w {
+			if n := Normalize(base); letters(n) > 0 {
+				out = append(out, n+"*")
+				continue
+			}
+		}
 		if n := Normalize(w); n != "" {
 			out = append(out, n)
 		}
 	}
 	return out
+}
+
+// ShortPrefix returns the first prefix in phrase with fewer than MinPrefix
+// letters, or "".
+func ShortPrefix(phrase []string) string {
+	for _, w := range phrase {
+		if p, ok := prefix(w); ok && letters(p) < MinPrefix {
+			return w
+		}
+	}
+	return ""
 }
 
 // Blocklist is a set of blocked words and phrases.
@@ -103,7 +154,7 @@ func (bl *Blocklist) Len() int {
 }
 
 // Blocks reports whether words contain a blocked word or phrase. Words
-// match whole, after Normalize.
+// match whole, after Normalize, or by their start for a prefix ("word*").
 func (bl *Blocklist) Blocks(words []string) bool {
 	if bl.Len() == 0 {
 		return false
@@ -116,7 +167,7 @@ func (bl *Blocklist) Blocks(words []string) bool {
 		for i := 0; i+len(p) <= len(norm); i++ {
 			match := true
 			for j, w := range p {
-				if norm[i+j] != w {
+				if !wordMatches(w, norm[i+j]) {
 					match = false
 					break
 				}
