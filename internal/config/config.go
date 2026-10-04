@@ -173,7 +173,7 @@ var SetupKeys = []SetupKey{
 	{"MARKOV_LOG_CHANNEL", "MARKOV_LOG_CHANNEL_ID", KindChannel, "",
 		"Mod-only channel where the Markov chat logs each message it reads in a learn channel, and if it learned it. Empty: no log"},
 	{"MARKOV_LOG_MODE", "MARKOV_LOG_MODE", KindChoice, "all",
-		"Which messages go to MARKOV_LOG_CHANNEL: all, or skipped (only the messages it did not learn)"},
+		"Which messages go to MARKOV_LOG_CHANNEL: all, skipped (only the messages it did not learn), or off"},
 }
 
 // Choice is one value of a KindChoice setting.
@@ -191,6 +191,7 @@ var Choices = map[string][]Choice{
 	"MARKOV_LOG_MODE": {
 		{"all", "All messages it reads"},
 		{"skipped", "Only the messages it did not learn"},
+		{"off", "No log"},
 	},
 	"MARKOV_GIF_RATING": {
 		{"g", "G: all ages"},

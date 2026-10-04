@@ -394,34 +394,42 @@ func TestMarkovLearnLog(t *testing.T) {
 	tb.say(tUser, tChGeneral, "what the hecking", false)
 	tb.say(tUser, tChGeneral, "https://x.io", false)
 	tb.say(tUser, tChVIP, "not a learn channel", false)
-	// Each logged message: a forward, then the result.
+	// One embed for each message, with its text; no forward.
 	sent := tb.sent(tChSens)
-	if len(sent) != 6 || sent[0] != "" || !strings.Contains(sent[1], "Learned** (3 words)") ||
-		!strings.Contains(sent[1], "<@"+tUser+">") || !strings.Contains(sent[3], "blocked by ||`heck*`||") ||
-		!strings.Contains(sent[5], "no words") {
+	if len(sent) != 3 || !strings.Contains(sent[0], "Learned** (3 words)") || !strings.Contains(sent[0], "hello there friend") ||
+		!strings.Contains(sent[0], "<@"+tUser+">") || !strings.Contains(sent[1], "blocked by ||`heck*`||") ||
+		!strings.Contains(sent[1], "what the hecking") || !strings.Contains(sent[2], "no words") {
 		t.Fatalf("log = %q", sent)
 	}
-	calls := tb.api.find("POST", "/channels/"+tChSens+"/messages")
-	if !strings.Contains(string(calls[0].Body), `"type":1`) {
-		t.Errorf("first post is not a forward: %s", calls[0].Body)
+	for _, c := range tb.api.find("POST", "/channels/"+tChSens+"/messages") {
+		if strings.Contains(string(c.Body), "message_reference") {
+			t.Errorf("forwarded: %s", c.Body)
+		}
 	}
 
 	tb.config(map[string]string{"MARKOV_LOG_MODE": "skipped"})
 	tb.say(tUser, tChGeneral, "learned again", false)
 	tb.say(tUser, tChGeneral, "heck", false)
-	if sent := tb.sent(tChSens); len(sent) != 8 || !strings.Contains(sent[7], "heck*") {
-		t.Fatalf("skipped mode log = %q", sent[6:])
+	if sent := tb.sent(tChSens); len(sent) != 4 || !strings.Contains(sent[3], "heck*") {
+		t.Fatalf("skipped mode log = %q", sent[3:])
+	}
+	tb.config(map[string]string{"MARKOV_LOG_MODE": "off"})
+	tb.say(tUser, tChGeneral, "heck again", false)
+	tb.say(tUser, tChGeneral, "learned once more", false)
+	if sent := tb.sent(tChSens); len(sent) != 4 {
+		t.Fatalf("off mode log = %q", sent[4:])
 	}
 }
 
-// Without Message Content only mentions are read: no forward, and other
-// messages are not logged.
+// Without Message Content only mentions are read, so other messages are
+// not logged.
 func TestMarkovLearnLogWithoutMessageContent(t *testing.T) {
 	tb := newTestBot(t)
 	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral, "MARKOV_LOG_CHANNEL": tChSens})
 	tb.say(tUser, tChGeneral, "not read", false)
 	tb.say(tUser, tChGeneral, "hello bot", true)
-	if sent := tb.sent(tChSens); len(sent) != 1 || !strings.Contains(sent[0], "Learned** (2 words)") {
+	if sent := tb.sent(tChSens); len(sent) != 1 || !strings.Contains(sent[0], "Learned** (2 words)") ||
+		!strings.Contains(sent[0], "hello bot") {
 		t.Fatalf("log = %q", sent)
 	}
 }
