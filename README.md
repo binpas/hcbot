@@ -303,7 +303,7 @@ How tickets work:
 
 | Command | Access | Description |
 |---|---|---|
-| `/trigger add <name> <value>` | mod only | Makes a trigger, or replaces its responses with one value. |
+| `/trigger add <name> <value>` | mod only | Makes a trigger, or adds a response to it (the same as `addvalue`). |
 | `/trigger addvalue <name> <value>` | mod only | Adds a response. With 2 or more, one is picked at random. |
 | `/trigger removevalue <name> <value>` | mod only | Removes one response. |
 | `/trigger delete <name>` | mod only | Removes a trigger. |

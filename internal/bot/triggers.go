@@ -116,10 +116,10 @@ func (b *Bot) registerTriggers() {
 	b.addGroup(&group{name: "trigger", description: "Manage custom triggers (mod only).", defaultPerm: manageMessages})
 	b.addCommand(&command{
 		name:        "trigger add",
-		description: "Create a trigger, or replace its responses with a single value.",
+		description: "Create a trigger, or add another random response to it.",
 		options:     []*discordgo.ApplicationCommandOption{name("Trigger keyword"), optStr("value", "Response text or image URL", true)},
 		perm:        permMod,
-		handler:     b.cmdTriggerAdd,
+		handler:     b.cmdTriggerAddValue,
 	})
 	b.addCommand(&command{
 		name:        "trigger addvalue",
@@ -221,17 +221,6 @@ func (b *Bot) registerTriggers() {
 func (c *Ctx) dbFailed(what string, err error) {
 	c.logErr(what, err)
 	c.Reply(true, errEmbed("Something went wrong with the database — check the bot's log."))
-}
-
-func (b *Bot) cmdTriggerAdd(c *Ctx) {
-	name, _ := c.Str("name")
-	value, _ := c.Str("value")
-	if err := b.db.SetTrigger(name, value); err != nil {
-		c.dbFailed("set trigger", err)
-		return
-	}
-	c.Reply(true, okEmbed(fmt.Sprintf("Trigger `%s` saved with a single response. "+
-		"Use `/trigger addvalue %s <value>` to make it pick randomly between several.", name, name)))
 }
 
 func (b *Bot) cmdTriggerAddValue(c *Ctx) {

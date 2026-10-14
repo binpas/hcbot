@@ -56,7 +56,7 @@ func TestTriggerCommands(t *testing.T) {
 	tb.expect(true, "No triggers are defined yet")
 
 	tb.run(tMod, "trigger add", strOpt("name", "Hello"), strOpt("value", "hi there"))
-	tb.expect(true, "Trigger `Hello` saved with a single response")
+	tb.expect(true, "Trigger `Hello` created with 1 response")
 	tb.run(tMod, "trigger addvalue", strOpt("name", "hello"), strOpt("value", "hey!"))
 	tb.expect(true, "now has **2** possible responses")
 	tb.run(tMod, "trigger addvalue", strOpt("name", "solo"), strOpt("value", "x"))
@@ -72,9 +72,10 @@ func TestTriggerCommands(t *testing.T) {
 	tb.run(tMod, "trigger removevalue", strOpt("name", "hello"), strOpt("value", "hey!"))
 	tb.expect(true, "**1** response(s) remain")
 
-	tb.run(tMod, "trigger add", strOpt("name", "hello"), strOpt("value", "only this"))
-	if v, _ := tb.db.TriggerValues("hello"); !slices.Equal(v, []string{"only this"}) {
-		t.Errorf("add did not replace: %q", v)
+	tb.run(tMod, "trigger add", strOpt("name", "hello"), strOpt("value", "another"))
+	tb.expect(true, "now has **2** possible responses")
+	if v, _ := tb.db.TriggerValues("hello"); !slices.Equal(v, []string{"another", "hi there"}) {
+		t.Errorf("add replaced the old responses: %q", v)
 	}
 	tb.run(tMod, "trigger delete", strOpt("name", "hello"))
 	tb.run(tMod, "trigger info", strOpt("name", "hello"))
