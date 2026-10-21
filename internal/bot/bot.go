@@ -3,10 +3,12 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -44,6 +46,10 @@ type Bot struct {
 
 	giphyURL  string // the GIPHY search endpoint (a fake server in tests)
 	giphyHTTP *http.Client
+
+	ytdlp    ytdlpRunner                                              // a fake in tests
+	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
+	dlSlot   chan struct{}                                            // one video download at a time
 
 	// forwardRetry is how long forwardOrLink waits before it checks a
 	// forward again (short in tests).
@@ -97,6 +103,9 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		forwardRetry: 2 * time.Second,
 		giphyURL:     giphySearchURL,
 		giphyHTTP:    &http.Client{Timeout: giphyTimeout},
+		ytdlp:        execYtdlp,
+		lookupIP:     lookupIP,
+		dlSlot:       make(chan struct{}, 1),
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
 		msgs:         newLRU[cachedMessage](),
@@ -115,6 +124,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerAssets()
 	b.registerBotProfile()
 	b.registerMarkov()
+	b.registerDownload()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)

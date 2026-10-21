@@ -9,6 +9,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Slash commands only.** Every command is a slash command. Triggers are the one exception: they fire on `@BotName <trigger>`.
 - **Moderation:** ban, tempban, kick, mute/unmute, purge, and a self-timeout for members.
 - **Warnings** with a rap sheet, single-warning removal, and automatic arrest and kick thresholds.
+- **Video downloads:** mods download a video from YouTube, X, or another site that [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and get it in a private reply.
 - **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
 - **Tickets:** members open private mod-support tickets with a reaction; mods close, archive, list, note and search them.
@@ -29,6 +30,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Go 1.27 or later** to build. The server that runs the bot needs no Go and no C libraries: the SQLite driver is pure Go.
 - A **Discord application with a bot user**, from the [Discord Developer Portal](https://discord.com/developers/applications).
 - The bot invited to your server with the permissions in [Required bot permissions](#required-bot-permissions).
+- Optional, for `/download`: **yt-dlp** and **ffmpeg** on the `PATH` of the server that runs the bot (see [Video downloads](#video-downloads)).
 
 ### Intents
 
@@ -107,6 +109,7 @@ ENABLE_MESSAGE_CONTENT_FEATURES=false
 MEDIA_CACHE_SIZE=300
 MEDIA_CACHE_MAX_BYTES=8388608
 GIPHY_API_KEY=
+YTDLP_COOKIES=
 ```
 
 | Key | Description |
@@ -119,12 +122,13 @@ GIPHY_API_KEY=
 | `MEDIA_CACHE_MAX_BYTES` | Largest attachment it keeps, in bytes (default 8 MiB). |
 | `MARKOV_DB_PATH` | The database file for the [Markov chat](#markov-chat) (default `markov.db`). |
 | `GIPHY_API_KEY` | The GIPHY API key for [Markov GIFs](#markov-chat). When it is not set, Markov GIFs are off. |
+| `YTDLP_COOKIES` | A cookies file for yt-dlp, for [video downloads](#video-downloads) (for example `youtube-cookies.txt`, relative to the working folder). When it is not set, yt-dlp uses no cookies. |
 
 Keep `.env` private: the token gives full control of the bot, and the GIPHY key is also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
 ### `/setup`
 
-Run `/setup` as a server administrator. It shows an ephemeral embed (only you see it) with a few settings on each page. The settings are in sections (Logs, Mods and tickets, Jail, Warnings, Community, Markov chat, File and memory limits, Links and files). Use the **Go to a section** menu at the top to go to a section, or the page buttons at the bottom. Channel, category and role settings use a dropdown. Number, emote and text settings use an **Edit** button. Each change is saved at once. The session expires after 5 minutes without use.
+Run `/setup` as a server administrator. It shows an ephemeral embed (only you see it) with a few settings on each page. The settings are in sections (Logs, Mods and tickets, Jail, Warnings, Community, Markov chat, File and memory limits, Video downloads, Links and files). Use the **Go to a section** menu at the top to go to a section, or the page buttons at the bottom. Channel, category and role settings use a dropdown. Number, emote and text settings use an **Edit** button. Each change is saved at once. The session expires after 5 minutes without use.
 
 | Setting | What it is | Default |
 |---|---|---|
@@ -164,6 +168,8 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MARKOV_IMPORT_MAX_MB` | Largest file for `/markov import`, in MB | 25 |
 | `MARKOV_LOG_CHANNEL` | Mod-only channel where the Markov chat logs each message that it reads in a learn channel, and if it learned the message. Empty: no log. See "Learn log" below. | |
 | `MARKOV_LOG_MODE` | Which messages go to `MARKOV_LOG_CHANNEL`: `all`, `skipped` (only the messages that it did not learn), or `off` (no log, and the channel stays set). A menu in `/setup`. | all |
+| `DOWNLOAD_ENABLED` | Lets mods use `/download` and **Apps → Download video** | on |
+| `DOWNLOAD_MAX_MB` | Largest video that `/download` sends, in MB. The server's boost level can make the limit smaller: 10 MB with no boost or level 1, 50 MB at level 2, 100 MB at level 3. | 100 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -264,6 +270,23 @@ Mods keep private notes on members. The bot records who added each note and when
 | **Apps → View user notes** (right-click a member) | mod only | Same as `/note list`. |
 
 The right-click command does not need the Message Content intent. Discord sends the text of the selected message in the interaction.
+
+### Video downloads
+
+| Command | Access | Description |
+|---|---|---|
+| `/download <url>` | mod only | Downloads the video at the link and sends it to you in an ephemeral reply (only you see it). |
+| **Apps → Download video** (right-click a message) | mod only | Same as `/download`, for the first link in the message (or in its link preview). |
+
+The bot runs [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it can download from YouTube, X (Twitter), and the other sites that yt-dlp supports. yt-dlp's generic extractor is off, and the bot refuses links to local or private addresses. Only one download runs at a time; another download waits in a queue. Playlists download only the video in the link. Live streams are not supported.
+
+If the best quality is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the server's boost limit), the bot tries 720p, 480p, 360p and 240p, and tells you that it sent a lower quality. A download stops after 12 minutes.
+
+**Server setup:** install `yt-dlp` and `ffmpeg` (ffmpeg joins the video and audio). Use the newest yt-dlp release, not an old distribution package, and update it frequently (`sudo yt-dlp -U`), because sites change often. For YouTube, yt-dlp also needs a JavaScript runtime such as [Deno](https://deno.com). Some sites (YouTube, Vimeo) block requests from data center addresses, so downloads from them can fail on a hosted server.
+
+**YouTube cookies:** on a hosted server, YouTube often refuses downloads ("Sign in to confirm you're not a bot"). Give yt-dlp the cookies of a signed-in account with `YTDLP_COOKIES` in `.env`. Use a spare account, because YouTube can block an account that downloads. To export the cookies, see the [yt-dlp instructions](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies). Put the file in the bot's working folder, make it private to the bot user (`chmod 600`), and restart the bot. yt-dlp saves changed cookies back to the file, so the bot user must be able to write it. The file is a password for that account: do not commit it or share it.
+
+Use this command only for videos that you have the right to download and share. The bot keeps no copy: it deletes the file after the reply.
 
 ### Jail
 

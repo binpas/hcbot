@@ -61,7 +61,9 @@ RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+# No MemoryDenyWriteExecute: /download runs yt-dlp, and yt-dlp runs deno
+# for YouTube. deno has a JIT, which needs memory that is writable and
+# executable.
 RemoveIPC=yes
 CapabilityBoundingSet=
 AmbientCapabilities=

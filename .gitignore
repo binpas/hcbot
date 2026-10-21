@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+*cookies*.txt
 
 # Bot runtime data (server and user data)
 *.db

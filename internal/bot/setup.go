@@ -52,6 +52,7 @@ var setupSections = []struct {
 		"MARKOV_GIF_CHANCE", "MARKOV_GIF_COOLDOWN", "MARKOV_GIF_RATING", "MARKOV_LOG_CHANNEL", "MARKOV_LOG_MODE"}},
 	{"File and memory limits", []string{"TRIGGER_IMPORT_MAX_MB", "ASSETS_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB",
 		"MEDIA_CACHE_TOTAL_MB"}},
+	{"Video downloads", []string{"DOWNLOAD_ENABLED", "DOWNLOAD_MAX_MB"}},
 	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
 }
 

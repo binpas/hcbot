@@ -111,6 +111,10 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"Apps → " + noteMenuAdd, "Right-click a message to add it to its author's notes."},
 			{"Apps → " + noteMenuView, "Right-click a member to show their notes."},
 		}},
+		{"Video Downloads", []helpEntry{
+			{"/download <url>", "Download a video (YouTube, X, and other sites) and get it in a private reply."},
+			{"Apps → " + downloadMenu, "Right-click a message to download the video from its first link."},
+		}},
 		{"Reaction Roles", []helpEntry{
 			{"/reactionrole create", "Start the reaction-role creation wizard."},
 			{"/reactionrole list", "List all reaction roles and whether they have been posted."},

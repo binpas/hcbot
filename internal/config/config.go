@@ -35,6 +35,9 @@ type Env struct {
 
 	// GiphyKey is the GIPHY API key for Markov GIFs. Empty turns them off.
 	GiphyKey string
+
+	// YtdlpCookies is a cookies file for yt-dlp (/download). Empty: none.
+	YtdlpCookies string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -50,6 +53,7 @@ func LoadEnv() Env {
 		MediaCacheMaxBytes: envInt("MEDIA_CACHE_MAX_BYTES", 8*1024*1024),
 		MarkovDBPath:       envStr("MARKOV_DB_PATH", "markov.db"),
 		GiphyKey:           strings.TrimSpace(os.Getenv("GIPHY_API_KEY")),
+		YtdlpCookies:       strings.TrimSpace(os.Getenv("YTDLP_COOKIES")),
 	}
 }
 
@@ -174,6 +178,10 @@ var SetupKeys = []SetupKey{
 		"Mod-only channel where the Markov chat logs each message it reads in a learn channel, and if it learned it. Empty: no log"},
 	{"MARKOV_LOG_MODE", "MARKOV_LOG_MODE", KindChoice, "all",
 		"Which messages go to MARKOV_LOG_CHANNEL: all, skipped (only the messages it did not learn), or off"},
+	{"DOWNLOAD_ENABLED", "DOWNLOAD_ENABLED", KindBool, "on",
+		"Let mods download videos with /download (needs yt-dlp and ffmpeg on the server)"},
+	{"DOWNLOAD_MAX_MB", "DOWNLOAD_MAX_MB", KindInt, "100",
+		"Largest video /download sends, in MB. The server's boost level can make the limit smaller (10 MB, 50 MB at level 2, 100 MB at level 3)"},
 }
 
 // Choice is one value of a KindChoice setting.
