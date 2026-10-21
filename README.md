@@ -280,7 +280,7 @@ The right-click command does not need the Message Content intent. Discord sends 
 
 The bot runs [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it can download from YouTube, X (Twitter), and the other sites that yt-dlp supports. yt-dlp's generic extractor is off, and the bot refuses links to local or private addresses. Only one download runs at a time; another download waits in a queue. Playlists download only the video in the link. Live streams are not supported.
 
-If the best quality is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the server's boost limit), the bot tries 720p, 480p, 360p and 240p, and tells you that it sent a lower quality. A download stops after 12 minutes.
+If the best quality is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the server's boost limit), the bot tries 720p, 480p, 360p and 240p, and tells you that it sent a lower quality. The bot prefers H.264 video with AAC sound, because some Discord clients play only the sound of AV1 or VP9 video. A download stops after 12 minutes.
 
 **Server setup:** install `yt-dlp` and `ffmpeg` (ffmpeg joins the video and audio). Use the newest yt-dlp release, not an old distribution package, and update it frequently (`sudo yt-dlp -U`), because sites change often. For YouTube, yt-dlp also needs a JavaScript runtime such as [Deno](https://deno.com). Some sites (YouTube, Vimeo) block requests from data center addresses, so downloads from them can fail on a hosted server.
 

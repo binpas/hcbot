@@ -109,7 +109,8 @@ func TestDownloadBestQuality(t *testing.T) {
 		t.Errorf("uploaded = %v", got)
 	}
 	args := strings.Join(f.calls[0], " ")
-	for _, want := range []string{"--ignore-config", "--no-playlist", "default,-generic", "-- https://www.youtube.com/watch?v=abc"} {
+	for _, want := range []string{"--ignore-config", "--no-playlist", "default,-generic", "-S vcodec:h264,",
+		"-- https://www.youtube.com/watch?v=abc"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("yt-dlp args %q do not contain %q", args, want)
 		}

@@ -266,7 +266,10 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 
 // downloadArgs are the yt-dlp options to download link into the folder out,
 // at most height pixels high (0: the best), and at most maxBytes. yt-dlp
-// prints the height, then the title. yt-dlp sends the cookies in the
+// prints the height, then the title. It prefers H.264 video and AAC audio,
+// because some Discord clients play only the sound of AV1 or VP9 video.
+// The cache is in the temporary folder, because the service sandbox does
+// not let the bot write its home folder. yt-dlp sends the cookies in the
 // cookies file (if any) only to the sites they are for, and saves changed
 // cookies back to the file.
 func downloadArgs(link, out string, height int, maxBytes int64, cookies string) []string {
@@ -282,7 +285,8 @@ func downloadArgs(link, out string, height int, maxBytes int64, cookies string) 
 		"--ignore-config", "--no-playlist", "--no-progress", "--no-mtime",
 		"--use-extractors", "default,-generic",
 		"--match-filter", "!is_live",
-		"-f", format, "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4",
+		"--cache-dir", filepath.Join(os.TempDir(), "hcbot-yt-dlp-cache"),
+		"-f", format, "-S", "vcodec:h264,res,acodec:aac,ext:mp4:m4a", "--merge-output-format", "mp4",
 		"--max-filesize", strconv.FormatInt(maxBytes, 10),
 		"-o", filepath.Join(out, "video.%(ext)s"),
 		"--no-simulate", "--print", "after_move:%(height|)s", "--print", "after_move:%(title).200s",
