@@ -9,6 +9,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Slash commands only.** Every command is a slash command. Triggers are the one exception: they fire on `@BotName <trigger>`.
 - **Moderation:** ban, tempban, kick, mute/unmute, purge, and a self-timeout for members.
 - **Warnings** with a rap sheet, single-warning removal, and automatic arrest and kick thresholds.
+- **Post images:** mods make an image of a post on X, to share it without a link.
 - **Video downloads:** mods download a video from YouTube, X, or another site that [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and get it in a private reply.
 - **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
@@ -289,6 +290,17 @@ If the best quality is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the s
 **YouTube cookies:** on a hosted server, YouTube often refuses downloads ("Sign in to confirm you're not a bot"). Give yt-dlp the cookies of a signed-in account with `YTDLP_COOKIES` in `.env`. Use a spare account, because YouTube can block an account that downloads. To export the cookies, see the [yt-dlp instructions](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies). Put the file in the bot's working folder, make it private to the bot user (`chmod 600`), and restart the bot. yt-dlp saves changed cookies back to the file, so the bot user must be able to write it. The file is a password for that account: do not commit it or share it.
 
 Use this command only for videos that you have the right to download and share. The bot keeps no copy: it deletes the file after the reply.
+
+### Post images
+
+| Command | Access | Description |
+|---|---|---|
+| `/tweetshot <url> [public]` | mod only | Makes an image of a post on X, in a dark style. Only you see it, unless `public` is true. |
+| **Apps → Screenshot post** (right-click a message) | mod only | Same as `/tweetshot`, for the first X link in the message (or in its link preview). Only you see it. |
+
+The bot gets the post from X's embed data service (the service behind posts embedded on web pages), so it needs no X account. The image shows the avatar, the name and handle, the text with emojis, up to 4 photos or video frames, a quoted post, the date (UTC) and the reply and like counts. Sensitive media is blurred. The bot draws the image itself; it does not use a browser. A public reply has only the image, with no link to X. The ephemeral reply also has a link to the post. Links from `fxtwitter.com`, `vxtwitter.com`, `fixupx.com` and `fixvx.com` also work.
+
+X does not show deleted, protected and age-limited posts in embeds, so the bot cannot make an image of them. The font has Latin, Greek and Cyrillic letters. Other scripts (for example Chinese, Japanese, Korean and Arabic) show as boxes, and right-to-left text is not correct. The embed data service is not an official API, so X can change it.
 
 ### Jail
 
@@ -604,3 +616,12 @@ make check
 |---|---|
 | `words` | Each word the Markov chat knows |
 | `transitions` | How often each pair of words came before each word |
+
+---
+
+## Credits
+
+`/tweetshot` uses these, and they are in the binary:
+
+- [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) by the Noto Project Authors, under the SIL Open Font License 1.1 (`internal/tweetshot/assets/OFL-NotoSans.txt`).
+- [Twemoji](https://github.com/jdecked/twemoji) emoji graphics, copyright 2019 Twitter, Inc and other contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`internal/tweetshot/assets/LICENSE-Twemoji-graphics.txt`). The graphics are not changed; the bot makes them smaller when it draws them.

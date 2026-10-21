@@ -437,6 +437,14 @@ func (c *Ctx) Int(name string, def int64) int64 {
 	return def
 }
 
+// Bool returns a boolean option, or def when it was not given.
+func (c *Ctx) Bool(name string, def bool) bool {
+	if o := c.opt(name); o != nil {
+		return o.BoolValue()
+	}
+	return def
+}
+
 // User returns a user option, or nil.
 func (c *Ctx) User(name string) *discordgo.User {
 	o := c.opt(name)
@@ -525,6 +533,12 @@ func optChoice(name, desc string, required bool, values ...string) *discordgo.Ap
 func optInt(name, desc string, required bool) *discordgo.ApplicationCommandOption {
 	return &discordgo.ApplicationCommandOption{
 		Type: discordgo.ApplicationCommandOptionInteger, Name: name, Description: desc, Required: required,
+	}
+}
+
+func optBool(name, desc string, required bool) *discordgo.ApplicationCommandOption {
+	return &discordgo.ApplicationCommandOption{
+		Type: discordgo.ApplicationCommandOptionBoolean, Name: name, Description: desc, Required: required,
 	}
 }
 

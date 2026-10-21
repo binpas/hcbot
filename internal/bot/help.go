@@ -111,9 +111,11 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"Apps → " + noteMenuAdd, "Right-click a message to add it to its author's notes."},
 			{"Apps → " + noteMenuView, "Right-click a member to show their notes."},
 		}},
-		{"Video Downloads", []helpEntry{
+		{"Videos and Posts", []helpEntry{
 			{"/download <url>", "Download a video (YouTube, X, and other sites) and get it in a private reply."},
 			{"Apps → " + downloadMenu, "Right-click a message to download the video from its first link."},
+			{"/tweetshot <url> [public]", "Make an image of a post on X. Only you see it, unless `public` is true."},
+			{"Apps → " + tweetshotMenu, "Right-click a message to make an image of the first X post it links to."},
 		}},
 		{"Reaction Roles", []helpEntry{
 			{"/reactionrole create", "Start the reaction-role creation wizard."},

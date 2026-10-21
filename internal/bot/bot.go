@@ -18,6 +18,7 @@ import (
 	"github.com/binpas/hcbot/internal/config"
 	"github.com/binpas/hcbot/internal/db"
 	"github.com/binpas/hcbot/internal/markov"
+	"github.com/binpas/hcbot/internal/tweetshot"
 )
 
 // Bot holds the shared state every handler needs.
@@ -49,7 +50,8 @@ type Bot struct {
 
 	runTool  toolRunner                                               // a fake in tests
 	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
-	dlSlot   chan struct{}                                            // one video download at a time
+	dlSlot   chan struct{}
+	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)                                            // one video download at a time
 
 	// forwardRetry is how long forwardOrLink waits before it checks a
 	// forward again (short in tests).
@@ -106,6 +108,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		runTool:      execTool,
 		lookupIP:     lookupIP,
 		dlSlot:       make(chan struct{}, 1),
+		tweets:       tweetshot.NewClient(),
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
 		msgs:         newLRU[cachedMessage](),
@@ -125,6 +128,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerBotProfile()
 	b.registerMarkov()
 	b.registerDownload()
+	b.registerTweetshot()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
