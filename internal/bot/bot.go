@@ -47,7 +47,7 @@ type Bot struct {
 	giphyURL  string // the GIPHY search endpoint (a fake server in tests)
 	giphyHTTP *http.Client
 
-	ytdlp    ytdlpRunner                                              // a fake in tests
+	runTool  toolRunner                                               // a fake in tests
 	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
 	dlSlot   chan struct{}                                            // one video download at a time
 
@@ -103,7 +103,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		forwardRetry: 2 * time.Second,
 		giphyURL:     giphySearchURL,
 		giphyHTTP:    &http.Client{Timeout: giphyTimeout},
-		ytdlp:        execYtdlp,
+		runTool:      execTool,
 		lookupIP:     lookupIP,
 		dlSlot:       make(chan struct{}, 1),
 		backupDir:    "backups",

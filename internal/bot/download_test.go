@@ -14,20 +14,30 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// fakeYtdlp stands in for yt-dlp. sizes gives the file size for each
-// height that is asked for (0: the best). A missing height writes no file,
-// the same as yt-dlp when the file is larger than --max-filesize.
+// fakeYtdlp stands in for yt-dlp and ffmpeg. sizes gives the file size for
+// each height that is asked for (0: the best). A missing height writes no
+// file, the same as yt-dlp when the file is larger than --max-filesize.
 type fakeYtdlp struct {
 	sizes    map[int]int64
 	best     int          // the height of the best quality
 	noFormat map[int]bool // heights with no format that small
+	mediaURL string       // the address yt-dlp prints
 	stderr   string
-	calls    [][]string
+	calls    [][]string // yt-dlp calls
+
+	gifSizes map[int]int64 // GIF size for each width
+	gifFail  bool
+	ffCalls  [][]string
 }
 
 var heightArgRE = regexp.MustCompile(`height<=\?(\d+)`)
 
-func (f *fakeYtdlp) run(_ context.Context, args []string) ([]byte, []byte, error) {
+var gifWidthRE = regexp.MustCompile(`min\((\d+),iw\)`)
+
+func (f *fakeYtdlp) run(ctx context.Context, name string, args []string) ([]byte, []byte, error) {
+	if name == "ffmpeg" {
+		return f.ffmpeg(args)
+	}
 	f.calls = append(f.calls, args)
 	if f.stderr != "" {
 		return nil, []byte(f.stderr), errors.New("exit status 1")
@@ -61,12 +71,27 @@ func (f *fakeYtdlp) run(_ context.Context, args []string) ([]byte, []byte, error
 	if h == 0 {
 		h = f.best
 	}
-	return []byte(strconv.Itoa(h) + "\nA cat: plays piano!\n"), nil, nil
+	return []byte(strconv.Itoa(h) + "\n" + f.mediaURL + "\nA cat: plays piano!\n"), nil, nil
+}
+
+func (f *fakeYtdlp) ffmpeg(args []string) ([]byte, []byte, error) {
+	f.ffCalls = append(f.ffCalls, args)
+	if f.gifFail {
+		return nil, []byte("bad input"), errors.New("exit status 1")
+	}
+	var filter string
+	for i, a := range args {
+		if a == "-vf" {
+			filter = args[i+1]
+		}
+	}
+	w, _ := strconv.Atoi(gifWidthRE.FindStringSubmatch(filter)[1])
+	return nil, nil, os.WriteFile(args[len(args)-1], make([]byte, f.gifSizes[w]), 0o644)
 }
 
 func newDownloadBot(t *testing.T, f *fakeYtdlp) *testBot {
 	tb := newTestBot(t)
-	tb.ytdlp = f.run
+	tb.runTool = f.run
 	tb.lookupIP = func(_ context.Context, host string) ([]net.IP, error) {
 		if host == "intranet.example" {
 			return []net.IP{net.ParseIP("10.0.0.5")}, nil
@@ -240,6 +265,65 @@ func TestFileName(t *testing.T) {
 	} {
 		if got := fileName(in); got != want {
 			t.Errorf("fileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+const tGIFURL = "https://video.twimg.com/tweet_video/AbC123.mp4"
+
+func TestDownloadTwitterGIF(t *testing.T) {
+	f := &fakeYtdlp{sizes: map[int]int64{0: 300 << 10}, best: 270, mediaURL: tGIFURL,
+		gifSizes: map[int]int64{480: 2 << 20}}
+	tb := newDownloadBot(t, f)
+	tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/1"))
+	r := tb.expect(true, "GIF", "2.0 MB")
+	if strings.Contains(r.text(), "270p") || strings.Contains(r.text(), "lower quality") {
+		t.Errorf("reply = %q", r.text())
+	}
+	if got := tb.uploaded(); got["A cat_ plays piano.gif"] != 2<<20 {
+		t.Errorf("uploaded = %v", got)
+	}
+	if len(f.ffCalls) != 1 || !strings.Contains(strings.Join(f.ffCalls[0], " "), "-loop 0") {
+		t.Errorf("ffmpeg calls = %v", f.ffCalls)
+	}
+}
+
+func TestDownloadTwitterGIFSmaller(t *testing.T) {
+	// The 480 and 320 px GIFs are larger than 10 MB; the 240 px GIF fits.
+	f := &fakeYtdlp{sizes: map[int]int64{0: 1 << 20}, best: 480, mediaURL: tGIFURL,
+		gifSizes: map[int]int64{480: 25 << 20, 320: 12 << 20, 240: 6 << 20}}
+	tb := newDownloadBot(t, f)
+	tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/1"))
+	tb.expect(true, "GIF", "6.0 MB", "lower quality")
+	if len(f.ffCalls) != 3 {
+		t.Errorf("ffmpeg ran %d times, want 3", len(f.ffCalls))
+	}
+}
+
+func TestDownloadTwitterGIFFallsBackToMP4(t *testing.T) {
+	f := &fakeYtdlp{sizes: map[int]int64{0: 1 << 20}, best: 480, mediaURL: tGIFURL,
+		gifSizes: map[int]int64{480: 30 << 20, 320: 20 << 20, 240: 11 << 20}}
+	tb := newDownloadBot(t, f)
+	tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/1"))
+	tb.expect(true, "480p", "GIF file was larger than the upload limit")
+	if got := tb.uploaded(); got["A cat_ plays piano.mp4"] != 1<<20 {
+		t.Errorf("uploaded = %v", got)
+	}
+
+	f.gifFail = true
+	tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/2"))
+	tb.expect(true, "480p", "could not make a GIF file")
+}
+
+func TestDownloadVideoIsNotGIF(t *testing.T) {
+	for _, u := range []string{"", "https://video.twimg.com/ext_tw_video/1/pu/vid/720x720/a.mp4",
+		"https://video.twimg.com/amplify_video/1/vid/a.mp4", "https://example.com/tweet_video/a.mp4"} {
+		f := &fakeYtdlp{sizes: map[int]int64{0: 1 << 20}, best: 720, mediaURL: u}
+		tb := newDownloadBot(t, f)
+		tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/1"))
+		tb.expect(true, "720p")
+		if len(f.ffCalls) != 0 {
+			t.Errorf("%q: ffmpeg ran for a video", u)
 		}
 	}
 }

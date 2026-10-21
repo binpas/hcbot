@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -23,7 +24,8 @@ import (
 // ephemeral reply. yt-dlp (and ffmpeg, to join video and audio) must be on
 // the PATH. One download runs at a time; the others wait in a queue. When
 // the best quality is larger than the upload limit, the bot tries lower
-// qualities.
+// qualities. X keeps a GIF as a short MP4 with no sound; the bot finds it
+// by its address (/tweet_video/), and uses ffmpeg to make a GIF again.
 //
 // yt-dlp's generic extractor is off, and links to local or private
 // addresses are refused, so a link cannot make the bot fetch from its own
@@ -45,11 +47,15 @@ var linkRE = regexp.MustCompile(`https?://[^\s<>]+`)
 // not count as private.
 var cgnat = &net.IPNet{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)}
 
-// ytdlpRunner runs yt-dlp with args, and returns its stdout and stderr.
-type ytdlpRunner func(ctx context.Context, args []string) (stdout, stderr []byte, err error)
+// gifSteps are the GIF sizes to try, largest first.
+var gifSteps = []struct{ width, fps int }{{480, 15}, {320, 12}, {240, 10}}
 
-func execYtdlp(ctx context.Context, args []string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+// toolRunner runs a program (yt-dlp or ffmpeg) with args, and returns its
+// stdout and stderr.
+type toolRunner func(ctx context.Context, name string, args []string) (stdout, stderr []byte, err error)
+
+func execTool(ctx context.Context, name string, args []string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	killGroupOnCancel(cmd) // yt-dlp starts ffmpeg; stop it too
@@ -143,11 +149,17 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 		return
 	}
 	desc := fmt.Sprintf("[Source](%s) · %s", link, humanSize(int64(len(res.data))))
-	if res.height > 0 {
+	switch {
+	case res.gif:
+		desc += " · GIF"
+	case res.height > 0:
 		desc += fmt.Sprintf(" · %dp", res.height)
 	}
 	if res.reduced {
 		desc += "\nThe best quality was too large, so this is a lower quality."
+	}
+	if res.note != "" {
+		desc += "\n" + res.note
 	}
 	embed := makeEmbed(truncate("🎬 "+res.title, 256), desc, colourBlurple)
 	if err := c.ReplyFile(true, embed, &discordgo.File{Name: res.name, Reader: bytes.NewReader(res.data)}); err != nil {
@@ -209,7 +221,9 @@ type videoResult struct {
 	title   string
 	name    string // file name for the upload
 	height  int
-	reduced bool // not the best quality
+	reduced bool   // not the best quality, or a smaller GIF
+	gif     bool   // data is a GIF
+	note    string // why a GIF on X came as an MP4
 	data    []byte
 }
 
@@ -228,7 +242,7 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 			continue // this quality gives the same file again
 		}
 		out := filepath.Join(dir, strconv.Itoa(i))
-		stdout, stderr, err := b.ytdlp(ctx, downloadArgs(link, out, h, maxBytes, cookies))
+		stdout, stderr, err := b.runTool(ctx, "yt-dlp", downloadArgs(link, out, h, maxBytes, cookies))
 		if ctx.Err() != nil {
 			return nil, errors.New("The download took too long.")
 		}
@@ -242,7 +256,7 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 		if path == "" {
 			continue // larger than --max-filesize, so yt-dlp stopped
 		}
-		lines := strings.SplitN(strings.TrimSpace(string(stdout)), "\n", 2)
+		lines := strings.SplitN(strings.TrimSpace(string(stdout)), "\n", 3)
 		height, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
 		if size > maxBytes {
 			if height > 0 {
@@ -255,10 +269,14 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 			return nil, fmt.Errorf("I cannot read the video file: %v", err)
 		}
 		title := "Video"
-		if len(lines) == 2 && strings.TrimSpace(lines[1]) != "" {
-			title = strings.TrimSpace(lines[1])
+		if len(lines) == 3 && strings.TrimSpace(lines[2]) != "" {
+			title = strings.TrimSpace(lines[2])
 		}
-		return &videoResult{title: title, name: fileName(title) + filepath.Ext(path), height: height, reduced: i > 0, data: data}, nil
+		res := &videoResult{title: title, name: fileName(title) + filepath.Ext(path), height: height, reduced: i > 0, data: data}
+		if len(lines) >= 2 && isTwitterGIF(lines[1]) {
+			b.toGIF(ctx, res, path, maxBytes)
+		}
+		return res, nil
 	}
 	return nil, fmt.Errorf("All qualities of this video are larger than the upload limit (%s). Live streams are not supported.",
 		humanSize(maxBytes+downloadMargin))
@@ -266,7 +284,8 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 
 // downloadArgs are the yt-dlp options to download link into the folder out,
 // at most height pixels high (0: the best), and at most maxBytes. yt-dlp
-// prints the height, then the title. It prefers H.264 video and AAC audio,
+// prints the height, the media address (only for a format with video and
+// sound in one file), then the title. It prefers H.264 video and AAC audio,
 // because some Discord clients play only the sound of AV1 or VP9 video.
 // The cache is in the temporary folder, because the service sandbox does
 // not let the bot write its home folder. yt-dlp sends the cookies in the
@@ -289,9 +308,53 @@ func downloadArgs(link, out string, height int, maxBytes int64, cookies string) 
 		"-f", format, "-S", "vcodec:h264,res,acodec:aac,ext:mp4:m4a", "--merge-output-format", "mp4",
 		"--max-filesize", strconv.FormatInt(maxBytes, 10),
 		"-o", filepath.Join(out, "video.%(ext)s"),
-		"--no-simulate", "--print", "after_move:%(height|)s", "--print", "after_move:%(title).200s",
+		"--no-simulate", "--print", "after_move:%(height|)s", "--print", "after_move:%(url|)s",
+		"--print", "after_move:%(title).200s",
 		"--", link,
 	)
+}
+
+// isTwitterGIF reports whether a media address is a GIF on X. X keeps a
+// GIF as an MP4 in tweet_video; videos are in ext_tw_video or amplify_video.
+func isTwitterGIF(mediaURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(mediaURL))
+	return err == nil && u.Hostname() == "video.twimg.com" && strings.HasPrefix(u.Path, "/tweet_video/")
+}
+
+// toGIF changes res (an MP4 at path) to a GIF of at most maxBytes, at the
+// largest of gifSteps that fits. If no GIF fits, or ffmpeg fails, res stays
+// an MP4 and gets a note.
+func (b *Bot) toGIF(ctx context.Context, res *videoResult, path string, maxBytes int64) {
+	out := filepath.Join(filepath.Dir(path), "anim.gif")
+	for i, st := range gifSteps {
+		_, stderr, err := b.runTool(ctx, "ffmpeg", gifArgs(path, out, st.width, st.fps))
+		if err != nil {
+			log.Printf("download: ffmpeg GIF: %v: %s", err, truncate(strings.TrimSpace(string(stderr)), 500))
+			res.note = "This is a GIF on X, but I could not make a GIF file, so this is the MP4."
+			return
+		}
+		data, err := os.ReadFile(out)
+		if err != nil {
+			log.Printf("download: read GIF: %v", err)
+			res.note = "This is a GIF on X, but I could not make a GIF file, so this is the MP4."
+			return
+		}
+		if int64(len(data)) <= maxBytes {
+			res.data, res.gif, res.reduced = data, true, i > 0
+			res.name = strings.TrimSuffix(res.name, filepath.Ext(res.name)) + ".gif"
+			return
+		}
+	}
+	res.note = "This is a GIF on X, but the GIF file was larger than the upload limit, so this is the MP4."
+}
+
+// gifArgs are the ffmpeg options to make a GIF from the video in, at most
+// width pixels wide and fps frames each second, with a palette made for
+// the clip. The GIF repeats without end, the same as on X.
+func gifArgs(in, out string, width, fps int) []string {
+	filter := fmt.Sprintf("fps=%d,scale='min(%d,iw)':-1:flags=lanczos,split[a][b];"+
+		"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle", fps, width)
+	return []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", in, "-vf", filter, "-loop", "0", out}
 }
 
 // downloadedFile returns the finished file in dir and its size, or "".
