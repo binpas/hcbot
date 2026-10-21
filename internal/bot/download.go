@@ -256,7 +256,9 @@ func (b *Bot) fetchVideo(ctx context.Context, link string, maxBytes int64, cooki
 		if path == "" {
 			continue // larger than --max-filesize, so yt-dlp stopped
 		}
-		lines := strings.SplitN(strings.TrimSpace(string(stdout)), "\n", 3)
+		// Do not trim the start: the height line is empty when the height
+		// is not known (for example, a GIF on X).
+		lines := strings.SplitN(strings.TrimRight(string(stdout), "\r\n"), "\n", 3)
 		height, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
 		if size > maxBytes {
 			if height > 0 {

@@ -68,10 +68,14 @@ func (f *fakeYtdlp) run(ctx context.Context, name string, args []string) ([]byte
 	if err := os.WriteFile(filepath.Join(out, "video.mp4"), make([]byte, size), 0o644); err != nil {
 		return nil, nil, err
 	}
+	height := ""
 	if h == 0 {
 		h = f.best
 	}
-	return []byte(strconv.Itoa(h) + "\n" + f.mediaURL + "\nA cat: plays piano!\n"), nil, nil
+	if h > 0 {
+		height = strconv.Itoa(h)
+	}
+	return []byte(height + "\n" + f.mediaURL + "\nA cat: plays piano!\n"), nil, nil
 }
 
 func (f *fakeYtdlp) ffmpeg(args []string) ([]byte, []byte, error) {
@@ -272,12 +276,14 @@ func TestFileName(t *testing.T) {
 const tGIFURL = "https://video.twimg.com/tweet_video/AbC123.mp4"
 
 func TestDownloadTwitterGIF(t *testing.T) {
-	f := &fakeYtdlp{sizes: map[int]int64{0: 300 << 10}, best: 270, mediaURL: tGIFURL,
+	// yt-dlp does not know the height of a GIF on X, so it prints an empty
+	// first line.
+	f := &fakeYtdlp{sizes: map[int]int64{0: 300 << 10}, mediaURL: tGIFURL,
 		gifSizes: map[int]int64{480: 2 << 20}}
 	tb := newDownloadBot(t, f)
 	tb.run(tMod, "download", strOpt("url", "https://x.com/someone/status/1"))
 	r := tb.expect(true, "GIF", "2.0 MB")
-	if strings.Contains(r.text(), "270p") || strings.Contains(r.text(), "lower quality") {
+	if strings.Contains(r.text(), "lower quality") {
 		t.Errorf("reply = %q", r.text())
 	}
 	if got := tb.uploaded(); got["A cat_ plays piano.gif"] != 2<<20 {
