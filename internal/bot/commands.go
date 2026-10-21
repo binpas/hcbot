@@ -265,6 +265,11 @@ func (c *Ctx) ReplyFile(ephemeral bool, embed *discordgo.MessageEmbed, file *dis
 	return c.reply(ephemeral, []*discordgo.MessageEmbed{embed}, nil, []*discordgo.File{file})
 }
 
+// ReplyFiles is ReplyFile with several files.
+func (c *Ctx) ReplyFiles(ephemeral bool, embed *discordgo.MessageEmbed, files []*discordgo.File) error {
+	return c.reply(ephemeral, []*discordgo.MessageEmbed{embed}, nil, files)
+}
+
 func (c *Ctx) reply(ephemeral bool, embeds []*discordgo.MessageEmbed, components []discordgo.MessageComponent, files []*discordgo.File) error {
 	var flags discordgo.MessageFlags
 	if ephemeral {

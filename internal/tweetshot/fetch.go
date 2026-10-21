@@ -158,6 +158,33 @@ type raw struct {
 
 // Fetch gets the post with the given ID and its images.
 func (c *Client) Fetch(ctx context.Context, id string) (*Post, error) {
+	r, err := c.data(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	p := r.post()
+	c.fetchImages(ctx, p)
+	return p, nil
+}
+
+// Videos returns the number of videos and GIFs in the post itself (not in
+// a quoted post).
+func (c *Client) Videos(ctx context.Context, id string) (int, error) {
+	r, err := c.data(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, m := range r.MediaDetails {
+		if m.Type == KindVideo || m.Type == KindGIF {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// data gets the embed data of a post.
+func (c *Client) data(ctx context.Context, id string) (*raw, error) {
 	u, err := url.Parse(c.DataURL)
 	if err != nil {
 		return nil, err
@@ -190,9 +217,7 @@ func (c *Client) Fetch(ctx context.Context, id string) (*Post, error) {
 	if r.Typename != "Tweet" || r.ID == "" {
 		return nil, ErrNotFound
 	}
-	p := r.post()
-	c.fetchImages(ctx, p)
-	return p, nil
+	return &r, nil
 }
 
 // token is the token that X's embed script sends with a request:

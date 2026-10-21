@@ -279,9 +279,11 @@ The right-click command does not need the Message Content intent. Discord sends 
 | `/download <url>` | mod only | Downloads the video at the link and sends it to you in an ephemeral reply (only you see it). |
 | **Apps → Download video** (right-click a message) | mod only | Same as `/download`, for the first link in the message (or in its link preview). |
 
-The bot runs [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it can download from YouTube, X (Twitter), and the other sites that yt-dlp supports. yt-dlp's generic extractor is off, and the bot refuses links to local or private addresses. Only one download runs at a time; another download waits in a queue. Playlists download only the video in the link. Live streams are not supported.
+The bot runs [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it can download from YouTube, X (Twitter), and the other sites that yt-dlp supports. yt-dlp's generic extractor is off, and the bot refuses links to local or private addresses. Only one download runs at a time; another download waits in a queue. Live streams are not supported.
 
-If the best quality is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the server's boost limit), the bot tries 720p, 480p, 360p and 240p, and tells you that it sent a lower quality. The bot prefers H.264 video with AAC sound, because some Discord clients play only the sound of AV1 or VP9 video. A download stops after 12 minutes.
+**More than one video:** a link can give up to 10 files (Discord's limit for one message). For a post on X with more than one video or GIF, the bot sends all of the post's own videos and GIFs, but not the videos of a quoted post (unless the post has none of its own). A link to one of them (`…/video/2`) gives only that one. A YouTube link with a list (`watch?v=…&list=…`) gives only the video in the link. The reply lists each file with its size and quality. If the files together are larger than the upload limit, they come in more than one message. Photos are not downloaded.
+
+If the best quality of a file is larger than the upload limit (`DOWNLOAD_MAX_MB`, or the server's boost limit), the bot tries 720p, 480p, 360p and 240p for that file only, and tells you that it sent a lower quality. The bot prefers H.264 video with AAC sound, because some Discord clients play only the sound of AV1 or VP9 video. A download stops after 12 minutes.
 
 **GIFs on X:** X keeps a GIF as a short MP4 with no sound. The bot finds these by their address and uses ffmpeg to make a GIF again (480 px wide at 15 frames each second, then 320 px at 12, then 240 px at 10, until one fits the upload limit). If no GIF fits, or ffmpeg fails, the bot sends the MP4 and tells you why. GIFs from other sites stay MP4.
 
