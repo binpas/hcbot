@@ -4,7 +4,8 @@
 # hcbot.db, markov.db, backups/, cookies file) at /data.
 #
 # To update a tool, change its version and its checksum below. The
-# checksums come from each project's release page.
+# checksums come from each project's release page. The yt-dlp workflow
+# (.github/workflows/yt-dlp.yml) updates yt-dlp each week.
 
 # Stage 1: build hcbot and hcbot-train (pure Go, no C code).
 FROM golang:1.27.1-trixie AS build

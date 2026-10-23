@@ -1,0 +1,89 @@
+# Each week, look for a new yt-dlp release. If there is one, check its
+# signature, put the new version and checksum in the Dockerfile, commit
+# to main, and start the image workflow. TrueNAS gets the new image only
+# when someone updates the app.
+name: yt-dlp
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: yt-dlp
+  cancel-in-progress: false
+
+env:
+  # The yt-dlp release signing key (deploy/yt-dlp-signing-key.asc).
+  YTDLP_KEY_FPR: AC0CBBE6848D6A873464AF4E57CF65933B5A7581
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api repos/yt-dlp/yt-dlp/releases/latest --jq .tag_name)
+          current=$(sed -n 's/^ARG YTDLP_VERSION=//p' Dockerfile)
+          case "$latest" in
+            [0-9][0-9][0-9][0-9].[0-9]*) ;;
+            *) echo "Unexpected tag: $latest"; exit 1 ;;
+          esac
+          echo "current=$current latest=$latest"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$current" ]; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.new == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.latest }}
+        run: |
+          set -eu
+          base="https://github.com/yt-dlp/yt-dlp/releases/download/$VERSION"
+          curl -fsSL -o "$RUNNER_TEMP/SHA2-256SUMS" "$base/SHA2-256SUMS"
+          curl -fsSL -o "$RUNNER_TEMP/SHA2-256SUMS.sig" "$base/SHA2-256SUMS.sig"
+
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --quiet --import deploy/yt-dlp-signing-key.asc
+          fpr=$(gpg --batch --with-colons --fingerprint | awk -F: '/^fpr/ {print $10; exit}')
+          if [ "$fpr" != "$YTDLP_KEY_FPR" ]; then
+            echo "The key file has fingerprint $fpr, not $YTDLP_KEY_FPR."
+            exit 1
+          fi
+          # VALIDSIG shows a good signature from this exact key.
+          gpg --batch --status-fd 1 --verify "$RUNNER_TEMP/SHA2-256SUMS.sig" "$RUNNER_TEMP/SHA2-256SUMS" \
+            | grep -q "^\[GNUPG:\] VALIDSIG $YTDLP_KEY_FPR "
+
+          sum=$(awk '$2 == "yt-dlp_linux.zip" {print $1}' "$RUNNER_TEMP/SHA2-256SUMS")
+          if ! printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "No good checksum for yt-dlp_linux.zip: $sum"
+            exit 1
+          fi
+
+          sed -i -e "s/^ARG YTDLP_VERSION=.*/ARG YTDLP_VERSION=$VERSION/" \
+                 -e "s/^ARG YTDLP_SHA256=.*/ARG YTDLP_SHA256=$sum/" Dockerfile
+          git diff --stat
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -am "Update yt-dlp to $VERSION"
+          git push origin HEAD:main
+
+      # A push with the workflow token does not start other workflows,
+      # so start the image build here.
+      - if: steps.check.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run image.yml --ref main

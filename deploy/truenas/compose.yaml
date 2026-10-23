@@ -2,8 +2,8 @@
 # Install via YAML). See README.md, "Run on TrueNAS".
 #
 # Change these before you install:
-#   - the app and container name (one for each instance, for example
-#     hcbot-test)
+#   - the app and container name (one for each instance, for example hcbot
+#     or hcbot-test)
 #   - the host folder: a dataset that holds .env, hcbot.db, markov.db,
 #     backups/ and the cookies file. It must belong to UID and GID 568
 #     (apps), mode 0700.
@@ -16,13 +16,13 @@
 services:
   hcbot:
     image: ghcr.io/binpas/hcbot:latest
-    container_name: hcbot-test
+    container_name: hcbot
     restart: unless-stopped
     stop_grace_period: 30s
     user: "568:568"
     working_dir: /data
     volumes:
-      - /mnt/POOL/apps/hcbot-test:/data
+      - /mnt/POOL/apps/hcbot:/data
     environment:
       TZ: UTC
     # The bot only makes outbound connections. It has no ports.
