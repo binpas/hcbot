@@ -1,0 +1,23 @@
+# Keep secrets, data, and build output out of the image build.
+.git
+.github
+.env
+.env.*
+*cookies*.txt
+*.pem
+*.key
+*.db
+*.db-*
+*.sqlite*
+backups/
+training/
+dist/
+build/
+instances/
+config.mk
+/hcbot
+/hcbot-train
+/gohealthy
+/markovtrain
+CLAUDE.md
+.claude/

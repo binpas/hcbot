@@ -574,6 +574,27 @@ Under systemd, the bot writes its log lines without its own timestamp, because t
 
 ---
 
+## Run on TrueNAS (or other Docker hosts)
+
+Each push to `main` builds a container image, `ghcr.io/binpas/hcbot` (linux/amd64), with GitHub Actions (`.github/workflows/image.yml`). The image has `hcbot`, `hcbot-train`, and the [video download](#video-downloads) tools: `yt-dlp`, `deno`, `ffmpeg`, and `ffprobe`. It has no secrets and no data. The tags are `latest` (the newest `main`) and `sha-<commit>` (one for each build, to go back to an older image).
+
+The bot runs as UID and GID 568 (the TrueNAS `apps` user) in the folder `/data`. Mount the bot folder there. It holds `.env`, `hcbot.db`, `markov.db`, `backups/`, and the cookies file.
+
+The image package on GHCR is private. Give TrueNAS a login for it once: make a GitHub personal access token (classic) with only the `read:packages` scope. Then add it in **Apps > Configuration > Manage Container Image Registries**, with registry `ghcr.io`, your GitHub user name, and the token as the password. Do not use your GitHub password.
+
+1. Make a dataset for the instance, for example `POOL/apps/hcbot-test`. Make it belong to `apps` (568:568) with mode 0700.
+2. Put the `.env` file in it (mode 0600). If you move an instance from another server, stop it there first. Then copy its `.env`, `hcbot.db`, `markov.db`, and cookies file. **Do not run the same bot token in two places at the same time.** If you do, each command gets two replies.
+3. In TrueNAS, go to **Apps > Discover Apps > ⋮ > Install via YAML**. Paste `deploy/truenas/compose.yaml`. Change the container name and the host folder (`/mnt/POOL/...`).
+4. Look at the app logs. You must see "Logged in as" and "Slash commands synced".
+
+To update, use **Update** on the app (it gets the new `latest`), or set a `sha-<commit>` tag in the YAML. To update a download tool, change its version and checksum in the `Dockerfile`.
+
+The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports.
+
+To run `hcbot-train` in the container, use the app shell, or `docker exec -it hcbot-test hcbot-train ...`.
+
+---
+
 ## Development and tests
 
 ```bash

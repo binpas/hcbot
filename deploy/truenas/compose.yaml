@@ -1,0 +1,44 @@
+# HEALTH bot as a TrueNAS SCALE custom app (Apps > Discover Apps >
+# Install via YAML). See README.md, "Run on TrueNAS".
+#
+# Change these before you install:
+#   - the app and container name (one for each instance, for example
+#     hcbot-test)
+#   - the host folder: a dataset that holds .env, hcbot.db, markov.db,
+#     backups/ and the cookies file. It must belong to UID and GID 568
+#     (apps), mode 0700.
+#
+# Do not put BOT_TOKEN or other secrets in this file. TrueNAS keeps the
+# app YAML in its config. The bot reads them from /data/.env.
+#
+# Do not run the same bot token in two places at the same time.
+
+services:
+  hcbot:
+    image: ghcr.io/binpas/hcbot:latest
+    container_name: hcbot-test
+    restart: unless-stopped
+    stop_grace_period: 30s
+    user: "568:568"
+    working_dir: /data
+    volumes:
+      - /mnt/POOL/apps/hcbot-test:/data
+    environment:
+      TZ: UTC
+    # The bot only makes outbound connections. It has no ports.
+    read_only: true
+    tmpfs:
+      # /download keeps its files and the yt-dlp cache here.
+      - /tmp:size=2g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
