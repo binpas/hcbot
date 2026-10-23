@@ -22,17 +22,23 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 # make sure that each file is the expected one.
 FROM debian:trixie-slim AS tools
 ARG YTDLP_VERSION=2026.10.21
-ARG YTDLP_SHA256=d8bd33fca9d5b23bd5b9952b3fca36db5c46331933fda9f598a3da14ce2c243f
+ARG YTDLP_SHA256=dcddc44b6151ccd855a9a3c8fcdb00e897bb872ec9f4908b1b708b16eaaaa114
 ARG DENO_VERSION=v2.9.8
 ARG DENO_SHA256=e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /tools
-RUN curl -fsSL -o yt-dlp \
-        "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux" \
- && echo "${YTDLP_SHA256}  yt-dlp" | sha256sum -c - \
- && chmod 0755 yt-dlp \
+# yt-dlp_linux.zip is the unpacked release. The one-file yt-dlp_linux
+# unpacks itself into /tmp at each start, and that fails when /tmp is
+# noexec (as in the TrueNAS app).
+RUN curl -fsSL -o yt-dlp.zip \
+        "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux.zip" \
+ && echo "${YTDLP_SHA256}  yt-dlp.zip" | sha256sum -c - \
+ && unzip -q yt-dlp.zip -d yt-dlp \
+ && rm yt-dlp.zip \
+ && mv yt-dlp/yt-dlp_linux yt-dlp/yt-dlp \
+ && chmod 0755 yt-dlp/yt-dlp \
  && curl -fsSL -o deno.zip \
         "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
  && echo "${DENO_SHA256}  deno.zip" | sha256sum -c - \
@@ -46,7 +52,11 @@ FROM debian:trixie-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates ffmpeg tzdata \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=tools /tools/yt-dlp /tools/deno /usr/local/bin/
+COPY --from=tools /tools/yt-dlp /opt/yt-dlp
+COPY --from=tools /tools/deno /usr/local/bin/
+# yt-dlp finds its _internal folder next to the program, so it stays in
+# its own folder.
+ENV PATH=/opt/yt-dlp:$PATH
 COPY --from=build /out/hcbot /out/hcbot-train /usr/local/bin/
 COPY README.md /usr/share/doc/hcbot/README.md
 
