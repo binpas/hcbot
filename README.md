@@ -628,7 +628,7 @@ The image is large (about 8 GB, most of it PyTorch and CUDA), so it is built on 
 3. Make a dataset for the voices, for example `POOL/apps/tts-voices`. Give the `apps` user read access. To add voices from your PC, share it with SMB.
 4. Build the image on the host: `docker build -t hcbot-tts:local tts/`.
 5. Install `deploy/truenas/tts-compose.yaml` with **Install via YAML**. Change the folders and the port address (the `docker0` address: `ip -4 addr show docker0`). The port is not open on the LAN.
-6. In the `.env` of each bot instance, set `TTS_URL=http://host.docker.internal:8765` and the same `TTS_TOKEN`. The bot app needs the `extra_hosts` line from `compose.yaml`. Restart the bot.
+6. In the `.env` of each bot instance, set `TTS_URL=http://host.docker.internal:8765` and the same `TTS_TOKEN`. The bot app needs the `extra_hosts` line from `compose.yaml`, with the same `docker0` address (not `host-gateway`, which can give an IPv6 address). Restart the bot.
 
 **Voices:** put one audio file for each voice in the voices folder (WAV, MP3, FLAC, OGG, or M4A). The file name is the voice name: use `a`–`z`, `0`–`9`, `-`, and `_` (at most 32 characters). A good clip is 5–10 seconds of one speaker, with clear speech and no music or noise. You do not need a transcript. Then use **Reload voices** in `/voices`, or restart the worker. If a voice sometimes changes into a different voice, put `<name>.json` next to the clip with `{"force_speaker": 1.5}` (try 1.1 to 1.5; a high value can make noise).
 

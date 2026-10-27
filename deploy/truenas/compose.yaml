@@ -26,9 +26,12 @@ services:
     environment:
       TZ: UTC
     # For /say: the text to speech worker (tts-compose.yaml) is on the host,
-    # at TTS_URL=http://host.docker.internal:8765.
+    # at TTS_URL=http://host.docker.internal:8765. Use the docker0 IPv4
+    # address (ip -4 addr show docker0), the same as in tts-compose.yaml:
+    # with IPv6 on, host-gateway gives an IPv6 address, and the worker port
+    # is open only on IPv4.
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.16.0.1"
     # The bot only makes outbound connections. It has no ports.
     read_only: true
     tmpfs:
