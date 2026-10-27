@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -51,6 +53,12 @@ type ttsState struct {
 	voices   []string
 	voicesAt time.Time
 	prefs    map[string]ttsPref
+	speak    map[string]speakText // texts of open "Speak this message" forms
+}
+
+type speakText struct {
+	text string
+	at   time.Time
 }
 
 func (b *Bot) registerTTS() {
@@ -72,6 +80,13 @@ func (b *Bot) registerTTS() {
 		handler:     b.cmdSayReply,
 	})
 	b.addCommand(&command{
+		name:        speakMenu,
+		kind:        discordgo.MessageApplicationCommand,
+		perm:        permMod,
+		defaultPerm: manageMessages,
+		handler:     b.cmdSpeak,
+	})
+	b.addCommand(&command{
 		name:        "voices",
 		description: "List the voices for /say (mod only).",
 		perm:        permMod,
@@ -83,9 +98,12 @@ func (b *Bot) registerTTS() {
 }
 
 // The /say modal. From the message menu, its custom ID also has the
-// channel and the message to reply to: saymodal:<channel>:<message>.
+// channel and the message to reply to: saymodal:<channel>:<message>. From
+// "Speak this message", it also has the key of the text in ttsState.speak.
 const (
 	sayMenu      = "Respond with Voice"
+	speakMenu    = "Speak this message"
+	speakFor     = 15 * time.Minute // how long the text of an open form is kept
 	sayModalID   = "saymodal"
 	sayText      = "text"
 	sayVoice     = "voice"
@@ -149,7 +167,7 @@ func (b *Bot) cmdSay(c *Ctx) {
 	}
 	channel := modalLabel{Label: "Channel", Description: "Where to post the clip",
 		Component: modalChannelSelect{CustomID: sayChannel, Types: sayChannelTypes, Default: def}}
-	b.openSayModal(c, sayModalID, "Say something", channel)
+	b.openSayModal(c, sayModalID, "Say something", "", true, channel)
 }
 
 func (b *Bot) cmdSayReply(c *Ctx) {
@@ -161,12 +179,120 @@ func (b *Bot) cmdSayReply(c *Ctx) {
 		c.Reply(true, errEmbed("You cannot send messages in this channel."))
 		return
 	}
-	b.openSayModal(c, sayModalID+":"+c.i.ChannelID+":"+msg.ID, "Respond with voice")
+	b.openSayModal(c, sayModalID+":"+c.i.ChannelID+":"+msg.ID, "Respond with voice", "", true)
 }
 
-// openSayModal opens the /say modal with the text, the voice, and the
-// format, and the extra fields after them.
-func (b *Bot) openSayModal(c *Ctx, customID, title string, extra ...discordgo.MessageComponent) {
+// cmdSpeak speaks a message's text, as a reply to it. Discord sends the
+// text of the selected message in the interaction, also without the
+// Message Content intent. The form has only the voice and the format,
+// unless the text is too long: then it also has the text, cut, to change.
+func (b *Bot) cmdSpeak(c *Ctx) {
+	msg := c.TargetMessage()
+	if msg == nil || !b.ttsEnabled(c) || !b.ttsChannelAllowed(c, c.i.ChannelID) {
+		return
+	}
+	if !b.canPostIn(c, c.i.ChannelID) {
+		c.Reply(true, errEmbed("You cannot send messages in this channel."))
+		return
+	}
+	text := b.spokenText(c.GuildID(), msg)
+	if text == "" {
+		c.Reply(true, errEmbed("That message has no text to speak."))
+		return
+	}
+	b.tts.mu.Lock()
+	if b.tts.speak == nil {
+		b.tts.speak = map[string]speakText{}
+	}
+	for k, v := range b.tts.speak {
+		if time.Since(v.at) > speakFor {
+			delete(b.tts.speak, k)
+		}
+	}
+	key := c.i.ID
+	b.tts.speak[key] = speakText{text, time.Now()}
+	b.tts.mu.Unlock()
+
+	customID := sayModalID + ":" + c.i.ChannelID + ":" + msg.ID + ":" + key
+	maxChars := b.ttsMaxChars()
+	if utf8.RuneCountInString(text) <= maxChars {
+		b.openSayModal(c, customID, "Speak this message", "", false)
+		return
+	}
+	b.openSayModal(c, customID, "Speak this message (too long)", cutText(text, maxChars), true)
+}
+
+// takeSpeakText returns and forgets the text of a "Speak this message"
+// form, or "" when it is not kept (any more).
+func (b *Bot) takeSpeakText(key string) string {
+	b.tts.mu.Lock()
+	defer b.tts.mu.Unlock()
+	v, ok := b.tts.speak[key]
+	delete(b.tts.speak, key)
+	if !ok || time.Since(v.at) > speakFor {
+		return ""
+	}
+	return v.text
+}
+
+var (
+	userMentionRE    = regexp.MustCompile(`<@!?(\d+)>`)
+	roleMentionRE    = regexp.MustCompile(`<@&(\d+)>`)
+	channelMentionRE = regexp.MustCompile(`<#(\d+)>`)
+	inlineEmojiRE    = regexp.MustCompile(`<a?:(\w+):\d+>`)
+	timestampRE      = regexp.MustCompile(`<t:\d+(?::\w)?>`)
+)
+
+// spokenText makes a message's text ready to speak: mentions become
+// names, custom emoji their names, and links the word "link".
+func (b *Bot) spokenText(guildID string, m *discordgo.Message) string {
+	text := userMentionRE.ReplaceAllStringFunc(m.Content, func(s string) string {
+		id := userMentionRE.FindStringSubmatch(s)[1]
+		for _, u := range m.Mentions {
+			if u.ID == id {
+				if mem, err := b.s.State.Member(guildID, id); err == nil && mem.Nick != "" {
+					return "@" + mem.Nick
+				}
+				return "@" + cmp.Or(u.GlobalName, u.Username)
+			}
+		}
+		return "someone"
+	})
+	text = roleMentionRE.ReplaceAllStringFunc(text, func(s string) string {
+		if r, err := b.s.State.Role(guildID, roleMentionRE.FindStringSubmatch(s)[1]); err == nil {
+			return "@" + r.Name
+		}
+		return "a role"
+	})
+	text = channelMentionRE.ReplaceAllStringFunc(text, func(s string) string {
+		if ch, err := b.s.State.Channel(channelMentionRE.FindStringSubmatch(s)[1]); err == nil {
+			return "#" + ch.Name
+		}
+		return "a channel"
+	})
+	text = inlineEmojiRE.ReplaceAllString(text, "$1")
+	text = timestampRE.ReplaceAllString(text, "a time")
+	text = linkRE.ReplaceAllString(text, "link")
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// cutText cuts text to at most n characters, at a full word when it can.
+func cutText(text string, n int) string {
+	r := []rune(text)
+	if len(r) <= n {
+		return text
+	}
+	cut := string(r[:n])
+	if i := strings.LastIndexAny(cut, " \n"); i > n/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut)
+}
+
+// openSayModal opens the /say modal with the text (when withText is true,
+// filled with prefill), the voice, and the format, and the extra fields
+// after them.
+func (b *Bot) openSayModal(c *Ctx, customID, title, prefill string, withText bool, extra ...discordgo.MessageComponent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // a modal must open in 3 s
 	defer cancel()
 	names, err := b.ttsVoices(ctx, false)
@@ -190,15 +316,18 @@ func (b *Bot) openSayModal(c *Ctx, customID, title string, extra ...discordgo.Me
 		options = append(options, discordgo.SelectMenuOption{Label: n, Value: n, Default: n == pref.voice})
 	}
 	maxChars := b.ttsMaxChars()
-	fields := []discordgo.MessageComponent{
-		modalLabel{Label: "Text", Description: fmt.Sprintf("What to say (at most %d characters)", maxChars),
-			Component: modalText{CustomID: sayText, Style: discordgo.TextInputParagraph, MinLength: 1, MaxLength: maxChars}},
+	var fields []discordgo.MessageComponent
+	if withText {
+		fields = append(fields, modalLabel{Label: "Text", Description: fmt.Sprintf("What to say (at most %d characters)", maxChars),
+			Component: modalText{CustomID: sayText, Style: discordgo.TextInputParagraph, MinLength: 1, MaxLength: maxChars, Value: prefill}})
+	}
+	fields = append(fields,
 		modalLabel{Label: "Voice", Component: modalSelect{CustomID: sayVoice, Options: options}},
 		modalLabel{Label: "Format", Component: modalSelect{CustomID: sayFormat, Options: []discordgo.SelectMenuOption{
 			{Label: "Voice message", Value: sayFormatMsg, Description: "Without the text", Default: pref.voiceMsg},
 			{Label: "Audio file", Value: sayFormatOgg, Description: "With the text", Default: !pref.voiceMsg},
 		}}},
-	}
+	)
 	c.Modal(customID, title, append(fields, extra...)...)
 }
 
@@ -240,7 +369,7 @@ func (b *Bot) onSayModal(c *Ctx) {
 		return
 	}
 	var target sayTarget
-	if len(c.Args) == 2 {
+	if len(c.Args) >= 2 {
 		target = sayTarget{c.Args[0], c.Args[1]} // from the message menu
 	} else if v := c.ModalValues(sayChannel); len(v) == 1 {
 		target.channelID = v[0]
@@ -257,6 +386,17 @@ func (b *Bot) onSayModal(c *Ctx) {
 		return
 	}
 	text := strings.TrimSpace(c.ModalValue(sayText))
+	if len(c.Args) == 3 {
+		// Speak this message: the kept text, unless the form had a text box.
+		kept := b.takeSpeakText(c.Args[2])
+		if text == "" {
+			text = kept
+		}
+		if text == "" {
+			c.Reply(true, errEmbed("The form was open too long. Try again."))
+			return
+		}
+	}
 	maxChars := b.ttsMaxChars()
 	if n := utf8.RuneCountInString(text); n == 0 || n > maxChars {
 		c.Reply(true, errEmbed(fmt.Sprintf("The text must have 1 to %d characters.", maxChars)))

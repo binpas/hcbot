@@ -134,17 +134,21 @@ func (tb *testBot) submitSay(userID, text, voice, format string) {
 }
 
 // submitSayModal sends a /say modal the way Discord does, with Labels, as a
-// raw gateway event. channel is the channel select's value; "" leaves the
-// field out (the message menu's modal has none).
+// raw gateway event. channel is the channel select's value, and "" leaves
+// the field out (the message menu's modal has none); "" text leaves the
+// text field out (the short "Speak this message" modal has none).
 func (tb *testBot) submitSayModal(userID, customID, channel, text, voice, format string) {
 	tb.t.Helper()
 	tb.seq++
 	label := func(c map[string]any) map[string]any { return map[string]any{"type": 18, "component": c} }
-	fields := []any{
-		label(map[string]any{"type": 4, "custom_id": sayText, "value": text}),
+	var fields []any
+	if text != "" {
+		fields = append(fields, label(map[string]any{"type": 4, "custom_id": sayText, "value": text}))
+	}
+	fields = append(fields,
 		label(map[string]any{"type": 3, "custom_id": sayVoice, "values": []string{voice}}),
 		label(map[string]any{"type": 3, "custom_id": sayFormat, "values": []string{format}}),
-	}
+	)
 	if channel != "" {
 		fields = append(fields, label(map[string]any{"type": 8, "custom_id": sayChannel, "values": []string{channel}}))
 	}
@@ -322,6 +326,94 @@ func TestSayReplyMenu(t *testing.T) {
 	}
 	if logs := tb.sent(tChModLog); len(logs) != 1 || !strings.Contains(logs[0], "as a reply to [this message]") {
 		t.Errorf("mod log = %q", logs)
+	}
+}
+
+// speakModal uses "Speak this message" on msg and returns the modal's
+// custom ID and JSON.
+func (tb *testBot) speakModal(userID string, msg *discordgo.Message) (string, string) {
+	tb.t.Helper()
+	tb.api.reset()
+	tb.runMessageMenu(userID, speakMenu, msg)
+	for _, c := range tb.api.find("POST", `/interactions/.*/callback`) {
+		var resp struct {
+			Type int `json:"type"`
+			Data struct {
+				CustomID string `json:"custom_id"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(c.Body, &resp) == nil && resp.Type == 9 {
+			return resp.Data.CustomID, string(c.Body)
+		}
+	}
+	return "", ""
+}
+
+func TestSpeakMessage(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	msg := &discordgo.Message{ID: "7001", ChannelID: tChGeneral,
+		Content:  "hi <@" + tUser + "> and <@999>, see https://example.com/x <:wave:123> in <#" + tChSupport + ">",
+		Mentions: []*discordgo.User{{ID: tUser, Username: "user"}}}
+	id, m := tb.speakModal(tMod, msg)
+	if !strings.HasPrefix(id, sayModalID+":"+tChGeneral+":7001:") || strings.Contains(m, `"custom_id":"text"`) {
+		t.Fatalf("modal %q = %s", id, m)
+	}
+	tb.submitSayModal(tMod, id, "", "", "sam", sayFormatMsg)
+	want := "hi @user and someone, see link wave in #support"
+	if len(f.speaks) != 1 || f.speaks[0]["text"] != want {
+		t.Errorf("worker requests = %v, want %q", f.speaks, want)
+	}
+	vm := tb.voiceMessages()
+	if ref, _ := vm[0]["message_reference"].(map[string]any); len(vm) != 1 || ref["message_id"] != "7001" {
+		t.Errorf("voice messages = %v", vm)
+	}
+	if logs := tb.sent(tChModLog); len(logs) != 1 || !strings.Contains(logs[0], want) {
+		t.Errorf("mod log = %q", logs)
+	}
+
+	// The text is used once.
+	tb.config(map[string]string{"TTS_COOLDOWN": "0"})
+	tb.submitSayModal(tMod, id, "", "", "sam", sayFormatMsg)
+	tb.expect(true, "open too long")
+}
+
+func TestSpeakLongMessage(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	tb.config(map[string]string{"TTS_MAX_CHARS": "10"})
+	id, m := tb.speakModal(tMod, &discordgo.Message{ID: "7001", ChannelID: tChGeneral, Content: "one two three four"})
+	if !strings.Contains(m, `"custom_id":"text","style":2,"min_length":1,"max_length":10,"value":"one two"`) {
+		t.Fatalf("modal = %s", m)
+	}
+	tb.submitSayModal(tMod, id, "", "one two!", "random", sayFormatMsg)
+	if len(f.speaks) != 1 || f.speaks[0]["text"] != "one two!" {
+		t.Errorf("worker requests = %v", f.speaks)
+	}
+}
+
+func TestSpeakChecks(t *testing.T) {
+	tb, _, _ := newTTSBot(t)
+	tb.speakModal(tUser, &discordgo.Message{ID: "7001", ChannelID: tChGeneral, Content: "hi"})
+	tb.expect(true, "must be a moderator")
+	if id, _ := tb.speakModal(tMod, &discordgo.Message{ID: "7001", ChannelID: tChGeneral, Content: "  "}); id != "" {
+		t.Errorf("modal for an empty message: %s", id)
+	}
+	tb.expect(true, "no text to speak")
+}
+
+func TestCutText(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"one two three", 10, "one two"},
+		{"abcdefghijklmnop", 10, "abcdefghij"},
+		{"héllo wörld again", 12, "héllo wörld"},
+	} {
+		if got := cutText(c.in, c.n); got != c.want {
+			t.Errorf("cutText(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
 	}
 }
 
