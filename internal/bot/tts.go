@@ -59,10 +59,17 @@ func (b *Bot) registerTTS() {
 	}
 	b.addCommand(&command{
 		name:        "say",
-		description: "Make a speech clip or voice message and post it here (mod only).",
+		description: "Make a voice message or an audio clip and post it in a channel (mod only).",
 		perm:        permMod,
 		defaultPerm: manageMessages,
 		handler:     b.cmdSay,
+	})
+	b.addCommand(&command{
+		name:        sayMenu,
+		kind:        discordgo.MessageApplicationCommand,
+		perm:        permMod,
+		defaultPerm: manageMessages,
+		handler:     b.cmdSayReply,
 	})
 	b.addCommand(&command{
 		name:        "voices",
@@ -75,17 +82,23 @@ func (b *Bot) registerTTS() {
 	b.addComponent("ttsreload", b.onTTSReload)
 }
 
-// The /say modal.
+// The /say modal. From the message menu, its custom ID also has the
+// channel and the message to reply to: saymodal:<channel>:<message>.
 const (
+	sayMenu      = "Respond with Voice"
 	sayModalID   = "saymodal"
 	sayText      = "text"
 	sayVoice     = "voice"
 	sayFormat    = "format"
+	sayChannel   = "channel"
 	sayFormatMsg = "voice"
 	sayFormatOgg = "file"
 	// A select has at most 25 options: random and 24 voices.
 	sayMaxVoices = 24
 )
+
+// sayChannelTypes are the channels /say can post in.
+var sayChannelTypes = []discordgo.ChannelType{discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews}
 
 // ttsPref is a member's last /say choices, so the modal opens with them.
 // It is kept in memory only.
@@ -94,10 +107,66 @@ type ttsPref struct {
 	voiceMsg bool
 }
 
+// modalChannelSelect is a required channel select (one channel) in a
+// Label, with a channel selected first.
+type modalChannelSelect struct {
+	CustomID string
+	Types    []discordgo.ChannelType
+	Default  string
+}
+
+func (s modalChannelSelect) Type() discordgo.ComponentType {
+	return discordgo.ChannelSelectMenuComponent
+}
+
+func (s modalChannelSelect) MarshalJSON() ([]byte, error) {
+	type value struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	}
+	var defaults []value
+	if s.Default != "" {
+		defaults = []value{{s.Default, "channel"}}
+	}
+	return json.Marshal(struct {
+		Type     discordgo.ComponentType `json:"type"`
+		CustomID string                  `json:"custom_id"`
+		Types    []discordgo.ChannelType `json:"channel_types"`
+		Defaults []value                 `json:"default_values,omitempty"`
+		Min      int                     `json:"min_values"`
+		Max      int                     `json:"max_values"`
+		Required bool                    `json:"required"`
+	}{s.Type(), s.CustomID, s.Types, defaults, 1, 1, true})
+}
+
 func (b *Bot) cmdSay(c *Ctx) {
-	if !b.sayAllowed(c) {
+	if !b.ttsEnabled(c) {
 		return
 	}
+	def := c.i.ChannelID
+	if chans := b.cfg.List("TTS_CHANNELS"); len(chans) > 0 && !slices.Contains(chans, def) {
+		def = ""
+	}
+	channel := modalLabel{Label: "Channel", Description: "Where to post the clip",
+		Component: modalChannelSelect{CustomID: sayChannel, Types: sayChannelTypes, Default: def}}
+	b.openSayModal(c, sayModalID, "Say something", channel)
+}
+
+func (b *Bot) cmdSayReply(c *Ctx) {
+	msg := c.TargetMessage()
+	if msg == nil || !b.ttsEnabled(c) || !b.ttsChannelAllowed(c, c.i.ChannelID) {
+		return
+	}
+	if !b.canPostIn(c, c.i.ChannelID) {
+		c.Reply(true, errEmbed("You cannot send messages in this channel."))
+		return
+	}
+	b.openSayModal(c, sayModalID+":"+c.i.ChannelID+":"+msg.ID, "Respond with voice")
+}
+
+// openSayModal opens the /say modal with the text, the voice, and the
+// format, and the extra fields after them.
+func (b *Bot) openSayModal(c *Ctx, customID, title string, extra ...discordgo.MessageComponent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // a modal must open in 3 s
 	defer cancel()
 	names, err := b.ttsVoices(ctx, false)
@@ -121,25 +190,32 @@ func (b *Bot) cmdSay(c *Ctx) {
 		options = append(options, discordgo.SelectMenuOption{Label: n, Value: n, Default: n == pref.voice})
 	}
 	maxChars := b.ttsMaxChars()
-	text := modalLabel{Label: "Text", Description: fmt.Sprintf("What to say (at most %d characters)", maxChars),
-		Component: modalText{CustomID: sayText, Style: discordgo.TextInputParagraph, MinLength: 1, MaxLength: maxChars}}
-	voice := modalLabel{Label: "Voice", Component: modalSelect{CustomID: sayVoice, Options: options}}
-	format := modalLabel{Label: "Format", Component: modalSelect{CustomID: sayFormat, Options: []discordgo.SelectMenuOption{
-		{Label: "Voice message", Value: sayFormatMsg, Description: "Without the text", Default: pref.voiceMsg},
-		{Label: "Audio file", Value: sayFormatOgg, Description: "With the text", Default: !pref.voiceMsg},
-	}}}
-	c.Modal(sayModalID, "Say something", text, voice, format)
+	fields := []discordgo.MessageComponent{
+		modalLabel{Label: "Text", Description: fmt.Sprintf("What to say (at most %d characters)", maxChars),
+			Component: modalText{CustomID: sayText, Style: discordgo.TextInputParagraph, MinLength: 1, MaxLength: maxChars}},
+		modalLabel{Label: "Voice", Component: modalSelect{CustomID: sayVoice, Options: options}},
+		modalLabel{Label: "Format", Component: modalSelect{CustomID: sayFormat, Options: []discordgo.SelectMenuOption{
+			{Label: "Voice message", Value: sayFormatMsg, Description: "Without the text", Default: pref.voiceMsg},
+			{Label: "Audio file", Value: sayFormatOgg, Description: "With the text", Default: !pref.voiceMsg},
+		}}},
+	}
+	c.Modal(customID, title, append(fields, extra...)...)
 }
 
-// sayAllowed checks TTS_ENABLED and TTS_CHANNELS, and tells the member
-// when /say cannot be used.
-func (b *Bot) sayAllowed(c *Ctx) bool {
+// ttsEnabled checks TTS_ENABLED, and tells the member when it is off.
+func (b *Bot) ttsEnabled(c *Ctx) bool {
 	if !b.cfg.Bool("TTS_ENABLED") {
 		c.Reply(true, errEmbed("Speech clips are off (`TTS_ENABLED` in `/setup`)."))
 		return false
 	}
-	if chans := b.cfg.List("TTS_CHANNELS"); len(chans) > 0 && !slices.Contains(chans, c.i.ChannelID) {
-		c.Reply(true, errEmbed("`/say` does not work in this channel (`TTS_CHANNELS` in `/setup`)."))
+	return true
+}
+
+// ttsChannelAllowed checks TTS_CHANNELS for the channel to post in (for a
+// thread, its parent), and tells the member when it is not allowed.
+func (b *Bot) ttsChannelAllowed(c *Ctx, channelID string) bool {
+	if chans := b.cfg.List("TTS_CHANNELS"); len(chans) > 0 && !slices.Contains(chans, b.parentOf(channelID).ID) {
+		c.Reply(true, errEmbed(fmt.Sprintf("Speech clips do not work in <#%s> (`TTS_CHANNELS` in `/setup`).", channelID)))
 		return false
 	}
 	return true
@@ -149,12 +225,35 @@ func (b *Bot) ttsMaxChars() int {
 	return min(max(b.cfg.Int("TTS_MAX_CHARS"), 1), ttsHardMaxChars)
 }
 
+// sayTarget is where a clip goes: a channel, and a message to reply to
+// ("" for none).
+type sayTarget struct {
+	channelID, replyTo string
+}
+
 func (b *Bot) onSayModal(c *Ctx) {
 	if !b.isMod(c.Member()) {
 		c.Reply(true, errEmbed("You must be a moderator to use that command."))
 		return
 	}
-	if !b.sayAllowed(c) {
+	if !b.ttsEnabled(c) {
+		return
+	}
+	var target sayTarget
+	if len(c.Args) == 2 {
+		target = sayTarget{c.Args[0], c.Args[1]} // from the message menu
+	} else if v := c.ModalValues(sayChannel); len(v) == 1 {
+		target.channelID = v[0]
+		if !b.canPostIn(c, target.channelID) {
+			c.Reply(true, errEmbed(fmt.Sprintf("You cannot send messages in <#%s>.", target.channelID)))
+			return
+		}
+	}
+	if target.channelID == "" {
+		c.Reply(true, errEmbed("Select a channel."))
+		return
+	}
+	if !b.ttsChannelAllowed(c, target.channelID) {
 		return
 	}
 	text := strings.TrimSpace(c.ModalValue(sayText))
@@ -175,12 +274,47 @@ func (b *Bot) onSayModal(c *Ctx) {
 	}
 	b.tts.prefs[c.UserID()] = ttsPref{voice: voice, voiceMsg: voiceMsg}
 	b.tts.mu.Unlock()
-	b.say(c, text, voice, voiceMsg)
+	b.say(c, target, text, voice, voiceMsg)
 }
 
-// say makes the clip and posts it. The member sees the queue and the
-// errors in an ephemeral reply; the clip is a public follow-up.
-func (b *Bot) say(c *Ctx, text, voice string, voiceMsg bool) {
+// canPostIn reports whether the member may view and send messages in a
+// channel (for a thread, in its parent), so /say cannot post where the mod
+// cannot.
+func (b *Bot) canPostIn(c *Ctx, channelID string) bool {
+	g, err := b.s.State.Guild(c.GuildID())
+	if err != nil {
+		return false
+	}
+	ch := b.parentOf(channelID)
+	if ch.GuildID != c.GuildID() || !slices.Contains(sayChannelTypes, ch.Type) {
+		return false
+	}
+	if isAdmin(c.Member()) {
+		return true
+	}
+	need := int64(discordgo.PermissionViewChannel | discordgo.PermissionSendMessages)
+	return channelPerms(g, ch, c.UserID(), c.Member().Roles)&need == need
+}
+
+// parentOf returns a cached channel, or the parent of a thread. An unknown
+// channel gives an empty channel with only its ID.
+func (b *Bot) parentOf(channelID string) *discordgo.Channel {
+	ch, err := b.s.State.Channel(channelID)
+	if err != nil {
+		return &discordgo.Channel{ID: channelID}
+	}
+	if ch.IsThread() {
+		if p, err := b.s.State.Channel(ch.ParentID); err == nil {
+			return p
+		}
+	}
+	return ch
+}
+
+// say makes the clip and posts it to the target. The member sees the
+// queue, the status, and the errors in an ephemeral reply, which is
+// deleted when the clip is posted.
+func (b *Bot) say(c *Ctx, target sayTarget, text, voice string, voiceMsg bool) {
 	ahead, wait, ok := b.ttsEnqueue(c.UserID())
 	if !ok {
 		if wait > 0 {
@@ -192,9 +326,6 @@ func (b *Bot) say(c *Ctx, text, voice string, voiceMsg bool) {
 	}
 	defer b.ttsDone()
 
-	// The status message must replace the "thinking" reply before the clip
-	// is posted: Discord makes the first follow-up of a deferred reply into
-	// that (ephemeral) reply, and the clip would then be deleted with it.
 	c.Defer(true)
 	working := makeEmbed("🗣️ Making the clip", "This takes about 15–30 seconds.", colourBlurple)
 	ctx, cancel := context.WithTimeout(context.Background(), ttsTimeout)
@@ -232,11 +363,31 @@ func (b *Bot) say(c *Ctx, text, voice string, voiceMsg bool) {
 		c.Reply(true, errEmbed("I could not encode the clip."))
 		return
 	}
+	posted, sentAsVoice, err := b.postClip(target, ogg, wav, voice, text, voiceMsg)
+	if err != nil {
+		log.Printf("say: post: %v", err)
+		c.Reply(true, errEmbed(fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID)))
+		return
+	}
+	c.DeleteResponse()
+	b.logSay(c, target, posted, voice, sentAsVoice)
+}
+
+// postClip posts the clip in the target channel: as a voice message when
+// voiceMsg is true, and as an audio file with the voice name (and the text,
+// unless a voice message was asked for) when Discord refuses that or
+// voiceMsg is false. It returns the message and whether it is a voice
+// message.
+func (b *Bot) postClip(target sayTarget, ogg, wav []byte, voice, text string, voiceMsg bool) (*discordgo.Message, bool, error) {
+	var ref *discordgo.MessageReference
+	if target.replyTo != "" {
+		ref = &discordgo.MessageReference{MessageID: target.replyTo, ChannelID: target.channelID, FailIfNotExists: new(bool)}
+	}
+	noPing := &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}
 	if voiceMsg {
-		err := b.postVoiceMessage(c, ogg, wav)
+		m, err := b.postVoiceMessage(target.channelID, ref, noPing, ogg, wav)
 		if err == nil {
-			c.DeleteResponse()
-			return
+			return m, true, nil
 		}
 		log.Printf("say: voice message: %v", err) // send it as a file instead
 	}
@@ -244,43 +395,60 @@ func (b *Bot) say(c *Ctx, text, voice string, voiceMsg bool) {
 	if voiceMsg {
 		embed.Description = "" // the member asked for no text
 	}
-	_, err = c.s.FollowupMessageCreate(c.i.Interaction, true, &discordgo.WebhookParams{
-		Embeds: []*discordgo.MessageEmbed{embed},
-		Files:  []*discordgo.File{{Name: "say.ogg", ContentType: "audio/ogg", Reader: bytes.NewReader(ogg)}},
+	m, err := b.s.ChannelMessageSendComplex(target.channelID, &discordgo.MessageSend{
+		Embeds:          []*discordgo.MessageEmbed{embed},
+		Files:           []*discordgo.File{{Name: "say.ogg", ContentType: "audio/ogg", Reader: bytes.NewReader(ogg)}},
+		Reference:       ref,
+		AllowedMentions: noPing,
 	})
-	if err != nil {
-		log.Printf("say: post: %v", err)
-		c.Reply(true, errEmbed("Discord did not accept the clip."))
-		return
-	}
-	c.DeleteResponse()
+	return m, false, err
 }
 
-// postVoiceMessage posts ogg as a voice message: first as a follow-up of
-// the interaction, and if Discord refuses that, in the channel. A voice
-// message has no text and no embeds.
-func (b *Bot) postVoiceMessage(c *Ctx, ogg, wav []byte) error {
+// postVoiceMessage posts ogg as a voice message. discordgo cannot send the
+// attachment's length and waveform, so the request is made by hand. A
+// voice message has no text and no embeds.
+func (b *Bot) postVoiceMessage(channelID string, ref *discordgo.MessageReference, mentions *discordgo.MessageAllowedMentions, ogg, wav []byte) (*discordgo.Message, error) {
 	secs, wave := wavWaveform(wav)
 	payload := map[string]any{
-		"flags": discordgo.MessageFlagsIsVoiceMessage,
+		"flags":            discordgo.MessageFlagsIsVoiceMessage,
+		"allowed_mentions": mentions,
 		"attachments": []map[string]any{{
 			"id": "0", "filename": "voice-message.ogg", "duration_secs": secs, "waveform": wave,
 		}},
 	}
+	if ref != nil {
+		payload["message_reference"] = ref
+	}
 	files := []*discordgo.File{{Name: "voice-message.ogg", ContentType: "audio/ogg", Reader: bytes.NewReader(ogg)}}
 	ctype, body, err := discordgo.MultipartBodyWithJSON(payload, files)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	url := discordgo.EndpointWebhookToken(c.i.AppID, c.i.Token)
-	_, err = c.s.RequestRaw(http.MethodPost, url+"?wait=true", ctype, body, url, 0)
-	if err == nil {
-		return nil
+	url := discordgo.EndpointChannelMessages(channelID)
+	resp, err := b.s.RequestRaw(http.MethodPost, url, ctype, body, url, 0)
+	if err != nil {
+		return nil, err
 	}
-	log.Printf("say: voice message follow-up: %v", err)
-	url = discordgo.EndpointChannelMessages(c.i.ChannelID)
-	_, err = c.s.RequestRaw(http.MethodPost, url, ctype, body, url, 0)
-	return err
+	var m discordgo.Message
+	return &m, json.Unmarshal(resp, &m)
+}
+
+// logSay tells the mod log who posted a clip, with a link to it. The text
+// is not in the log.
+func (b *Bot) logSay(c *Ctx, target sayTarget, posted *discordgo.Message, voice string, voiceMsg bool) {
+	kind := "an audio clip"
+	if voiceMsg {
+		kind = "a voice message"
+	}
+	desc := fmt.Sprintf("<@%s> posted %s (voice: `%s`) in <#%s>", c.UserID(), kind, voice, target.channelID)
+	if target.replyTo != "" {
+		desc += fmt.Sprintf(", as a reply to [this message](https://discord.com/channels/%s/%s/%s)",
+			c.GuildID(), target.channelID, target.replyTo)
+	}
+	if posted != nil && posted.ID != "" {
+		desc += fmt.Sprintf(".\n[Jump to the clip](https://discord.com/channels/%s/%s/%s)", c.GuildID(), target.channelID, posted.ID)
+	}
+	b.modLog(makeEmbed("🗣️ Speech clip", desc, colourBlurple))
 }
 
 // wavWaveform reads 16-bit PCM WAV data and returns its length in seconds

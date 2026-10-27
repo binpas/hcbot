@@ -122,7 +122,8 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"Apps → " + tweetshotMenu, "Right-click a message to make an image of the first X post it links to."},
 		}},
 		{"Speech", []helpEntry{
-			{"/say", "Open a form to make a voice message or an audio clip of a text, and post it in the channel. Clips wait in a queue; each takes about 15–30 seconds."},
+			{"/say", "Open a form to make a voice message or an audio clip of a text, and post it in a channel. Clips wait in a queue; each takes about 15–30 seconds."},
+			{"Apps → " + sayMenu, "Right-click a message to answer it with a voice message or an audio clip."},
 			{"/voices", "List the voices for `/say`. Admins can reload the list."},
 		}},
 		{"Reaction Roles", []helpEntry{

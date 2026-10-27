@@ -126,21 +126,33 @@ func (tb *testBot) openSay(userID string) string {
 	return modal
 }
 
-// submitSay sends the /say modal the way Discord does, with Labels, as a
-// raw gateway event. format is sayFormatMsg or sayFormatOgg.
+// submitSay sends the /say modal for the general channel. format is
+// sayFormatMsg or sayFormatOgg.
 func (tb *testBot) submitSay(userID, text, voice, format string) {
+	tb.t.Helper()
+	tb.submitSayModal(userID, sayModalID, tChGeneral, text, voice, format)
+}
+
+// submitSayModal sends a /say modal the way Discord does, with Labels, as a
+// raw gateway event. channel is the channel select's value; "" leaves the
+// field out (the message menu's modal has none).
+func (tb *testBot) submitSayModal(userID, customID, channel, text, voice, format string) {
 	tb.t.Helper()
 	tb.seq++
 	label := func(c map[string]any) map[string]any { return map[string]any{"type": 18, "component": c} }
+	fields := []any{
+		label(map[string]any{"type": 4, "custom_id": sayText, "value": text}),
+		label(map[string]any{"type": 3, "custom_id": sayVoice, "values": []string{voice}}),
+		label(map[string]any{"type": 3, "custom_id": sayFormat, "values": []string{format}}),
+	}
+	if channel != "" {
+		fields = append(fields, label(map[string]any{"type": 8, "custom_id": sayChannel, "values": []string{channel}}))
+	}
 	member, _ := json.Marshal(tb.invoker(userID))
 	raw, _ := json.Marshal(map[string]any{
 		"id": fmt.Sprint(10000 + tb.seq), "application_id": tBot, "type": 5, "token": fmt.Sprintf("tok%d", tb.seq),
 		"guild_id": tGuild, "channel_id": cmp.Or(tb.channelOverride, tChGeneral), "member": json.RawMessage(member),
-		"data": map[string]any{"custom_id": sayModalID, "components": []any{
-			label(map[string]any{"type": 4, "custom_id": sayText, "value": text}),
-			label(map[string]any{"type": 3, "custom_id": sayVoice, "values": []string{voice}}),
-			label(map[string]any{"type": 3, "custom_id": sayFormat, "values": []string{format}}),
-		}},
+		"data": map[string]any{"custom_id": customID, "components": fields},
 	})
 	var check discordgo.Interaction
 	if json.Unmarshal(raw, &check) == nil {
@@ -149,16 +161,28 @@ func (tb *testBot) submitSay(userID, text, voice, format string) {
 	tb.onRawInteraction(tb.s, &discordgo.Event{Type: "INTERACTION_CREATE", RawData: raw})
 }
 
-// voiceMessages returns the payloads of the voice messages that were sent.
+// voiceMessages returns the payloads of the voice messages that were sent,
+// with "path" set to the request path.
 func (tb *testBot) voiceMessages() []map[string]any {
 	var out []map[string]any
 	for _, c := range tb.api.calls {
 		var p map[string]any
 		if c.Files != nil && json.Unmarshal(c.Body, &p) == nil && p["flags"] == float64(discordgo.MessageFlagsIsVoiceMessage) {
+			p["path"] = c.Path
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// denyView takes View Channel from @everyone in a cached channel.
+func (tb *testBot) denyView(channelID string) {
+	ch, err := tb.s.State.Channel(channelID)
+	if err != nil {
+		tb.t.Fatal(err)
+	}
+	ch.PermissionOverwrites = append(ch.PermissionOverwrites, &discordgo.PermissionOverwrite{
+		ID: tGuild, Type: discordgo.PermissionOverwriteTypeRole, Deny: discordgo.PermissionViewChannel})
 }
 
 func TestSayNotRegisteredWithoutWorker(t *testing.T) {
@@ -184,7 +208,8 @@ func TestSayModal(t *testing.T) {
 
 	m := tb.openSay(tMod)
 	for _, want := range []string{`"custom_id":"saymodal"`, `"type":18`, `"value":"random","description":"A new voice for each clip","default":true`,
-		`"value":"alex"`, `"value":"sam"`, `"value":"voice","description":"Without the text","default":true`, `"max_length":300`} {
+		`"value":"alex"`, `"value":"sam"`, `"value":"voice","description":"Without the text","default":true`, `"max_length":300`,
+		`"type":8,"custom_id":"channel","channel_types":[0,5],"default_values":[{"id":"` + tChGeneral + `","type":"channel"}]`} {
 		if !strings.Contains(m, want) {
 			t.Errorf("modal has no %s: %s", want, m)
 		}
@@ -221,6 +246,9 @@ func TestSayVoiceMessage(t *testing.T) {
 	if len(vm) != 1 {
 		t.Fatalf("voice messages = %v; calls %v", vm, tb.callList())
 	}
+	if vm[0]["path"] != "/channels/"+tChGeneral+"/messages" {
+		t.Errorf("voice message sent to %v", vm[0]["path"])
+	}
 	att := vm[0]["attachments"].([]any)[0].(map[string]any)
 	if att["duration_secs"] != 0.5 || att["waveform"] != base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{127}, 5)) {
 		t.Errorf("attachment = %v", att)
@@ -228,53 +256,98 @@ func TestSayVoiceMessage(t *testing.T) {
 	if _, ok := vm[0]["embeds"]; ok {
 		t.Errorf("voice message has embeds: %v", vm[0])
 	}
-	if len(tb.api.find("POST", `/webhooks/`+tBot+`/tok\d+`)) != 1 {
-		t.Errorf("not sent as a follow-up: %v", tb.callList())
+	if _, ok := vm[0]["message_reference"]; ok {
+		t.Errorf("voice message is a reply: %v", vm[0])
 	}
-	// The status edit must come before the clip, or Discord makes the clip
-	// the (ephemeral) reply.
-	var order []string
-	for _, c := range tb.api.calls {
-		switch {
-		case c.Method == "PATCH" && strings.HasSuffix(c.Path, "/messages/@original"):
-			order = append(order, "edit")
-		case c.Method == "POST" && strings.HasPrefix(c.Path, "/webhooks/"):
-			order = append(order, "clip")
-		}
-	}
-	if !slices.Equal(order, []string{"edit", "clip"}) {
-		t.Errorf("order = %v, want [edit clip]", order)
+	if len(tb.api.find("POST", `/webhooks/.*`)) != 0 {
+		t.Errorf("sent a follow-up: %v", tb.callList())
 	}
 	if len(tb.api.find("DELETE", `/webhooks/`+tBot+`/tok\d+/messages/@original`)) != 1 {
-		t.Errorf("the thinking reply was not deleted: %v", tb.callList())
+		t.Errorf("the status reply was not deleted: %v", tb.callList())
+	}
+	logs := tb.sent(tChModLog)
+	if len(logs) != 1 || !strings.Contains(logs[0], "<@"+tMod+"> posted a voice message (voice: `alex`) in <#"+tChGeneral+">") ||
+		!strings.Contains(logs[0], "/"+tChGeneral+"/8000") || strings.Contains(logs[0], "hello there") {
+		t.Errorf("mod log = %q", logs)
 	}
 	if tb.tts.pending != 0 || len(tb.ttsSlot) != 0 {
 		t.Errorf("queue not empty: pending %d, slot %d", tb.tts.pending, len(tb.ttsSlot))
 	}
 }
 
-func TestSayVoiceMessageFallbacks(t *testing.T) {
+func TestSayOtherChannel(t *testing.T) {
 	tb, _, _ := newTTSBot(t)
-	tb.config(map[string]string{"TTS_COOLDOWN": "0"})
-
-	// The follow-up is refused: the voice message goes to the channel.
-	tb.api.onBody("POST", `/webhooks/.*`, `duration_secs`, 1, http.StatusBadRequest, `{"code":50035}`)
-	tb.submitSay(tMod, "hi", "random", sayFormatMsg)
-	if n := len(tb.api.find("POST", `/channels/`+tChGeneral+`/messages`)); n != 1 {
-		t.Errorf("channel posts = %d; %v", n, tb.callList())
+	tb.submitSayModal(tMod, sayModalID, tChSupport, "hi", "random", sayFormatMsg)
+	vm := tb.voiceMessages()
+	if len(vm) != 1 || vm[0]["path"] != "/channels/"+tChSupport+"/messages" {
+		t.Errorf("voice messages = %v", vm)
 	}
 
-	// Both are refused: an audio file without the text.
+	// A mod cannot post where they cannot see; an admin can.
+	tb.denyView(tChSens)
+	tb.submitSayModal(tMod, sayModalID, tChSens, "hi", "random", sayFormatMsg)
+	tb.expect(true, "cannot send messages in <#"+tChSens+">")
+	tb.config(map[string]string{"TTS_COOLDOWN": "0"})
+	tb.submitSayModal(tAdmin, sayModalID, tChSens, "hi", "random", sayFormatMsg)
+	if n := len(tb.voiceMessages()); n != 2 {
+		t.Errorf("voice messages = %d, want 2", n)
+	}
+}
+
+func TestSayReplyMenu(t *testing.T) {
+	tb, _, _ := newTTSBot(t)
+	msg := &discordgo.Message{ID: "7001", ChannelID: tChGeneral, Content: "say something"}
+	tb.runMessageMenu(tUser, sayMenu, msg)
+	tb.expect(true, "must be a moderator")
+
 	tb.api.reset()
-	tb.api.onBody("POST", `/webhooks/.*`, `duration_secs`, 1, http.StatusBadRequest, `{"code":50035}`)
-	tb.api.onBody("POST", `/channels/.*/messages`, `duration_secs`, 1, http.StatusForbidden, `{"code":50013}`)
+	tb.runMessageMenu(tMod, sayMenu, msg)
+	calls := tb.api.find("POST", `/interactions/.*/callback`)
+	if len(calls) != 1 || !strings.Contains(string(calls[0].Body), `"custom_id":"saymodal:`+tChGeneral+`:7001"`) ||
+		strings.Contains(string(calls[0].Body), `"type":8`) {
+		t.Fatalf("modal = %v", calls)
+	}
+
+	tb.submitSayModal(tMod, sayModalID+":"+tChGeneral+":7001", "", "hello", "sam", sayFormatMsg)
+	vm := tb.voiceMessages()
+	if len(vm) != 1 {
+		t.Fatalf("voice messages = %v; %v", vm, tb.callList())
+	}
+	ref, _ := vm[0]["message_reference"].(map[string]any)
+	if ref["message_id"] != "7001" || ref["fail_if_not_exists"] != false {
+		t.Errorf("reference = %v", vm[0]["message_reference"])
+	}
+	if am, _ := vm[0]["allowed_mentions"].(map[string]any); am["replied_user"] != false {
+		t.Errorf("allowed mentions = %v", vm[0]["allowed_mentions"])
+	}
+	if logs := tb.sent(tChModLog); len(logs) != 1 || !strings.Contains(logs[0], "as a reply to [this message]") {
+		t.Errorf("mod log = %q", logs)
+	}
+}
+
+func TestSayVoiceMessageFallback(t *testing.T) {
+	tb, _, _ := newTTSBot(t)
+	tb.api.onBody("POST", `/channels/.*/messages`, `duration_secs`, 1, http.StatusBadRequest, `{"code":50035}`)
 	tb.submitSay(tMod, "secret words", "random", sayFormatMsg)
 	if got := tb.uploaded(); got["say.ogg"] == 0 {
 		t.Errorf("uploaded = %v", got)
 	}
-	r := tb.last()
-	if strings.Contains(r.text(), "secret words") || !strings.Contains(r.text(), "random") {
-		t.Errorf("fallback reply = %q", r.text())
+	posts := tb.sent(tChGeneral)
+	if len(posts) != 2 || strings.Contains(posts[1], "secret words") || !strings.Contains(posts[1], "random") {
+		t.Errorf("posts = %q", posts)
+	}
+	if logs := tb.sent(tChModLog); len(logs) != 1 || !strings.Contains(logs[0], "an audio clip") {
+		t.Errorf("mod log = %q", logs)
+	}
+}
+
+func TestSayPostFails(t *testing.T) {
+	tb, _, _ := newTTSBot(t)
+	tb.api.onBody("POST", `/channels/`+tChGeneral+`/messages`, ``, 0, http.StatusForbidden, `{"code":50013}`)
+	tb.submitSay(tMod, "hi", "random", sayFormatMsg)
+	tb.expect(true, "could not post", "Send Voice Messages")
+	if len(tb.sent(tChModLog)) != 0 {
+		t.Error("a failed post was logged")
 	}
 }
 
@@ -284,9 +357,9 @@ func TestSayAudioFile(t *testing.T) {
 	if len(tb.voiceMessages()) != 0 {
 		t.Error("sent a voice message")
 	}
-	r := tb.last()
-	if r.Kind != "followup" || r.Ephemeral || !strings.Contains(r.text(), "sam") || !strings.Contains(r.text(), "hello there") {
-		t.Errorf("reply = %+v", r)
+	posts := tb.sent(tChGeneral)
+	if len(posts) != 1 || !strings.Contains(posts[0], "sam") || !strings.Contains(posts[0], "hello there") {
+		t.Errorf("posts = %q", posts)
 	}
 	if got := tb.uploaded(); got["say.ogg"] == 0 {
 		t.Errorf("uploaded = %v", got)
@@ -318,10 +391,13 @@ func TestSayChecks(t *testing.T) {
 	tb.expect(true, "1 to 5 characters")
 
 	tb.config(map[string]string{"TTS_CHANNELS": tChJail})
-	tb.run(tMod, "say")
-	tb.expect(true, "does not work in this channel")
+	if m := tb.openSay(tMod); strings.Contains(m, "default_values") {
+		t.Errorf("the modal selects a channel that TTS_CHANNELS does not allow: %s", m)
+	}
 	tb.submitSay(tMod, "hi", "random", sayFormatMsg)
-	tb.expect(true, "does not work in this channel")
+	tb.expect(true, "do not work in <#"+tChGeneral+">")
+	tb.runMessageMenu(tMod, sayMenu, &discordgo.Message{ID: "7001", ChannelID: tChGeneral})
+	tb.expect(true, "do not work in <#"+tChGeneral+">")
 
 	tb.config(map[string]string{"TTS_ENABLED": "off"})
 	tb.run(tMod, "say")

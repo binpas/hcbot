@@ -226,7 +226,7 @@ In **OAuth2 → URL Generator**, select the `bot` and `applications.commands` sc
 - Manage Channels *(tickets, archives, `/channelarchive`, `/jail setup`)*
 - Manage Server *(invite logging and ❌ invite deletion)*
 - Manage Expressions and Create Expressions *(`/assets`)*
-- Send Voice Messages *(`/say` voice messages, when Discord refuses them as an interaction reply)*
+- Send Voice Messages *(`/say` voice messages)*
 - View Audit Log
 - Kick Members, Ban Members, Moderate Members
 
@@ -308,10 +308,13 @@ Use this command only for videos that you have the right to download and share. 
 
 | Command | Access | Description |
 |---|---|---|
-| `/say` | mod only | Opens a form with the text, a voice list, and a **Format** list (**Voice message** or **Audio file**). The bot posts the clip in the channel: as a Discord voice message (without the text), or as an Ogg/Opus audio file with the voice name and the text. With `random`, the model makes a new voice for each clip. The form opens with your last voice and format. |
+| `/say` | mod only | Opens a form with the text, a voice list, a **Format** list (**Voice message** or **Audio file**), and a channel list (the current channel is selected first). The bot posts the clip in that channel as a normal message: as a Discord voice message (without the text), or as an Ogg/Opus audio file with the voice name and the text. With `random`, the model makes a new voice for each clip. The form opens with your last voice and format. |
+| **Apps → Respond with Voice** (right-click a message) | mod only | The same form, without the channel list. The bot posts the clip as a reply to the message. The reply does not notify the author. |
 | `/voices` | mod only | Lists the voices. Admins also get a **Reload voices** button, which reads the voices folder again. |
 
-The bot sends the text and the voice name to the [text to speech worker](#text-to-speech), and uses ffmpeg to make the WAV into Ogg/Opus. For a voice message, the bot also calculates the length and the waveform. If Discord refuses the voice message as a reply, the bot posts it in the channel; if that also fails, it posts an audio file without the text. Only you see the queue position and the errors. The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
+The bot sends the text and the voice name to the [text to speech worker](#text-to-speech), and uses ffmpeg to make the WAV into Ogg/Opus. For a voice message, the bot also calculates the length and the waveform. If Discord refuses the voice message, the bot posts an audio file without the text. Only you see the queue position, the status, and the errors; the status goes away when the clip is posted. A mod can post only in a channel where they have View Channel and Send Messages, and `TTS_CHANNELS` applies to the channel where the clip goes. The bot needs Send Messages, Attach Files, and Send Voice Messages there.
+
+The posts do not show who made them, so each clip is logged in `MOD_LOG`: who posted it, the format, the voice, the channel, and a link to the clip (and to the message it answers). The text is not in the log. The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
 
 Use only the voices of people who agree. Do not use `/say` to imitate a real person.
 
