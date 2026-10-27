@@ -172,6 +172,10 @@ var SetupKeys = []SetupKey{
 		"Seconds after a Markov message before the chat talks again in that channel"},
 	{"MARKOV_MENTION_REPLY", "MARKOV_MENTION_REPLY", KindChoice, "always",
 		"Who gets a reply to an @mention: always (even during the cooldown), cooldown (only when the cooldown is over), or mods (only mods). Mods always get a reply"},
+	{"MARKOV_CANDIDATES", "MARKOV_CANDIDATES", KindInt, "8",
+		"How many replies the Markov chat makes before it picks one (1-20). The GPU worker (TTS_URL) picks the one that answers best, or sounds most natural. 1: no picking"},
+	{"MARKOV_PICK", "MARKOV_PICK", KindChoice, "top3",
+		"Which candidate the Markov chat posts: best (the highest score) or top3 (a random one of the best three, for more variety)"},
 	{"MARKOV_GIF_CHANCE", "MARKOV_GIF_CHANCE", KindDecimal, "0",
 		"Percent chance (0-100, decimals allowed) that a Markov message also gets a GIF from GIPHY, found with the message text. Needs GIPHY_API_KEY in .env"},
 	{"MARKOV_GIF_COOLDOWN", "MARKOV_GIF_COOLDOWN", KindInt, "40",
@@ -216,6 +220,10 @@ var Choices = map[string][]Choice{
 		{"all", "All messages it reads"},
 		{"skipped", "Only the messages it did not learn"},
 		{"off", "No log"},
+	},
+	"MARKOV_PICK": {
+		{"best", "The candidate with the best score"},
+		{"top3", "A random one of the best three"},
 	},
 	"MARKOV_GIF_RATING": {
 		{"g", "G: all ages"},

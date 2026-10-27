@@ -1,14 +1,18 @@
-"""Text to speech worker for the HEALTH bot (/say).
+"""GPU worker for the HEALTH bot: text to speech (/say) and Markov ranking.
 
-It runs Echo-TTS (https://github.com/jordandare/echo-tts) on the GPU and
-answers the bot over HTTP. The model stays loaded, and one clip is made at
-a time. See README.md, "Text to speech".
+It runs Echo-TTS (https://github.com/jordandare/echo-tts) for speech, and
+a small language model (Qwen 2.5 0.5B Instruct) that gives Markov chat
+candidates a score. It answers the bot over HTTP. The models stay loaded.
+One clip is made at a time, and one ranking; the two can run together.
+See README.md, "Text to speech" and "Markov chat".
 
 Endpoints (all except /health need "Authorization: Bearer <TTS_TOKEN>"):
-  GET  /health   {"ok": true, "voices": n}
+  GET  /health   {"ok": true, "voices": n, "rank": true}
   GET  /voices   {"voices": ["alex", "sam"]}
   POST /reload   reads the voices folder again
   POST /tts      {"text": "...", "voice": "alex"} -> audio/wav
+  POST /rank     {"context": "...", "candidates": ["...", ...]}
+                 -> {"scores": [...]}, higher is better
 
 A voice is an audio file in VOICES_DIR (wav, mp3, flac, ogg, m4a). The
 file name is the voice name. An optional <name>.json next to it can turn
@@ -31,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import inference
 from inference import (
@@ -69,6 +74,15 @@ def _pinned_download(repo_id, filename, **kw):
 
 
 inference.hf_hub_download = _pinned_download
+
+# The ranking model, at a fixed revision. RANK_ENABLED=0 does not load it.
+RANK_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+RANK_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
+RANK_ENABLED = os.environ.get("RANK_ENABLED", "1") != "0"
+RANK_MAX_CANDIDATES = 20
+RANK_MAX_CHARS = 2000
+RANK_SYSTEM = "You are a member of a casual Discord chat server. Reply with one short chat message."
+RANK_NO_CONTEXT = "Say something in the chat."
 
 AUDIO_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 VOICE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -186,6 +200,42 @@ class Engine:
         return buf.getvalue()
 
 
+class Ranker:
+    """Gives each candidate a score: the mean log probability of its tokens
+    as the model's reply to the context. Fluent text that fits the context
+    gets a higher score."""
+
+    def __init__(self):
+        self.tok = AutoTokenizer.from_pretrained(RANK_MODEL, revision=RANK_REVISION)
+        # The 2080 Ti (Turing) has no fast bfloat16, so float16.
+        self.model = AutoModelForCausalLM.from_pretrained(
+            RANK_MODEL, revision=RANK_REVISION, dtype=torch.float16
+        ).cuda().eval()
+        self.lock = threading.Lock()
+
+    def score(self, context, candidates):
+        msgs = [
+            {"role": "system", "content": RANK_SYSTEM},
+            {"role": "user", "content": context or RANK_NO_CONTEXT},
+        ]
+        text = self.tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+        prefix = self.tok(text, add_special_tokens=False).input_ids
+        scores = []
+        with self.lock, torch.inference_mode():
+            for cand in candidates:
+                # The reply and the end-of-turn token, after the prompt.
+                reply = self.tok(cand + "<|im_end|>", add_special_tokens=False).input_ids
+                ids = prefix + reply
+                x = torch.tensor([ids], device="cuda")
+                logits = self.model(x).logits[0, :-1].float()
+                logp = torch.log_softmax(logits, dim=-1)
+                target = x[0, 1:]
+                tok_logp = logp[torch.arange(len(target), device="cuda"), target]
+                # Only the reply's tokens (with the end-of-turn token).
+                scores.append(float(tok_logp[len(prefix) - 1 :].mean()))
+        return scores
+
+
 def clean_text(text):
     """Removes speaker tags and control characters. Commas are pauses."""
     text = re.sub(r"[\[\]]", "", text)
@@ -217,7 +267,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json(200, {"ok": True, "voices": len(self.server.voices.names())})
+            self.send_json(200, {"ok": True, "voices": len(self.server.voices.names()),
+                                 "rank": self.server.ranker is not None})
         elif self.path == "/voices":
             if self.authorized():
                 self.send_json(200, {"voices": self.server.voices.names()})
@@ -225,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/tts", "/reload"):
+        if self.path not in ("/tts", "/reload", "/rank"):
             self.send_json(404, {"error": "not found"})
             return
         if not self.authorized():
@@ -236,6 +287,9 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
             self.send_json(400, {"error": "bad body"})
+            return
+        if self.path == "/rank":
+            self.rank(self.rfile.read(length))
             return
         try:
             req = json.loads(self.rfile.read(length))
@@ -266,16 +320,44 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+    def rank(self, body):
+        if self.server.ranker is None:
+            self.send_json(503, {"error": "ranking is off"})
+            return
+        try:
+            req = json.loads(body)
+            context = str(req.get("context") or "")[:RANK_MAX_CHARS]
+            cands = [str(c)[:RANK_MAX_CHARS] for c in req.get("candidates", [])]
+        except (ValueError, AttributeError, TypeError):
+            self.send_json(400, {"error": "bad json"})
+            return
+        if not cands or len(cands) > RANK_MAX_CANDIDATES:
+            self.send_json(400, {"error": f"give 1 to {RANK_MAX_CANDIDATES} candidates"})
+            return
+        try:
+            scores = self.server.ranker.score(context, cands)
+        except Exception:
+            log.exception("rank failed")
+            self.send_json(500, {"error": "rank failed"})
+            return
+        self.send_json(200, {"scores": scores})
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line for each Hugging Face request
     if len(TOKEN) < 32:
         raise SystemExit("TTS_TOKEN must be set (at least 32 characters)")
     log.info("loading the model (%s, %d steps)", os.environ.get("TTS_DTYPE", "bf16"), STEPS)
     engine = Engine()
     voices = Voices(VOICES_DIR)
     voices.reload()
+    ranker = None
+    if RANK_ENABLED:
+        log.info("loading the ranking model")
+        ranker = Ranker()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    srv.engine, srv.voices = engine, voices
+    srv.engine, srv.voices, srv.ranker = engine, voices, ranker
     log.info("listening on port %d", PORT)
     srv.serve_forever()
 

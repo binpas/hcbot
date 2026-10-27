@@ -52,6 +52,26 @@ func TestGenerateFollowsChain(t *testing.T) {
 	}
 }
 
+func TestGenerateN(t *testing.T) {
+	s := openTest(t)
+	if out, err := s.GenerateN(nil, nil, 5); err != nil || len(out) != 0 {
+		t.Fatalf("empty chain = %v, %v", out, err)
+	}
+	learn(t, s, "apple short", "apple much longer reply here")
+	out, err := s.GenerateN([]string{"apple"}, nil, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(out)
+	if !slices.Equal(out, []string{"apple much longer reply here", "apple short"}) {
+		t.Errorf("candidates = %q (only two exist, each once)", out)
+	}
+	out, _ = s.GenerateN([]string{"apple"}, func(w []string) bool { return len(w) < 3 }, 8)
+	if !slices.Equal(out, []string{"apple short"}) {
+		t.Errorf("with ok = %q", out)
+	}
+}
+
 func TestCountsAndStats(t *testing.T) {
 	s := openTest(t)
 	learn(t, s, "a b c", "a b c", "a b d")

@@ -167,6 +167,8 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MARKOV_REPLY_CHANCE` | Percent chance (0–100) that the Markov chat talks after a normal message in a reply channel. Decimals are permitted: `0.1` is about 1 in 1000 messages, `0.05` is about 1 in 2000. | 0 |
 | `MARKOV_RANDOM_AS_REPLY` | Percent (0–100) of those random messages sent as a reply to the message. The rest are posted in the channel without a reply. | 50 |
 | `MARKOV_COOLDOWN` | Seconds after a Markov message before the chat talks again in the same channel | 60 |
+| `MARKOV_CANDIDATES` | How many replies the Markov chat makes before it picks one (1–20). The GPU worker (`TTS_URL`) picks. 1: no picking. See "Picking" below. | 8 |
+| `MARKOV_PICK` | Which candidate the chat posts: `best` (the highest score) or `top3` (a random one of the best three, for more variety). A menu in `/setup`. | top3 |
 | `MARKOV_MENTION_REPLY` | Who gets a reply to an @mention. **`always`:** everyone, also during the cooldown. **`cooldown`:** a mention gets a reply only when the cooldown is over. **`mods`:** only mods get a reply; other people get no reply to a mention. Mods always get a reply. (A menu in `/setup`.) This setting replaces `MARKOV_ALWAYS_REPLY_MENTION`: at start, the bot changes an old saved value (on → `always`, off → `cooldown`). | always |
 | `MARKOV_GIF_CHANCE` | Percent chance (0–100) that a Markov message also gets a GIF from GIPHY. Decimals are permitted. Needs `GIPHY_API_KEY` in `.env`. | 0 |
 | `MARKOV_GIF_COOLDOWN` | Seconds between GIPHY requests, for the full bot | 40 |
@@ -397,6 +399,7 @@ A trigger with the same name as a command does not fire. The `/autoreact` comman
 | `/markov blockremove <text>` | mod only | Removes a word or phrase from the blocklist. |
 | `/markov blocklist` | mod only | All blocked words and phrases (hidden as spoilers). |
 | `/markov import <file>` | mod only | Trains the chain from a `.txt` file (one message on each line) or a DiscordChatExporter `.json` export. |
+| `/markov candidates <text>` | mod only | Shows the replies that the chat makes for a text, with their scores, best first, in an ephemeral reply. Use it to see how the picking works. |
 | `/markov prune` | mod only | Removes the word steps seen only once, after you confirm. The database gets smaller. |
 | `/markov reset` | admin only | Deletes the whole chain, after you confirm. The blocklist stays. |
 
@@ -477,6 +480,8 @@ The bot learns how people talk in the `MARKOV_LEARN_CHANNELS` channels, and repl
 - **Mentions:** the bot replies to `@BotName <text>`. With Message Content on or off, it tries to start from a word of your message.
 - **Random talk:** after a normal message, the bot talks with a chance of `MARKOV_REPLY_CHANCE` percent. For a busy server, use a decimal value such as `0.1` (about 1 in 1000 messages). `MARKOV_RANDOM_AS_REPLY` percent of these messages are replies to the message; the others are posted in the channel. This also works without Message Content, but then the bot cannot read the message, so it starts at a random place in the chain.
 - **Cooldown:** after the bot talks in a channel, it waits `MARKOV_COOLDOWN` seconds before random talk in that channel again. Each channel has its own timer, and a restart resets the timers. With `MARKOV_MENTION_REPLY` set to `always`, mentions always get a reply; with `cooldown`, mentions also wait for the cooldown; with `mods`, only mods get a reply to a mention. Mentions from mods (`MOD_ROLE`, the Administrator permission, or the server owner) always get a reply. Each Markov message starts the cooldown, also a reply to a mention.
+
+**Picking:** with the GPU worker (`TTS_URL`, see [Text to speech](#text-to-speech)), the chat makes `MARKOV_CANDIDATES` different replies for each message. A small language model ([Qwen 2.5 0.5B Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct), Apache 2.0) gives each one a score: how probable the model finds it as an answer to the message. Thus, a reply that is fluent and fits the message gets a high score. When the bot cannot read the message (a random message without the Message Content option), the score is how natural the reply is as a chat message. The bot posts the best one, or a random one of the best three (`MARKOV_PICK`). If the worker does not answer in 3 seconds, the bot posts the first candidate. The text goes only to the worker on the bot's own server, which does not log or keep it.
 
 **GIFs:** with `GIPHY_API_KEY` in `.env`, each Markov message has a chance of `MARKOV_GIF_CHANCE` percent to get a GIF. The bot uses the text of its message (at most 50 characters, cut at a full word) as a GIPHY search, and puts the first result in an embed on the same message. `MARKOV_GIF_RATING` is the highest rating. `MARKOV_GIF_COOLDOWN` is the time between GIPHY requests for the full bot, because the API key has an hourly limit. For example, a key with 100 requests each hour needs a cooldown of at least 36 seconds. The cooldown starts at each request, also a failed request. If GIPHY sends an error, finds nothing, or does not answer in 3 seconds, the bot posts the message without a GIF. The bot sends the Markov text to GIPHY, but not who wrote the words.
 
@@ -621,7 +626,9 @@ To run `hcbot-train` in the container, use the app shell, or `docker exec -it hc
 
 ### Text to speech
 
-`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 10 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log or keep the text.
+`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 11 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log or keep the text.
+
+The same worker also does the [Markov picking](#markov-chat), with a second, small model (about 1 GB more video memory). A ranking does not wait for a clip. `RANK_ENABLED=0` in the worker's `.env` turns the ranking model off.
 
 The image is large (about 8 GB, most of it PyTorch and CUDA), so it is built on the GPU host and is not put on GHCR. The Echo-TTS code and the model have fixed versions (in `tts/Dockerfile` and `tts/server.py`). The model (about 6 GB) downloads into the data folder at the first start.
 

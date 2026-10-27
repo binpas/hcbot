@@ -245,13 +245,13 @@ func TestSetupSectionMenu(t *testing.T) {
 	}
 	tb.click(tAdmin, sel, fmt.Sprint(markov))
 	r := tb.last()
-	if r.Kind != "update" || !strings.Contains(r.text(), "Setup: Markov chat (1/4)") ||
+	if r.Kind != "update" || !strings.Contains(r.text(), "Setup: Markov chat (1/5)") ||
 		!strings.Contains(r.text(), "MARKOV_LEARN_CHANNELS") {
 		t.Fatalf("section jump: %s %q", r.Kind, r.text())
 	}
 	// Next goes to the second page of the section.
 	tb.click(tAdmin, tb.componentID(r, "setup:next:"))
-	if !strings.Contains(tb.last().text(), "Setup: Markov chat (2/4)") {
+	if !strings.Contains(tb.last().text(), "Setup: Markov chat (2/5)") {
 		t.Errorf("next page: %q", tb.last().text())
 	}
 	// The last page ends with the privacy and terms links.

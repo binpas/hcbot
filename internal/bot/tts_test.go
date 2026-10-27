@@ -30,6 +30,16 @@ type fakeTTS struct {
 	speaks  []map[string]string
 	reloads int
 	status  int // for /tts; 0 is 200
+
+	ranks      []rankRequest
+	rankStatus int // for /rank; 0 is 200
+}
+
+// rankRequest is one /rank request. The fake gives each candidate its
+// length as the score, so the longest is the best.
+type rankRequest struct {
+	Context    string   `json:"context"`
+	Candidates []string `json:"candidates"`
 }
 
 func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +56,19 @@ func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reloads++
 		f.voices = append(f.voices, "new")
 		_ = json.NewEncoder(w).Encode(map[string]int{"voices": len(f.voices)})
+	case "/rank":
+		var req rankRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		f.ranks = append(f.ranks, req)
+		if f.rankStatus != 0 {
+			w.WriteHeader(f.rankStatus)
+			return
+		}
+		scores := make([]float64, len(req.Candidates))
+		for i, c := range req.Candidates {
+			scores[i] = float64(len(c))
+		}
+		_ = json.NewEncoder(w).Encode(map[string][]float64{"scores": scores})
 	case "/tts":
 		var req map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&req)

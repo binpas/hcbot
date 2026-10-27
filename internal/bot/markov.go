@@ -149,6 +149,13 @@ func (b *Bot) registerMarkov() {
 		handler:     b.cmdMarkovImport,
 	})
 	b.addCommand(&command{
+		name:        "markov candidates",
+		description: "Show the replies the Markov chat makes for a text, with their scores.",
+		options:     []*discordgo.ApplicationCommandOption{optStr("text", "A message to answer", true)},
+		perm:        permMod,
+		handler:     b.cmdMarkovCandidates,
+	})
+	b.addCommand(&command{
 		name:        "markov prune",
 		description: "Remove the word steps seen only once, to make the Markov database smaller.",
 		perm:        permMod,
@@ -329,7 +336,7 @@ func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
 		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
 	})
 	seed = seed[:min(len(seed), 5)]
-	out, err := b.chain.Generate(seed, func(w []string) bool { return !b.markovBlocks(w) })
+	out, err := b.markovGenerate(seed, strings.Join(words, " "))
 	if err != nil {
 		log.Printf("markov generate: %v", err)
 		return

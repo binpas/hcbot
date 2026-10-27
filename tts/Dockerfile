@@ -1,11 +1,11 @@
-# Text to speech worker for /say (linux/amd64, NVIDIA GPU). See README.md,
-# "Text to speech".
+# GPU worker for /say (text to speech) and the Markov ranking (linux/amd64,
+# NVIDIA GPU). See README.md, "Text to speech".
 #
 # The image is large (about 8 GB, most of it PyTorch and CUDA), so it is
 # built on the GPU host and is not put on GHCR:
 #   docker build -t hcbot-tts:local tts/
 #
-# The image has no secrets. The model (about 6 GB) downloads into /data/hf
+# The image has no secrets. The models (about 7 GB) download into /data/hf
 # at the first start, at the fixed revisions in server.py.
 
 FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime@sha256:7b324d212a4450795b49edba9949b7cdc72429148a64e974334bfe5774d51385
@@ -17,7 +17,8 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir \
         torch==2.9.1 torchaudio==2.9.1 torchcodec==0.8.1 \
-        huggingface_hub==2.3.0 hf-xet==1.7.0 safetensors==0.8.0 einops==0.8.2
+        huggingface_hub==2.3.0 hf-xet==1.7.0 safetensors==0.8.0 einops==0.8.2 \
+        transformers==5.21.0 tokenizers==0.23.3
 
 # Echo-TTS code at a fixed commit. The checksum makes sure that the
 # download is the expected one.

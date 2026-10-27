@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"slices"
 	"strings"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
@@ -133,6 +134,17 @@ const maxWords = 40
 // chain knows one, or from the start of a message otherwise. It returns ""
 // when the chain is empty or every try is refused by ok.
 func (s *Store) Generate(seed []string, ok func([]string) bool) (string, error) {
+	out, err := s.GenerateN(seed, ok, 1)
+	if len(out) == 0 {
+		return "", err
+	}
+	return out[0], err
+}
+
+// GenerateN makes up to n different replies, the same way as Generate. It
+// makes at most n+4 tries, so it can return fewer (none when the chain is
+// empty or ok refuses every try).
+func (s *Store) GenerateN(seed []string, ok func([]string) bool, n int) ([]string, error) {
 	var starts []int64
 	for _, w := range seed {
 		var id int64
@@ -144,10 +156,11 @@ func (s *Store) Generate(seed []string, ok func([]string) bool) (string, error) 
 				starts = append(starts, id)
 			}
 		} else if !errors.Is(err, sql.ErrNoRows) {
-			return "", err
+			return nil, err
 		}
 	}
-	for try := 0; try < 5; try++ {
+	var out []string
+	for try := 0; try < n+4 && len(out) < n; try++ {
 		var ids []int64
 		var err error
 		if len(starts) > 0 {
@@ -156,20 +169,20 @@ func (s *Store) Generate(seed []string, ok func([]string) bool) (string, error) 
 			ids, err = s.walk(boundary, boundary)
 		}
 		if err != nil {
-			return "", err
+			return out, err
 		}
 		if len(ids) == 0 {
-			return "", nil // empty chain
+			return out, nil // empty chain
 		}
 		words, err := s.words(ids)
 		if err != nil {
-			return "", err
+			return out, err
 		}
-		if ok == nil || ok(words) {
-			return strings.Join(words, " "), nil
+		if text := strings.Join(words, " "); (ok == nil || ok(words)) && !slices.Contains(out, text) {
+			out = append(out, text)
 		}
 	}
-	return "", nil
+	return out, nil
 }
 
 // walkFrom starts a walk with the word start as the first word.

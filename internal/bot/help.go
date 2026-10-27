@@ -77,6 +77,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/markov blockremove <text>", "Unblock a word or phrase."},
 			{"/markov blocklist", "List the blocked words and phrases."},
 			{"/markov import <file>", "Train from a .txt file (one message per line) or a DiscordChatExporter .json."},
+			{"/markov candidates <text>", "Show the replies the chat makes for a text, with the scores it picks by."},
 			{"/markov prune", "Remove word steps seen only once, to shrink the database."},
 		}},
 		{"Autoreacts", []helpEntry{
