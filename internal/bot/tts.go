@@ -370,7 +370,7 @@ func (b *Bot) say(c *Ctx, target sayTarget, text, voice string, voiceMsg bool) {
 		return
 	}
 	c.DeleteResponse()
-	b.logSay(c, target, posted, voice, sentAsVoice)
+	b.logSay(c, target, posted, voice, text, sentAsVoice)
 }
 
 // postClip posts the clip in the target channel: as a voice message when
@@ -433,9 +433,9 @@ func (b *Bot) postVoiceMessage(channelID string, ref *discordgo.MessageReference
 	return &m, json.Unmarshal(resp, &m)
 }
 
-// logSay tells the mod log who posted a clip, with a link to it. The text
-// is not in the log.
-func (b *Bot) logSay(c *Ctx, target sayTarget, posted *discordgo.Message, voice string, voiceMsg bool) {
+// logSay tells the mod log who posted a clip and what it says, with a link
+// to it.
+func (b *Bot) logSay(c *Ctx, target sayTarget, posted *discordgo.Message, voice, text string, voiceMsg bool) {
 	kind := "an audio clip"
 	if voiceMsg {
 		kind = "a voice message"
@@ -448,7 +448,9 @@ func (b *Bot) logSay(c *Ctx, target sayTarget, posted *discordgo.Message, voice 
 	if posted != nil && posted.ID != "" {
 		desc += fmt.Sprintf(".\n[Jump to the clip](https://discord.com/channels/%s/%s/%s)", c.GuildID(), target.channelID, posted.ID)
 	}
-	b.modLog(makeEmbed("🗣️ Speech clip", desc, colourBlurple))
+	embed := makeEmbed("🗣️ Speech clip", desc, colourBlurple)
+	embed.Fields = []*discordgo.MessageEmbedField{{Name: "Text", Value: text}}
+	b.modLog(embed)
 }
 
 // wavWaveform reads 16-bit PCM WAV data and returns its length in seconds

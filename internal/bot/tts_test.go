@@ -267,7 +267,7 @@ func TestSayVoiceMessage(t *testing.T) {
 	}
 	logs := tb.sent(tChModLog)
 	if len(logs) != 1 || !strings.Contains(logs[0], "<@"+tMod+"> posted a voice message (voice: `alex`) in <#"+tChGeneral+">") ||
-		!strings.Contains(logs[0], "/"+tChGeneral+"/8000") || strings.Contains(logs[0], "hello there") {
+		!strings.Contains(logs[0], "/"+tChGeneral+"/8000") || !strings.Contains(logs[0], "hello there") {
 		t.Errorf("mod log = %q", logs)
 	}
 	if tb.tts.pending != 0 || len(tb.ttsSlot) != 0 {
