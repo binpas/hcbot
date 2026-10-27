@@ -231,6 +231,20 @@ func TestSayVoiceMessage(t *testing.T) {
 	if len(tb.api.find("POST", `/webhooks/`+tBot+`/tok\d+`)) != 1 {
 		t.Errorf("not sent as a follow-up: %v", tb.callList())
 	}
+	// The status edit must come before the clip, or Discord makes the clip
+	// the (ephemeral) reply.
+	var order []string
+	for _, c := range tb.api.calls {
+		switch {
+		case c.Method == "PATCH" && strings.HasSuffix(c.Path, "/messages/@original"):
+			order = append(order, "edit")
+		case c.Method == "POST" && strings.HasPrefix(c.Path, "/webhooks/"):
+			order = append(order, "clip")
+		}
+	}
+	if !slices.Equal(order, []string{"edit", "clip"}) {
+		t.Errorf("order = %v, want [edit clip]", order)
+	}
 	if len(tb.api.find("DELETE", `/webhooks/`+tBot+`/tok\d+/messages/@original`)) != 1 {
 		t.Errorf("the thinking reply was not deleted: %v", tb.callList())
 	}

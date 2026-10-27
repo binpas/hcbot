@@ -192,16 +192,22 @@ func (b *Bot) say(c *Ctx, text, voice string, voiceMsg bool) {
 	}
 	defer b.ttsDone()
 
+	// The status message must replace the "thinking" reply before the clip
+	// is posted: Discord makes the first follow-up of a deferred reply into
+	// that (ephemeral) reply, and the clip would then be deleted with it.
 	c.Defer(true)
+	working := makeEmbed("🗣️ Making the clip", "This takes about 15–30 seconds.", colourBlurple)
 	ctx, cancel := context.WithTimeout(context.Background(), ttsTimeout)
 	defer cancel()
 	select {
 	case b.ttsSlot <- struct{}{}:
+		c.EditResponse(working)
 	default:
 		c.EditResponse(makeEmbed("⏳ In the queue",
 			fmt.Sprintf("Position %d. Each clip takes about 15–30 seconds.", max(ahead, 1)), colourBlurple))
 		select {
 		case b.ttsSlot <- struct{}{}:
+			c.EditResponse(working)
 		case <-ctx.Done():
 			c.Reply(true, errEmbed("The speech queue took too long. Try again later."))
 			return
