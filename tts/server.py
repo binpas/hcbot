@@ -345,7 +345,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line for each Hugging Face request
+    # httpx logs one line for each Hugging Face request, and a library sets
+    # its level again while the models load, so filter its info lines.
+    for h in logging.getLogger().handlers:
+        h.addFilter(lambda r: not (r.name.startswith("httpx") and r.levelno < logging.WARNING))
     if len(TOKEN) < 32:
         raise SystemExit("TTS_TOKEN must be set (at least 32 characters)")
     log.info("loading the model (%s, %d steps)", os.environ.get("TTS_DTYPE", "bf16"), STEPS)
