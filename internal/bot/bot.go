@@ -51,6 +51,9 @@ type Bot struct {
 	runTool  toolRunner                                               // a fake in tests
 	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
 	dlSlot   chan struct{}
+	ttsSlot  chan struct{} // one /say clip at a time
+	ttsHTTP  *http.Client
+	tts      ttsState
 	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)                                            // one video download at a time
 
 	// forwardRetry is how long forwardOrLink waits before it checks a
@@ -108,6 +111,8 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		runTool:      execTool,
 		lookupIP:     lookupIP,
 		dlSlot:       make(chan struct{}, 1),
+		ttsSlot:      make(chan struct{}, 1),
+		ttsHTTP:      &http.Client{Timeout: ttsRequestTimeout},
 		tweets:       tweetshot.NewClient(),
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
@@ -129,10 +134,12 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerMarkov()
 	b.registerDownload()
 	b.registerTweetshot()
+	b.registerTTS()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.onInteraction)
+	s.AddHandler(b.onRawInteraction)
 	s.AddHandler(b.onReactionAdd)
 	s.AddHandler(b.onReactionRemove)
 	s.AddHandler(b.onMessageCreate)

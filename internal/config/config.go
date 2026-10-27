@@ -38,6 +38,10 @@ type Env struct {
 
 	// YtdlpCookies is a cookies file for yt-dlp (/download). Empty: none.
 	YtdlpCookies string
+
+	// TTSURL is the text to speech worker for /say. Empty turns /say off.
+	TTSURL   string
+	TTSToken string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -54,6 +58,8 @@ func LoadEnv() Env {
 		MarkovDBPath:       envStr("MARKOV_DB_PATH", "markov.db"),
 		GiphyKey:           strings.TrimSpace(os.Getenv("GIPHY_API_KEY")),
 		YtdlpCookies:       strings.TrimSpace(os.Getenv("YTDLP_COOKIES")),
+		TTSURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("TTS_URL")), "/"),
+		TTSToken:           strings.TrimSpace(os.Getenv("TTS_TOKEN")),
 	}
 }
 
@@ -182,6 +188,16 @@ var SetupKeys = []SetupKey{
 		"Let mods download videos with /download (needs yt-dlp and ffmpeg on the server)"},
 	{"DOWNLOAD_MAX_MB", "DOWNLOAD_MAX_MB", KindInt, "100",
 		"Largest video /download sends, in MB. The server's boost level can make the limit smaller (10 MB, 50 MB at level 2, 100 MB at level 3)"},
+	{"TTS_ENABLED", "TTS_ENABLED", KindBool, "on",
+		"Let mods make speech clips with /say (needs TTS_URL in .env)"},
+	{"TTS_CHANNELS", "TTS_CHANNEL_IDS", KindChanList, "",
+		"Channels where /say works — pick up to 25. Empty: all channels"},
+	{"TTS_MAX_CHARS", "TTS_MAX_CHARS", KindInt, "300",
+		"Longest text /say accepts, in characters (at most 600)"},
+	{"TTS_COOLDOWN", "TTS_COOLDOWN", KindInt, "30",
+		"Seconds a member must wait between /say requests (0: no wait)"},
+	{"TTS_QUEUE_MAX", "TTS_QUEUE_MAX", KindInt, "5",
+		"Most /say clips that can wait in the queue (each clip takes about 15–30 seconds)"},
 }
 
 // Choice is one value of a KindChoice setting.

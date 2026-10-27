@@ -32,6 +32,10 @@ func (b *Bot) modCommandCategories() []helpCategory {
 		// /autoreact is not registered without the Message Content option.
 		cats = slices.DeleteFunc(cats, func(c helpCategory) bool { return c.title == "Autoreacts" })
 	}
+	if b.env.TTSURL == "" {
+		// /say and /voices are registered only with a text to speech worker.
+		cats = slices.DeleteFunc(cats, func(c helpCategory) bool { return c.title == "Speech" })
+	}
 	return cats
 }
 
@@ -116,6 +120,10 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"Apps → " + downloadMenu, "Right-click a message to download the video from its first link."},
 			{"/tweetshot <url> [public]", "Make an image of a post on X. Only you see it, unless `public` is true."},
 			{"Apps → " + tweetshotMenu, "Right-click a message to make an image of the first X post it links to."},
+		}},
+		{"Speech", []helpEntry{
+			{"/say", "Open a form to make a voice message or an audio clip of a text, and post it in the channel. Clips wait in a queue; each takes about 15–30 seconds."},
+			{"/voices", "List the voices for `/say`. Admins can reload the list."},
 		}},
 		{"Reaction Roles", []helpEntry{
 			{"/reactionrole create", "Start the reaction-role creation wizard."},

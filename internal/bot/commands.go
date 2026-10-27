@@ -124,7 +124,16 @@ func (b *Bot) syncCommands() error {
 }
 
 func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	c := &Ctx{b: b, s: s, i: i}
+	if i.Data == nil {
+		return // discordgo could not read it; see onRawInteraction
+	}
+	b.handleInteraction(s, i, nil)
+}
+
+// handleInteraction runs an interaction. fields holds the values of a modal
+// submit that onRawInteraction read itself; it is nil otherwise.
+func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, fields map[string][]string) {
+	c := &Ctx{b: b, s: s, i: i, fields: fields}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in interaction %s: %v\n%s", c.name(), r, debug.Stack())
@@ -210,6 +219,7 @@ type Ctx struct {
 	i       *discordgo.InteractionCreate
 	opts    []*discordgo.ApplicationCommandInteractionDataOption
 	cmdName string
+	fields  map[string][]string // modal values read by onRawInteraction
 
 	// Args holds a component or modal custom ID's fields after the prefix.
 	Args []string
@@ -401,8 +411,17 @@ func (c *Ctx) Values() []string {
 	return c.i.MessageComponentData().Values
 }
 
+// ModalValues returns the values of a modal input that is in a Label: a
+// select's values, or a text input's text.
+func (c *Ctx) ModalValues(customID string) []string {
+	return c.fields[customID]
+}
+
 // ModalValue returns the value of the text input with the given custom ID.
 func (c *Ctx) ModalValue(customID string) string {
+	if v := c.fields[customID]; len(v) > 0 {
+		return v[0]
+	}
 	for _, row := range c.i.ModalSubmitData().Components {
 		ar, ok := row.(*discordgo.ActionsRow)
 		if !ok {

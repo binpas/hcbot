@@ -1,0 +1,62 @@
+# Text to speech worker for /say as a TrueNAS SCALE custom app (Apps >
+# Discover Apps > Install via YAML). See README.md, "Text to speech".
+#
+# Before you install:
+#   - build the image on this host: docker build -t hcbot-tts:local tts/
+#   - make the data dataset (here /mnt/POOL/apps/tts). It must belong to
+#     UID and GID 568 (apps), mode 0700. Put .env in it, with
+#     TTS_TOKEN=<a long random value> (mode 0600). The model cache (hf/)
+#     goes there too.
+#   - make the voices dataset (here /mnt/POOL/apps/tts-voices). The apps
+#     user must be able to read it. You can share it with SMB.
+#   - in Apps > Configuration > Settings, turn on "Install NVIDIA Drivers".
+#
+# Do not put TTS_TOKEN in this file. TrueNAS keeps the app YAML in its
+# config.
+#
+# The port is open only on the Docker bridge address (docker0), not on the
+# LAN. The bot apps connect to http://host.docker.internal:8765 (see
+# compose.yaml).
+
+services:
+  hcbot-tts:
+    image: hcbot-tts:local
+    pull_policy: never
+    container_name: hcbot-tts
+    restart: unless-stopped
+    stop_grace_period: 30s
+    user: "568:568"
+    env_file:
+      - /mnt/POOL/apps/tts/.env
+    environment:
+      TZ: UTC
+      VOICES_DIR: /voices
+    volumes:
+      - /mnt/POOL/apps/tts:/data
+      - /mnt/POOL/apps/tts-voices:/voices:ro
+    ports:
+      # Change the address to the docker0 address of the host
+      # (ip -4 addr show docker0).
+      - "172.16.0.1:8765:8765"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 1g
+    mem_limit: 16g
+    pids_limit: 256
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -25,6 +25,10 @@ services:
       - /mnt/POOL/apps/hcbot:/data
     environment:
       TZ: UTC
+    # For /say: the text to speech worker (tts-compose.yaml) is on the host,
+    # at TTS_URL=http://host.docker.internal:8765.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # The bot only makes outbound connections. It has no ports.
     read_only: true
     tmpfs:

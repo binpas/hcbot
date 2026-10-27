@@ -11,6 +11,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Warnings** with a rap sheet, single-warning removal, and automatic arrest and kick thresholds.
 - **Post images:** mods make an image of a post on X, to share it without a link.
 - **Video downloads:** mods download a video from YouTube, X, or another site that [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and get it in a private reply.
+- **Speech clips:** mods make a voice message or an audio clip of a text with `/say`, in a preset voice, with a local [Echo-TTS](https://github.com/jordandare/echo-tts) worker on a GPU. *(Needs the [text to speech worker](#text-to-speech).)*
 - **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
 - **Tickets:** members open private mod-support tickets with a reaction; mods close, archive, list, note and search them.
@@ -111,6 +112,8 @@ MEDIA_CACHE_SIZE=300
 MEDIA_CACHE_MAX_BYTES=8388608
 GIPHY_API_KEY=
 YTDLP_COOKIES=
+TTS_URL=
+TTS_TOKEN=
 ```
 
 | Key | Description |
@@ -124,8 +127,10 @@ YTDLP_COOKIES=
 | `MARKOV_DB_PATH` | The database file for the [Markov chat](#markov-chat) (default `markov.db`). |
 | `GIPHY_API_KEY` | The GIPHY API key for [Markov GIFs](#markov-chat). When it is not set, Markov GIFs are off. |
 | `YTDLP_COOKIES` | A cookies file for yt-dlp, for [video downloads](#video-downloads) (for example `youtube-cookies.txt`, relative to the working folder). When it is not set, yt-dlp uses no cookies. |
+| `TTS_URL` | The address of the [text to speech worker](#text-to-speech), for example `http://host.docker.internal:8765`. When it is not set, `/say` and `/voices` are not registered. |
+| `TTS_TOKEN` | The secret token of the text to speech worker. It must be the same as `TTS_TOKEN` in the worker's `.env`. |
 
-Keep `.env` private: the token gives full control of the bot, and the GIPHY key is also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
+Keep `.env` private: the token gives full control of the bot, and the GIPHY key and the TTS token are also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
 ### `/setup`
 
@@ -171,6 +176,11 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `MARKOV_LOG_MODE` | Which messages go to `MARKOV_LOG_CHANNEL`: `all`, `skipped` (only the messages that it did not learn), or `off` (no log, and the channel stays set). A menu in `/setup`. | all |
 | `DOWNLOAD_ENABLED` | Lets mods use `/download` and **Apps → Download video** | on |
 | `DOWNLOAD_MAX_MB` | Largest video that `/download` sends, in MB. The server's boost level can make the limit smaller: 10 MB with no boost or level 1, 50 MB at level 2, 100 MB at level 3. | 100 |
+| `TTS_ENABLED` | Lets mods use `/say` (needs `TTS_URL` in `.env`) | on |
+| `TTS_CHANNELS` | Channels where `/say` works (up to 25). Empty: all channels. | |
+| `TTS_MAX_CHARS` | Longest text for `/say`, in characters (at most 600) | 300 |
+| `TTS_COOLDOWN` | Seconds that a member must wait between `/say` requests. 0: no wait. | 30 |
+| `TTS_QUEUE_MAX` | Most `/say` clips that can wait in the queue, after the one that runs | 5 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -216,6 +226,7 @@ In **OAuth2 → URL Generator**, select the `bot` and `applications.commands` sc
 - Manage Channels *(tickets, archives, `/channelarchive`, `/jail setup`)*
 - Manage Server *(invite logging and ❌ invite deletion)*
 - Manage Expressions and Create Expressions *(`/assets`)*
+- Send Voice Messages *(`/say` voice messages, when Discord refuses them as an interaction reply)*
 - View Audit Log
 - Kick Members, Ban Members, Moderate Members
 
@@ -292,6 +303,17 @@ If the best quality of a file is larger than the upload limit (`DOWNLOAD_MAX_MB`
 **YouTube cookies:** on a hosted server, YouTube often refuses downloads ("Sign in to confirm you're not a bot"). Give yt-dlp the cookies of a signed-in account with `YTDLP_COOKIES` in `.env`. Use a spare account, because YouTube can block an account that downloads. To export the cookies, see the [yt-dlp instructions](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies). Put the file in the bot's working folder, make it private to the bot user (`chmod 600`), and restart the bot. yt-dlp saves changed cookies back to the file, so the bot user must be able to write it. The file is a password for that account: do not commit it or share it.
 
 Use this command only for videos that you have the right to download and share. The bot keeps no copy: it deletes the file after the reply.
+
+### Speech clips
+
+| Command | Access | Description |
+|---|---|---|
+| `/say` | mod only | Opens a form with the text, a voice list, and a **Format** list (**Voice message** or **Audio file**). The bot posts the clip in the channel: as a Discord voice message (without the text), or as an Ogg/Opus audio file with the voice name and the text. With `random`, the model makes a new voice for each clip. The form opens with your last voice and format. |
+| `/voices` | mod only | Lists the voices. Admins also get a **Reload voices** button, which reads the voices folder again. |
+
+The bot sends the text and the voice name to the [text to speech worker](#text-to-speech), and uses ffmpeg to make the WAV into Ogg/Opus. For a voice message, the bot also calculates the length and the waveform. If Discord refuses the voice message as a reply, the bot posts it in the channel; if that also fails, it posts an audio file without the text. Only you see the queue position and the errors. The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
+
+Use only the voices of people who agree. Do not use `/say` to imitate a real person.
 
 ### Post images
 
@@ -592,6 +614,25 @@ To update, use **Update** on the app (it gets the new `latest`), or set a `sha-<
 The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports.
 
 To run `hcbot-train` in the container, use the app shell, or `docker exec -it hcbot hcbot-train ...`.
+
+### Text to speech
+
+`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 10 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log or keep the text.
+
+The image is large (about 8 GB, most of it PyTorch and CUDA), so it is built on the GPU host and is not put on GHCR. The Echo-TTS code and the model have fixed versions (in `tts/Dockerfile` and `tts/server.py`). The model (about 6 GB) downloads into the data folder at the first start.
+
+**Licenses:** the Echo-TTS code is MIT. The model weights, and each clip that the model makes, are [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): no commercial use. Do not use the model to imitate a real person without consent.
+
+1. In TrueNAS, go to **Apps > Configuration > Settings** and turn on **Install NVIDIA Drivers**. `nvidia-smi` must show the GPU.
+2. Make a dataset for the worker, for example `POOL/apps/tts`, owner `apps` (568:568), mode 0700. Put a `.env` in it (mode 0600) with `TTS_TOKEN=` and a long random value (`openssl rand -hex 32`).
+3. Make a dataset for the voices, for example `POOL/apps/tts-voices`. Give the `apps` user read access. To add voices from your PC, share it with SMB.
+4. Build the image on the host: `docker build -t hcbot-tts:local tts/`.
+5. Install `deploy/truenas/tts-compose.yaml` with **Install via YAML**. Change the folders and the port address (the `docker0` address: `ip -4 addr show docker0`). The port is not open on the LAN.
+6. In the `.env` of each bot instance, set `TTS_URL=http://host.docker.internal:8765` and the same `TTS_TOKEN`. The bot app needs the `extra_hosts` line from `compose.yaml`. Restart the bot.
+
+**Voices:** put one audio file for each voice in the voices folder (WAV, MP3, FLAC, OGG, or M4A). The file name is the voice name: use `a`–`z`, `0`–`9`, `-`, and `_` (at most 32 characters). A good clip is 5–10 seconds of one speaker, with clear speech and no music or noise. You do not need a transcript. Then use **Reload voices** in `/voices`, or restart the worker. If a voice sometimes changes into a different voice, put `<name>.json` next to the clip with `{"force_speaker": 1.5}` (try 1.1 to 1.5; a high value can make noise).
+
+If the worker stops, `/say` gives an error, and the rest of the bot works as usual.
 
 ---
 

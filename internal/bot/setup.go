@@ -53,6 +53,7 @@ var setupSections = []struct {
 	{"File and memory limits", []string{"TRIGGER_IMPORT_MAX_MB", "ASSETS_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB",
 		"MEDIA_CACHE_TOTAL_MB"}},
 	{"Video downloads", []string{"DOWNLOAD_ENABLED", "DOWNLOAD_MAX_MB"}},
+	{"Speech (/say)", []string{"TTS_ENABLED", "TTS_CHANNELS", "TTS_MAX_CHARS", "TTS_COOLDOWN", "TTS_QUEUE_MAX"}},
 	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
 }
 
