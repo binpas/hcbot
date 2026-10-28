@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -58,8 +59,9 @@ const (
 )
 
 // comicState is the art pack, the cooldowns, and the profile picture cache.
+// /comicart reload replaces the pack while comics are drawn.
 type comicState struct {
-	pack *comic.Pack
+	pack atomic.Pointer[comic.Pack]
 
 	mu      sync.Mutex
 	last    map[string]time.Time
@@ -92,7 +94,9 @@ func (b *Bot) registerComics() {
 		log.Printf("Comics are off: comic art: %v", err)
 		return
 	}
-	b.comics = &comicState{pack: pack, last: map[string]time.Time{}, avatars: map[string]comicAvatar{}}
+	b.comics = &comicState{last: map[string]time.Time{}, avatars: map[string]comicAvatar{}}
+	b.comics.pack.Store(pack)
+	logComicProblems(pack)
 	b.addCommand(&command{
 		name:        "comic",
 		description: "Draw the last messages of this channel as a comic.",
@@ -117,6 +121,12 @@ func (b *Bot) registerComics() {
 		}},
 		handler:      b.cmdCharacter,
 		autocomplete: b.autocompleteCharacter,
+	})
+	b.addGroup(&group{name: "comicart", description: "Manage the comic art (admin only).",
+		defaultPerm: int64(discordgo.PermissionAdministrator)})
+	b.addCommand(&command{
+		name: "comicart reload", description: "Read the comic art again, with your custom characters and backgrounds.",
+		perm: permAdmin, handler: b.cmdComicArtReload,
 	})
 	for id, h := range map[string]func(*Ctx){
 		"comicx": b.onComicToggle, "comicbg": b.onComicBackground, "comicpre": b.onComicPreview,
@@ -327,7 +337,7 @@ func (b *Bot) drawComic(guildID string, msgs []*discordgo.Message, background st
 	if background == comicRandom {
 		background = ""
 	}
-	return b.comics.pack.PNG(out, comic.Options{Background: background, Seed: h.Sum64()})
+	return b.comics.pack.Load().PNG(out, comic.Options{Background: background, Seed: h.Sum64()})
 }
 
 // comicName is the name a member has on the server: the nickname, the
@@ -625,7 +635,10 @@ func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Me
 		parts = append(parts, discordgo.TextDisplay{Content: "-# The messages were deleted."})
 	}
 	options := []discordgo.SelectMenuOption{{Label: "Random background", Value: comicRandom, Default: d.Background == ""}}
-	for _, name := range b.comics.pack.Backgrounds() {
+	for _, name := range b.comics.pack.Load().Backgrounds() {
+		if len(options) == 25 { // a Discord limit
+			break
+		}
 		options = append(options, discordgo.SelectMenuOption{Label: name, Value: name, Default: d.Background == name})
 	}
 	parts = append(parts,
@@ -762,7 +775,7 @@ func (b *Bot) onComicBackground(c *Ctx) {
 		return
 	}
 	d.Background = ""
-	if v := c.Values(); len(v) == 1 && v[0] != comicRandom && slices.Contains(b.comics.pack.Backgrounds(), v[0]) {
+	if v := c.Values(); len(v) == 1 && v[0] != comicRandom && slices.Contains(b.comics.pack.Load().Backgrounds(), v[0]) {
 		d.Background = v[0]
 	}
 	if b.saveComic(c, id, d) {
@@ -853,7 +866,7 @@ func (b *Bot) onComicCancel(c *Ctx) {
 // /character
 
 func (b *Bot) cmdCharacter(c *Ctx) {
-	pack := b.comics.pack
+	pack := b.comics.pack.Load()
 	name, set := c.Str("name")
 	name = strings.ToLower(strings.TrimSpace(name))
 	text := ""
@@ -903,7 +916,7 @@ func (b *Bot) autocompleteCharacter(c *Ctx) {
 	typed, _ := c.Str("name")
 	typed = strings.ToLower(strings.TrimSpace(typed))
 	var choices []*discordgo.ApplicationCommandOptionChoice
-	for _, name := range b.comics.pack.Names() {
+	for _, name := range b.comics.pack.Load().Names() {
 		if strings.Contains(name, typed) && len(choices) < 25 {
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: name, Value: name})
 		}
@@ -918,7 +931,7 @@ func (b *Bot) onCharacterAll(c *Ctx) {
 	if b.comics == nil {
 		return
 	}
-	data, err := b.comics.pack.SheetPNG()
+	data, err := b.comics.pack.Load().SheetPNG()
 	if err != nil {
 		c.logErr("character: sheet", err)
 		c.Reply(true, errEmbed("I could not draw the characters."))
@@ -938,5 +951,40 @@ func (b *Bot) onCharacterReset(c *Ctx) {
 		return
 	}
 	c.Reply(true, makeEmbed("🎭 Your character", fmt.Sprintf(
-		"Reset. Comics now give you a character. Usually it is **%s**.", b.comics.pack.CharacterFor(c.UserID())), colourBlurple))
+		"Reset. Comics now give you a character. Usually it is **%s**.", b.comics.pack.Load().CharacterFor(c.UserID())), colourBlurple))
+}
+
+// logComicProblems logs the custom art that could not be used.
+func logComicProblems(p *comic.Pack) {
+	for _, pr := range p.Problems() {
+		log.Printf("comic art: %s", pr)
+	}
+}
+
+// /comicart reload reads the art folder again, so that new custom
+// characters and backgrounds work without a restart. When the art cannot
+// be read, the old art stays.
+func (b *Bot) cmdComicArtReload(c *Ctx) {
+	c.Defer(true)
+	pack, err := comic.LoadPack(b.env.ComicArtDir)
+	if err != nil {
+		c.Reply(true, errEmbed(fmt.Sprintf("I could not read the comic art, so the old art stays: %s", cutText(err.Error(), 300))))
+		return
+	}
+	b.comics.pack.Store(pack)
+	logComicProblems(pack)
+	e := makeEmbed("🎨 Comic art reloaded", fmt.Sprintf("**%d** characters and **%d** backgrounds.",
+		len(pack.Names()), len(pack.Backgrounds())), colourGreen)
+	if pr := pack.Problems(); len(pr) > 0 {
+		var lines []string
+		for _, p := range pr[:min(len(pr), 15)] {
+			lines = append(lines, "• "+escapeMarkdown(cutText(p, 200)))
+		}
+		if len(pr) > 15 {
+			lines = append(lines, fmt.Sprintf("…and %d more (see the log)", len(pr)-15))
+		}
+		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Not used", Value: cutText(strings.Join(lines, "\n"), 1024)})
+		e.Color = colourRed
+	}
+	c.Reply(true, e)
 }

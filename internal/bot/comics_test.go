@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -325,7 +327,7 @@ func TestComicEditorCancelAndCooldown(t *testing.T) {
 
 func TestCharacter(t *testing.T) {
 	tb, _ := newComicBot(t)
-	auto := tb.comics.pack.CharacterFor(tUser)
+	auto := tb.comics.pack.Load().CharacterFor(tUser)
 	tb.run(tUser, "character")
 	tb.expect(true, "You have not chosen", "**"+auto+"**")
 	tb.pngFile("character.png")
@@ -483,5 +485,45 @@ func TestComicEditorPictures(t *testing.T) {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("editor has no %q: %s", want, data)
 		}
+	}
+}
+
+func TestComicArtReload(t *testing.T) {
+	tb, _ := newComicBot(t)
+	dir := tb.env.ComicArtDir
+	body := image.NewNRGBA(image.Rect(0, 0, 200, 400)) // transparent: fine
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, body)
+	for path, data := range map[string][]byte{
+		"custom/characters/newguy/neutral.png": buf.Bytes(),
+		"custom/characters/newguy/dance.png":   buf.Bytes(),
+	} {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tb.run(tMod, "comicart reload")
+	tb.expect(true, "permission")
+	tb.run(tUser, "character", strOpt("name", "newguy"))
+	tb.expect(true, "no character named")
+
+	tb.run(tAdmin, "comicart reload")
+	tb.expect(true, "**4** characters", "dance.png: unknown pose")
+	tb.run(tUser, "character", strOpt("name", "newguy"))
+	tb.expect(true, "now **newguy**")
+
+	// A broken folder: the old art stays.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	tb.run(tAdmin, "comicart reload")
+	tb.expect(true, "old art stays")
+	if !tb.comics.pack.Load().Has("newguy") {
+		t.Error("the art was lost")
 	}
 }

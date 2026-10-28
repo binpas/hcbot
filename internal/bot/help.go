@@ -52,6 +52,11 @@ func (b *Bot) modCommandCategories() []helpCategory {
 		// /say and /voices are registered only with a text to speech worker.
 		cats = slices.DeleteFunc(cats, func(c helpCategory) bool { return c.title == "Speech" })
 	}
+	if b.comics == nil {
+		for i := range cats {
+			cats[i].entries = slices.DeleteFunc(slices.Clone(cats[i].entries), func(e helpEntry) bool { return e.usage == "/comicart reload" })
+		}
+	}
 	return cats
 }
 
@@ -164,6 +169,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/db delete <filename>", "Delete a saved database backup."},
 			{"/assets export", "Export all custom emojis and stickers to a zip file."},
 			{"/assets import <file>", "Import emojis/stickers from a zip made by /assets export."},
+			{"/comicart reload", "Read the comic art again, with new custom characters and backgrounds, and list the files that cannot be used."},
 		}},
 	}
 }

@@ -335,6 +335,7 @@ Use only the voices of people who agree. Do not use `/say` to imitate a real per
 | `/comic [count]` | everyone | Draws the last `count` messages of the channel (default 4, at most `COMIC_MAX_MESSAGES`) as a comic, and posts it. `@BotName comic [count]` does the same. |
 | **Apps → Start comic here** (right-click a message) | everyone | Opens a private editor with that message and the next ones (at most 10). Remove the messages that you do not want (**Add back** undoes it), select a background, and use **Preview** to see the comic. Only you see the editor and the preview. **Post** sends the comic to the channel, with "Comic by" and your name (no ping). The editor closes after 14 minutes. |
 | `/character [name]` | everyone | Without a name, shows your character. With a name, sets it (type to see the names). **Show all** shows all characters, and **Reset** goes back to an automatic character. |
+| `/comicart reload` | admin only | Reads the comic art again, so that new [custom characters and backgrounds](#custom-comic-art) work without a restart. The reply lists the files that cannot be used, and why. If the art folder cannot be read, the old art stays. |
 
 The layout follows [comicgen](https://github.com/iopred/comicgen), the comic library of the Septapus bot, so that the comic is readable when Discord shows it small in the chat: square panels (220 px) in 2 to 4 columns, and the cast ("A comic starring:", with the head of each character, the profile picture, and the server name) in the free cells at the start of the first row. Each panel has one speaker, or two short messages from two people at random, in the order of the messages. Each panel has a random zoom. The balloons are in the top half of the panel; long text gets smaller until it fits. Each character has a small profile picture at the bottom, so you can see who is who. Members who did not choose a character get one from their user ID, so it is usually the same one. Two automatic characters in one comic are never the same; a chosen character is always used. The words and emoji in a message select the face and the pose, as in Comic Chat: for example "lol" or 😂 laughs, ":(" is sad, all capitals shout, "hi" waves, and "you" points at the other person.
 
@@ -680,7 +681,50 @@ deploy/comic-art.sh /mnt/POOL/apps/hcbot/comic   # the bot folder is /data in th
 chown -R 568:568 /mnt/POOL/apps/hcbot/comic
 ```
 
-The default `COMIC_ART_DIR` is `comic` in the working folder (`/data/comic` in the container). Restart the bot after you install or change the art. The folder has `avatars/manifest.json` with the sprite sheets, and `backgrounds/manifest.json` with the images, in the format of comic-chat-web.
+The default `COMIC_ART_DIR` is `comic` in the working folder (`/data/comic` in the container). The folder has `avatars/manifest.json` with the sprite sheets, and `backgrounds/manifest.json` with the images, in the format of comic-chat-web. After a change, use `/comicart reload` or restart the bot.
+
+### Custom comic art
+
+Add your own characters and backgrounds in `custom/` in the art folder (for example `\\blade\hcbot\comic\custom` through SMB). `deploy/comic-art.sh` never changes this folder. Then use `/comicart reload`. The reply (and the log) lists each file that the bot cannot use, and why.
+
+```
+custom/characters/bob/neutral.png      required
+custom/characters/bob/happy.png        optional poses (see the table)
+custom/characters/bob/icon.png         optional
+custom/characters/bob/character.json   optional: {"face": [95, 60]}
+custom/backgrounds/park.png            or .jpg
+```
+
+**Names:** the folder name is the character name, and the file name is the background name: 1 to 32 of `a`–`z`, `0`–`9`, `-` and `_` (capital letters become small). A name that a character or background already has is not used.
+
+**Poses:** one PNG file for each pose. Only `neutral.png` is required. When a message needs a pose that the character does not have, the bot uses the nearest emotion, or `neutral`.
+
+| File | Used when the message… |
+|---|---|
+| `neutral.png` | has no emotion (required) |
+| `happy.png`, `laugh.png`, `coy.png`, `bored.png`, `scared.png`, `sad.png`, `angry.png`, `shout.png` | shows that emotion (for example "lol" or 😂 laughs, ":(" is sad, all capitals shout) |
+| `wave.png` | starts with "hi", "hello", "bye"… |
+| `point.png` | points at the other person ("you", "are you"…) |
+| `self.png` | points at the speaker ("I", "I'm"…) |
+| `shrug.png` | says "idk", "dunno", 🤷… |
+
+**Required sizes and format:**
+
+| Art | Format | Size | Recommended |
+|---|---|---|---|
+| A pose | PNG with a transparent background | 40–1000 px wide, 100–1000 px high, at most 8 MB | The whole body, about **400 px high** and 150–250 px wide, all poses the same size |
+| `icon.png` | PNG with a transparent background | 16–400 px each side | A square head, 40–80 px |
+| A background | PNG or JPEG | 160–2000 px each side, at most 8 MB | **Square**, 320–640 px |
+
+How the art is drawn, so that it looks right:
+
+- **Characters face right.** In a panel with two speakers, the bot mirrors the second one.
+- **The comic draws a pose at 0.27 to 0.54 times its size** (a random zoom for each panel), from the middle of the panel down. A 400 px body is then 110–220 px high: the whole body at zoom 1, and the top half at zoom 2. Put the head at the top, and make the face clear at a small size. A pose that is much smaller or larger than 400 px high looks small or large next to the other characters.
+- **Thick black outlines and a solid fill** read best on the busy backgrounds. Keep the background of each pose transparent; a pose without a transparent background is used, but it covers the panel (the bot lists it as a problem).
+- **The face point** is where the balloon tail points, in `neutral.png` pixels: `{"face": [x, y]}` in `character.json`. Without it, the bot uses the middle of the top fifth of `neutral.png`. For poses of another size, the point is scaled.
+- **The icon** is shown in the cast list and in `/character`. Without `icon.png`, the bot cuts a square around the face point of `neutral.png`.
+- **A background** is stretched to the square panel, and zoomed up to 2× into the left part, at the middle height. Keep the important parts away from the right edge. The characters cover the bottom half, and the balloons the top half.
+- Only use art that you made or may use. The art goes only to the servers where the bot posts the comics.
 
 ---
 

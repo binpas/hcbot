@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/png" // the art
+	_ "image/jpeg" // custom backgrounds
+	_ "image/png"  // the art
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,9 +22,10 @@ import (
 
 // Pack is the art: the characters and the backgrounds.
 type Pack struct {
-	chars  []*Character // in cast order
-	byName map[string]*Character
-	backs  []*Background
+	chars    []*Character // in cast order, then the custom ones
+	byName   map[string]*Character
+	backs    []*Background
+	problems []string // custom art that could not be used, and why
 }
 
 // Character is one character's art. A complex character has heads and
@@ -97,17 +100,31 @@ type backgroundManifest struct {
 // sheets next to it, and backgrounds/manifest.json with the images. A
 // character or background with bad data is skipped. It is an error when
 // no character is left.
+//
+// The custom art in dir/custom (see custom.go) is added after it. Either
+// part can be missing, but not both.
 func LoadPack(dir string) (*Pack, error) {
 	p := &Pack{byName: map[string]*Character{}}
-	if err := p.loadAvatars(filepath.Join(dir, "avatars")); err != nil {
+	err := p.loadAvatars(filepath.Join(dir, "avatars"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	if len(p.chars) == 0 {
-		return nil, errors.New("comic: no characters in the art pack")
-	}
 	p.loadBackgrounds(filepath.Join(dir, "backgrounds"))
+	customErr := p.loadCustom(filepath.Join(dir, "custom"))
+	if len(p.chars) == 0 {
+		if err == nil {
+			err = customErr
+		}
+		if err == nil {
+			err = errors.New("comic: no characters in the art pack")
+		}
+		return nil, err
+	}
 	return p, nil
 }
+
+// Problems lists the custom art that could not be used, and why.
+func (p *Pack) Problems() []string { return p.problems }
 
 func (p *Pack) loadAvatars(dir string) error {
 	var m avatarManifest
