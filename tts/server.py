@@ -18,7 +18,6 @@ Endpoints (all except /health need "Authorization: Bearer <TTS_TOKEN>"):
                             "ahead": n, "error": null|"unknown voice"|...}
   GET    /jobs/<id>/audio  audio/wav, when the state is done
   DELETE /jobs/<id>        removes a queued or finished job
-  POST   /tts              the old API: a job, and the WAV when it is done
   POST   /rank             {"context": "...", "candidates": ["...", ...]}
                            -> {"scores": [...]}, higher is better
 
@@ -95,7 +94,6 @@ DASHBOARD_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashb
 RECENT_JOBS = 50
 QUEUE_DIR = os.environ.get("QUEUE_DIR", "/data/queue")
 KEEP_FINISHED = 30 * 60  # seconds a finished job waits for the bot
-LEGACY_WAIT = 600
 JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 JOB_PATH_RE = re.compile(r"^/jobs/([0-9a-f]{32})(/audio)?$")
 CLIPS_DIR = os.environ.get("CLIPS_DIR", "")
@@ -356,15 +354,6 @@ class Queue:
             del self.jobs[job_id]
         self.remove_files(job_id)
         return True
-
-    def wait(self, job_id, timeout):
-        """Waits until a job is finished (for the old /tts)."""
-        def finished():
-            job = self.jobs.get(job_id)
-            return job is None or job["state"] in ("done", "failed")
-
-        with self.cond:
-            self.cond.wait_for(finished, timeout)
 
     def run(self):
         while True:
@@ -637,7 +626,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"deleted": self.server.queue.delete(m[1])})
 
     def do_POST(self):
-        if self.path not in ("/jobs", "/tts", "/reload", "/rank"):
+        if self.path not in ("/jobs", "/reload", "/rank"):
             self.send_json(404, {"error": "not found"})
             return
         if not self.authorized():
@@ -665,24 +654,13 @@ class Handler(BaseHTTPRequestHandler):
         if voice_name != "random" and self.server.voices.get(voice_name) is None:
             self.send_json(404, {"error": "unknown voice"})
             return
-        queue = self.server.queue
         try:
-            job_id, ahead = queue.submit(text, voice_name)
+            job_id, ahead = self.server.queue.submit(text, voice_name)
         except OSError as e:
             log.warning("job not saved: %s", e)
             self.send_json(500, {"error": "queue failed"})
             return
-        if self.path == "/jobs":
-            self.send_json(202, {"id": job_id, "ahead": ahead})
-            return
-        # The old API: wait for the clip. Remove it when no bot uses it.
-        queue.wait(job_id, LEGACY_WAIT)
-        data = queue.audio(job_id)
-        queue.delete(job_id)
-        if data is None:
-            self.send_json(500, {"error": "speak failed"})
-        else:
-            self.send_wav(data)
+        self.send_json(202, {"id": job_id, "ahead": ahead})
 
     def rank(self, body):
         if self.server.ranker is None:
