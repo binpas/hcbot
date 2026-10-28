@@ -32,8 +32,9 @@ import (
 // The worker makes one clip at a time, so the bot keeps a queue. A voice is
 // a reference clip in the worker's voices folder; "random" uses none.
 //
-// The commands are registered only when TTS_URL is set. The worker does not
-// keep the text, and the bot only sends the text and the voice name.
+// The commands are registered only when TTS_URL is set. The bot only sends
+// the text and the voice name. The worker can save the clips with their
+// text for the operator (CLIPS_DIR).
 
 const (
 	ttsRequestTimeout = 3 * time.Minute  // one clip takes about 15-30 s

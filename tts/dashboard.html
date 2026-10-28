@@ -1,0 +1,307 @@
+<!doctype html>
+<!-- The TTS worker dashboard (served by tts/server.py on DASHBOARD_PORT).
+     Material Web components, from a CDN at a fixed version. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTS worker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block">
+<script type="module">
+  import 'https://cdn.jsdelivr.net/npm/@material/web@2.5.0/all.js/+esm';
+  import {styles as typescale} from 'https://cdn.jsdelivr.net/npm/@material/web@2.5.0/typography/md-typescale-styles.js/+esm';
+  document.adoptedStyleSheets.push(typescale.styleSheet);
+</script>
+<style>
+  :root {
+    --md-ref-typeface-brand: Roboto, system-ui, sans-serif;
+    --md-ref-typeface-plain: Roboto, system-ui, sans-serif;
+    --md-sys-color-primary: #4a5c92;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #dbe1ff;
+    --md-sys-color-on-primary-container: #00174b;
+    --md-sys-color-secondary-container: #dde1f9;
+    --md-sys-color-on-secondary-container: #161b2c;
+    --md-sys-color-error: #ba1a1a;
+    --md-sys-color-surface: #faf8ff;
+    --md-sys-color-surface-container-low: #f3f3fa;
+    --md-sys-color-surface-container: #eeedf4;
+    --md-sys-color-surface-container-highest: #e2e2e9;
+    --md-sys-color-on-surface: #1a1b21;
+    --md-sys-color-on-surface-variant: #45464f;
+    --md-sys-color-outline-variant: #c5c6d0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --md-sys-color-primary: #b3c5ff;
+      --md-sys-color-on-primary: #1a2d60;
+      --md-sys-color-primary-container: #324478;
+      --md-sys-color-on-primary-container: #dbe1ff;
+      --md-sys-color-secondary-container: #414659;
+      --md-sys-color-on-secondary-container: #dde1f9;
+      --md-sys-color-error: #ffb4ab;
+      --md-sys-color-surface: #121318;
+      --md-sys-color-surface-container-low: #1a1b21;
+      --md-sys-color-surface-container: #1e1f25;
+      --md-sys-color-surface-container-highest: #34343a;
+      --md-sys-color-on-surface: #e2e2e9;
+      --md-sys-color-on-surface-variant: #c5c6d0;
+      --md-sys-color-outline-variant: #45464f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-family: var(--md-ref-typeface-plain);
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 16px 24px;
+    background: var(--md-sys-color-surface-container);
+  }
+  header h1 { margin: 0; flex: 1; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat, .card {
+    position: relative;
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-low);
+    --md-elevation-level: 1;
+  }
+  .stat { padding: 16px; }
+  .stat .value { display: block; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card h2 { margin: 0; padding: 16px 16px 8px; }
+  .card md-list { background: none; padding: 0 0 8px; }
+  .empty { padding: 4px 16px 16px; color: var(--md-sys-color-on-surface-variant); }
+  .label { color: var(--md-sys-color-on-surface-variant); }
+  .clip-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .num { font-variant-numeric: tabular-nums; }
+  md-linear-progress { width: 100%; }
+  .failed md-icon { color: var(--md-sys-color-error); }
+  #offline { display: none; color: var(--md-sys-color-error); }
+  #offline.on { display: inline-flex; align-items: center; gap: 4px; }
+  @media (max-width: 600px) {
+    header { padding: 12px 16px; }
+    main { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 class="md-typescale-title-large">TTS worker</h1>
+  <span id="offline" class="md-typescale-label-large"><md-icon>cloud_off</md-icon>No answer from the worker</span>
+  <md-chip-set id="chips"></md-chip-set>
+</header>
+<main>
+  <section class="stats" aria-label="Counts since the worker started">
+    <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Clips</span><span id="s-done" class="value md-typescale-headline-small">–</span></div>
+    <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Failed</span><span id="s-failed" class="value md-typescale-headline-small">–</span></div>
+    <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Audio made</span><span id="s-audio" class="value md-typescale-headline-small">–</span></div>
+    <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Time per clip</span><span id="s-avg" class="value md-typescale-headline-small">–</span></div>
+    <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Up for</span><span id="s-uptime" class="value md-typescale-headline-small">–</span></div>
+  </section>
+
+  <section class="card"><md-elevation></md-elevation>
+    <h2 class="md-typescale-title-medium">Running</h2>
+    <div id="running"></div>
+  </section>
+
+  <section class="card"><md-elevation></md-elevation>
+    <h2 class="md-typescale-title-medium">Queue</h2>
+    <div id="queued"></div>
+  </section>
+
+  <section class="card"><md-elevation></md-elevation>
+    <h2 class="md-typescale-title-medium">Recent clips</h2>
+    <div id="recent"></div>
+  </section>
+</main>
+
+<script>
+const POLL_MS = 2000;
+let data = null;
+let skew = 0;          // server clock minus browser clock, in seconds
+let lastJSON = "";
+let playing = null;    // job id of the clip that plays
+const audio = new Audio();
+audio.addEventListener("ended", () => { playing = null; renderRecent(); });
+
+const $ = (id) => document.getElementById(id);
+const now = () => Date.now() / 1000 + skew;
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, "");
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) e.append(kid);
+  return e;
+}
+
+function dur(s) {
+  if (s == null) return "–";
+  s = Math.max(0, s);
+  if (s < 60) return s.toFixed(s < 10 ? 1 : 0) + " s";
+  if (s < 3600) return Math.floor(s / 60) + " min " + Math.floor(s % 60) + " s";
+  if (s < 86400) return Math.floor(s / 3600) + " h " + Math.floor(s % 3600 / 60) + " min";
+  return Math.floor(s / 86400) + " d " + Math.floor(s % 86400 / 3600) + " h";
+}
+
+function clock(t) {
+  return new Date(t * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+}
+
+function chip(icon, text) {
+  return el("md-assist-chip", {label: text}, el("md-icon", {slot: "icon"}, icon));
+}
+
+function textLine(job) {
+  return el("div", {slot: "headline", class: "clip-text"}, job.text);
+}
+
+function renderRunning() {
+  const box = $("running");
+  box.replaceChildren();
+  if (!data.running.length) {
+    box.append(el("div", {class: "empty md-typescale-body-medium"}, "Idle"));
+    return;
+  }
+  const list = el("md-list");
+  for (const job of data.running) {
+    list.append(el("md-list-item", {},
+      el("md-icon", {slot: "start"}, "graphic_eq"),
+      textLine(job),
+      el("div", {slot: "supporting-text"}, job.voice + " · running ",
+        el("span", {class: "num", "data-since": job.started}, dur(now() - job.started)),
+        " · waited " + dur(job.started - job.received)),
+    ));
+    list.append(el("div", {style: "padding: 0 16px 8px"}, el("md-linear-progress", {indeterminate: true})));
+  }
+  box.append(list);
+}
+
+function renderQueued() {
+  const box = $("queued");
+  box.replaceChildren();
+  if (!data.queued.length) {
+    box.append(el("div", {class: "empty md-typescale-body-medium"}, "Empty"));
+    return;
+  }
+  const list = el("md-list");
+  data.queued.forEach((job, i) => {
+    list.append(el("md-list-item", {},
+      el("md-icon", {slot: "start"}, "schedule"),
+      textLine(job),
+      el("div", {slot: "supporting-text"}, `#${i + 1} · ${job.voice} · waiting `,
+        el("span", {class: "num", "data-since": job.received}, dur(now() - job.received))),
+    ));
+  });
+  box.append(list);
+}
+
+function togglePlay(job) {
+  if (playing === job.id) {
+    audio.pause();
+    playing = null;
+  } else {
+    audio.src = "clips/" + job.id;
+    audio.play().catch(() => { playing = null; renderRecent(); });
+    playing = job.id;
+  }
+  renderRecent();
+}
+
+function renderRecent() {
+  const box = $("recent");
+  box.replaceChildren();
+  if (!data.recent.length) {
+    box.append(el("div", {class: "empty md-typescale-body-medium"}, "No clips since the worker started"));
+    return;
+  }
+  const list = el("md-list");
+  data.recent.forEach((job, i) => {
+    if (i) list.append(el("md-divider"));
+    const failed = job.state === "failed";
+    const info = failed
+      ? `${job.voice} · failed · ${clock(job.finished)}`
+      : `${job.voice} · ${dur(job.audio_seconds)} of audio · made in ${dur(job.gen_seconds)} · ${clock(job.finished)}`;
+    const item = el("md-list-item", {class: failed ? "failed" : ""},
+      el("md-icon", {slot: "start"}, failed ? "error" : "check_circle"),
+      textLine(job),
+      el("div", {slot: "supporting-text"}, info),
+    );
+    if (job.clip) {
+      const actions = el("div", {slot: "end", style: "display: flex"},
+        el("md-icon-button", {"aria-label": playing === job.id ? "Stop" : "Play", onclick: () => togglePlay(job)},
+          el("md-icon", {}, playing === job.id ? "stop" : "play_arrow")),
+        el("md-icon-button", {"aria-label": "Download", href: `clips/${job.id}?download=1`},
+          el("md-icon", {}, "download")),
+      );
+      item.append(actions);
+    }
+    list.append(item);
+  });
+  box.append(list);
+}
+
+function renderHeader() {
+  const chips = [chip("record_voice_over", data.voices + " voices")];
+  chips.push(chip(data.saving ? "save" : "block", data.saving ? "Saving clips" : "Not saving clips"));
+  chips.push(chip("sort", data.rank ? "Ranking on" : "Ranking off"));
+  if (data.gpu) {
+    const gb = (b) => (b / 2 ** 30).toFixed(1);
+    chips.push(chip("memory", `GPU ${gb(data.gpu.used)} / ${gb(data.gpu.total)} GiB`));
+  }
+  $("chips").replaceChildren(...chips);
+  $("s-done").textContent = data.done;
+  $("s-failed").textContent = data.failed;
+  $("s-audio").textContent = dur(data.audio_seconds);
+  $("s-avg").textContent = data.done ? dur(data.gen_seconds / data.done) : "–";
+}
+
+function tick() {
+  if (!data) return;
+  $("s-uptime").textContent = dur(data.uptime + now() - data.now);
+  for (const span of document.querySelectorAll("[data-since]")) {
+    span.textContent = dur(now() - Number(span.dataset.since));
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch("api/jobs", {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const next = await r.json();
+    skew = next.now - Date.now() / 1000;
+    // Draw again only when something changed, so that the buttons stay.
+    const {now: _n, uptime: _u, gpu: _g, ...rest} = next;
+    const key = JSON.stringify(rest);
+    data = next;
+    renderHeader();
+    if (key !== lastJSON) {
+      lastJSON = key;
+      renderRunning();
+      renderQueued();
+      renderRecent();
+    }
+    $("offline").classList.remove("on");
+  } catch {
+    $("offline").classList.add("on");
+  }
+  tick();
+}
+
+poll();
+setInterval(poll, POLL_MS);
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

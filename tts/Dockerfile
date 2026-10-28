@@ -30,11 +30,11 @@ RUN curl -fsSL -o echo.tar.gz \
  && echo "${ECHO_SHA256}  echo.tar.gz" | sha256sum -c - \
  && tar xzf echo.tar.gz --strip-components=1 \
  && rm echo.tar.gz
-COPY server.py /app/
+COPY server.py dashboard.html /app/
 
 # UID and GID 568 are the TrueNAS "apps" user.
 USER 568:568
 ENV HF_HOME=/data/hf HOME=/tmp PYTHONUNBUFFERED=1
-EXPOSE 8765
+EXPOSE 8765 8766
 STOPSIGNAL SIGTERM
 CMD ["python", "/app/server.py"]

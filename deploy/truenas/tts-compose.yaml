@@ -9,14 +9,18 @@
 #     goes there too.
 #   - make the voices dataset (here /mnt/POOL/apps/tts-voices). The apps
 #     user must be able to read it. You can share it with SMB.
+#   - make the clips dataset (here /mnt/POOL/apps/tts-clips). The apps
+#     user must be able to write it. Share it with SMB to get the clips.
+#     To not save clips, remove CLIPS_DIR and the /clips volume.
 #   - in Apps > Configuration > Settings, turn on "Install NVIDIA Drivers".
 #
 # Do not put TTS_TOKEN in this file. TrueNAS keeps the app YAML in its
 # config.
 #
-# The port is open only on the Docker bridge address (docker0), not on the
-# LAN. The bot apps connect to http://host.docker.internal:8765 (see
-# compose.yaml).
+# The API port (8765) is open only on the Docker bridge address (docker0),
+# not on the LAN. The bot apps connect to http://host.docker.internal:8765
+# (see compose.yaml). The dashboard port (8766) is open on the LAN. It shows
+# the text of the clips, so set DASHBOARD_TOKEN in .env.
 
 services:
   hcbot-tts:
@@ -31,13 +35,17 @@ services:
     environment:
       TZ: UTC
       VOICES_DIR: /voices
+      CLIPS_DIR: /clips
     volumes:
       - /mnt/POOL/apps/tts:/data
       - /mnt/POOL/apps/tts-voices:/voices:ro
+      - /mnt/POOL/apps/tts-clips:/clips
     ports:
       # Change the address to the docker0 address of the host
       # (ip -4 addr show docker0).
       - "172.16.0.1:8765:8765"
+      # The dashboard, on the LAN.
+      - "8766:8766"
     read_only: true
     tmpfs:
       - /tmp:size=1g,mode=1777

@@ -626,7 +626,7 @@ To run `hcbot-train` in the container, use the app shell, or `docker exec -it hc
 
 ### Text to speech
 
-`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 11 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log or keep the text.
+`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 11 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log the text, but it can save each clip with its text for the operator (see **Dashboard and saved clips** below).
 
 The same worker also does the [Markov picking](#markov-chat), with a second, small model (about 1 GB more video memory). A ranking does not wait for a clip. `RANK_ENABLED=0` in the worker's `.env` turns the ranking model off.
 
@@ -638,10 +638,15 @@ The image is large (about 8 GB, most of it PyTorch and CUDA), so it is built on 
 2. Make a dataset for the worker, for example `POOL/apps/tts`, owner `apps` (568:568), mode 0700. Put a `.env` in it (mode 0600) with `TTS_TOKEN=` and a long random value (`openssl rand -hex 32`).
 3. Make a dataset for the voices, for example `POOL/apps/tts-voices`. Give the `apps` user read access. To add voices from your PC, share it with SMB.
 4. Build the image on the host: `docker build -t hcbot-tts:local tts/`.
-5. Install `deploy/truenas/tts-compose.yaml` with **Install via YAML**. Change the folders and the port address (the `docker0` address: `ip -4 addr show docker0`). The port is not open on the LAN.
-6. In the `.env` of each bot instance, set `TTS_URL=http://host.docker.internal:8765` and the same `TTS_TOKEN`. The bot app needs the `extra_hosts` line from `compose.yaml`, with the same `docker0` address (not `host-gateway`, which can give an IPv6 address). Restart the bot.
+5. Optional: make a dataset for the saved clips, for example `POOL/apps/tts-clips`. Give the `apps` user write access, and share it with SMB. Add `DASHBOARD_TOKEN=` and a random value to the worker's `.env`.
+6. Install `deploy/truenas/tts-compose.yaml` with **Install via YAML**. Change the folders and the API port address (the `docker0` address: `ip -4 addr show docker0`). The API port is not open on the LAN.
+7. In the `.env` of each bot instance, set `TTS_URL=http://host.docker.internal:8765` and the same `TTS_TOKEN`. The bot app needs the `extra_hosts` line from `compose.yaml`, with the same `docker0` address (not `host-gateway`, which can give an IPv6 address). Restart the bot.
 
 **Voices:** put one audio file for each voice in the voices folder (WAV, MP3, FLAC, OGG, or M4A). The file name is the voice name: use `a`–`z`, `0`–`9`, `-`, and `_` (at most 32 characters). A good clip is 5–10 seconds of one speaker, with clear speech and no music or noise. You do not need a transcript. Then use **Reload voices** in `/voices`, or restart the worker. If a voice sometimes changes into a different voice, put `<name>.json` next to the clip with `{"force_speaker": 1.5}` (try 1.1 to 1.5; a high value can make noise).
+
+**Dashboard and saved clips:** the worker has a web page for the operator on port 8766 (`http://<host>:8766/`). It shows the running clip, the queue, and the last 50 clips with their text, voice, and times, and counts since the worker started. You can play or download each recent clip. It does not show the Markov rankings. The list is only in memory, so it is empty after a restart. When `DASHBOARD_TOKEN` is set, the browser asks for a login: type the token as the password (any user name). The port is open on the LAN, so set the token if other people use your network.
+
+When `CLIPS_DIR` is set (`/clips` in the compose file), the worker saves each clip as `<date>/<time>-<id>_<voice>_<text>.wav`, with a `.json` next to it that has the full text. The date and time are UTC. `CLIPS_KEEP_DAYS` in the worker's `.env` deletes the date folders that are older than that number of days (the default, 0, keeps all clips). `DASHBOARD_PORT=0` turns the page off.
 
 If the worker stops, `/say` gives an error, and the rest of the bot works as usual.
 
