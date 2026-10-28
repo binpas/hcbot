@@ -29,23 +29,27 @@ var fonts = sync.OnceValues(func() (richtext.Fonts, error) {
 	return richtext.ParseFonts(regularTTF, boldTTF)
 })
 
-// Sizes in pixels. The art is drawn at its own size, so the image is not
-// scaled.
-const (
+// Sizes in pixels. Discord shows an image in the chat at about 550 × 400
+// pixels at most, so the comic is small, with small panels and one
+// message in each, like Septapus: then Discord scales it down less and
+// the text stays readable. The art is drawn at figScale. They are
+// variables so that a test can try other sizes.
+var (
 	cols       = 3
-	panelW     = 300
-	panelH     = 340
-	margin     = 12
-	gap        = 10
+	panelW     = 220
+	panelH     = 230
+	margin     = 8
+	gap        = 8
 	border     = 4
-	figScale   = 0.8 // the characters, a bit smaller than the art
-	avatarSize = 30  // the profile picture on each character
-	balloonPad = 9
-	balloonGap = 8
+	figScale   = 0.5 // the characters, half the size of the art
+	avatarSize = 22  // the profile picture on each character
+	balloonPad = 6
+	balloonGap = 6
 	maxLines   = 7
-	picH       = 120 // the highest picture in a balloon; with two speakers, picH2
-	picH2      = 90
-	picGap     = 6
+	picH       = 80 // the highest picture in a balloon; with two speakers, picH2
+	picH2      = 60
+	picGap     = 5
+	perPanel   = 1 // the most messages in one panel
 )
 
 var (
@@ -55,11 +59,11 @@ var (
 	colWhite = color.RGBA{0xff, 0xff, 0xff, 0xff}
 	colDark  = color.RGBA{0x20, 0x22, 0x25, 0xff} // the spoiler box
 
-	stBalloon      = richtext.Style{Size: 18, Color: colInk, Thicken: 0.8} // Comic Neue Regular is thin
-	stBalloonSmall = richtext.Style{Size: 16, Color: colInk, Thicken: 0.8}
-	stCastTitle    = richtext.Style{Size: 22, Bold: true, Color: colInk}
-	stCastName     = richtext.Style{Size: 18, Bold: true, Color: colInk}
-	stSpoiler      = richtext.Style{Size: 15, Bold: true, Color: colWhite}
+	stBalloon      = richtext.Style{Size: 14, Bold: true, Color: colInk} // Regular is too thin when Discord scales the comic down
+	stBalloonSmall = richtext.Style{Size: 13, Bold: true, Color: colInk}
+	stCastTitle    = richtext.Style{Size: 16, Bold: true, Color: colInk}
+	stCastName     = richtext.Style{Size: 14, Bold: true, Color: colInk}
+	stSpoiler      = richtext.Style{Size: 13, Bold: true, Color: colWhite}
 )
 
 // Message is one message of the comic.
@@ -118,7 +122,7 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 	bg := p.background(opt.Background, rng)
 
 	rects := panelRects(len(panels) + 1)
-	dst := image.NewRGBA(image.Rect(0, 0, imageW, rects[len(rects)-1].Max.Y+margin))
+	dst := image.NewRGBA(image.Rect(0, 0, imageW(), rects[len(rects)-1].Max.Y+margin))
 	draw.Draw(dst, dst.Bounds(), image.NewUniform(colPage), image.Point{}, draw.Src)
 
 	r := &renderer{dst: dst, fc: fc, rng: rng, bg: bg}
@@ -134,7 +138,7 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 }
 
 // imageW is the width of a comic: three panels side by side.
-const imageW = 2*margin + cols*panelW + (cols-1)*gap
+func imageW() int { return 2*margin + cols*panelW + (cols-1)*gap }
 
 // rows splits n panels into rows of at most cols panels, as evenly as
 // possible, the larger rows first: 4 is 2+2, and 7 is 3+2+2.
@@ -155,7 +159,7 @@ func panelRects(n int) []image.Rectangle {
 	var out []image.Rectangle
 	for ri, k := range rows(n) {
 		y := margin + ri*(panelH+gap)
-		free := imageW - 2*margin - (k-1)*gap
+		free := imageW() - 2*margin - (k-1)*gap
 		x := margin
 		for j := range k {
 			w := free / k
@@ -223,7 +227,7 @@ func split(msgs []Message) [][]Message {
 	var out [][]Message
 	var cur []Message
 	for _, m := range msgs {
-		if len(cur) == 2 || (len(cur) == 1 && cur[0].Speaker == m.Speaker) {
+		if len(cur) == perPanel || (len(cur) == 1 && cur[0].Speaker == m.Speaker) {
 			out = append(out, cur)
 			cur = nil
 		}

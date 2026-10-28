@@ -139,17 +139,25 @@ func TestAssign(t *testing.T) {
 
 func TestSplit(t *testing.T) {
 	m := func(s string) Message { return Message{Speaker: s} }
-	got := split([]Message{m("a"), m("b"), m("a"), m("a"), m("b"), m("c")})
-	var shape []string
-	for _, pn := range got {
-		var ids []string
-		for _, x := range pn {
-			ids = append(ids, x.Speaker)
+	in := []Message{m("a"), m("b"), m("a"), m("a"), m("b"), m("c")}
+	shape := func() []string {
+		var out []string
+		for _, pn := range split(in) {
+			var ids []string
+			for _, x := range pn {
+				ids = append(ids, x.Speaker)
+			}
+			out = append(out, strings.Join(ids, ""))
 		}
-		shape = append(shape, strings.Join(ids, ""))
+		return out
 	}
-	if want := []string{"ab", "a", "ab", "c"}; !slices.Equal(shape, want) {
-		t.Errorf("panels = %v, want %v", shape, want)
+	if got, want := shape(), []string{"a", "b", "a", "a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("one per panel = %v, want %v", got, want)
+	}
+	defer func(n int) { perPanel = n }(perPanel)
+	perPanel = 2
+	if got, want := shape(), []string{"ab", "a", "ab", "c"}; !slices.Equal(got, want) {
+		t.Errorf("two per panel = %v, want %v", got, want)
 	}
 }
 
@@ -171,7 +179,7 @@ func TestRender(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The cast panel and 3 panels: two rows of two.
-	if b := img.Bounds(); b.Dx() != imageW || b.Dy() != 2*margin+2*panelH+gap {
+	if b := img.Bounds(); b.Dx() != imageW() || b.Dy() != 2*margin+2*panelH+gap {
 		t.Errorf("size = %v", b)
 	}
 	again, _ := p.Render(msgs, Options{Background: "plain", Seed: 3})
@@ -200,7 +208,7 @@ func TestLayout(t *testing.T) {
 			if r.Min.X == margin && r.Dx() < panelW {
 				t.Errorf("n=%d: panel %d is %d wide", n, i, r.Dx())
 			}
-			if last && r.Max.X != imageW-margin {
+			if last && r.Max.X != imageW()-margin {
 				t.Errorf("n=%d: row of panel %d ends at %d", n, i, r.Max.X)
 			}
 		}
@@ -244,15 +252,16 @@ func TestPictures(t *testing.T) {
 	for i := 0; i < len(pic.Pix); i += 4 {
 		copy(pic.Pix[i:], []uint8{red.R, red.G, red.B, 0xff})
 	}
-	// Only a picture, no text: it fits in picH (120) × the balloon width.
+	// Only a picture, no text: it fits in picH × the balloon width, and
+	// keeps its shape (2:1).
 	img, err := p.Render([]Message{{Speaker: "1", Name: "one", Image: pic}}, Options{Background: "plain"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := count(img, red); n < 200*100 || n > 240*120 {
-		t.Errorf("red pixels = %d", n)
+	if n := count(img, red); n < 2*picH*picH*9/10 || n > 2*picH*picH {
+		t.Errorf("red pixels = %d, want about %d", n, 2*picH*picH)
 	}
-	if got := pictureSize(Message{Image: pic}, 500, picH); got != image.Pt(240, 120) {
+	if got := pictureSize(Message{Image: pic}, 500, picH); got != image.Pt(2*picH, picH) {
 		t.Errorf("size = %v", got)
 	}
 	if got := pictureSize(Message{Image: image.NewRGBA(image.Rect(0, 0, 20, 10))}, 500, picH); got != image.Pt(20, 10) {
