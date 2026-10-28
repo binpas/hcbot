@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"golang.org/x/image/math/fixed"
 )
 
 // fixture is a post in the format of X's embed data service. Its text has
@@ -174,62 +172,6 @@ func TestRenderPlainPost(t *testing.T) {
 	}
 	if img.Bounds().Dy() < 800 {
 		t.Errorf("long text height = %d", img.Bounds().Dy())
-	}
-}
-
-func TestEmojiMatch(t *testing.T) {
-	for in, want := range map[string]int{
-		"👍🏽 ok":        2, // with a skin tone
-		"👨‍👩‍👧 family": 5, // ZWJ sequence
-		"🇺🇸!":          2, // flag
-		"❤️x":          2, // with U+FE0F
-		"❤x":           1,
-		"1️⃣ one":      3, // keycap
-		"©️":           2,
-		"© 2026":       0, // text, not an emoji, without U+FE0F
-		"1 one":        0,
-		"a":            0,
-		"中":            0,
-	} {
-		if n, _ := emojis.match([]rune(in)); n != want {
-			t.Errorf("match(%q) = %d runes, want %d", in, n, want)
-		}
-	}
-	if _, key := emojis.match([]rune("🎉")); emojis.image(key) == nil {
-		t.Error("no image for 🎉")
-	}
-}
-
-func TestWrap(t *testing.T) {
-	fc, err := newFaces(scale)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fc.close()
-	st := stBody
-	lines := fc.wrap(fc.words([]styledText{{"aaaa bbbb cccc\n\ndddd " + strings.Repeat("x", 120), st}}), 300)
-	if len(lines) < 5 {
-		t.Fatalf("lines = %d", len(lines))
-	}
-	for i, ln := range lines {
-		if ln.w > fixed.I(300) {
-			t.Errorf("line %d is %v wide", i, ln.w)
-		}
-		if len(ln.items) > 0 && ln.items[0].text == " " {
-			t.Errorf("line %d starts with a space", i)
-		}
-	}
-	// The blank line between the two paragraphs stays.
-	var blank bool
-	for _, ln := range lines {
-		blank = blank || len(ln.items) == 0
-	}
-	if !blank {
-		t.Error("blank line lost")
-	}
-	cut := fc.ellipsize([]styledText{{strings.Repeat("long name ", 20), st}}, 200)
-	if sumWidth(cut) > fixed.I(200) || cut[len(cut)-1].text != "…" {
-		t.Errorf("ellipsize = %+v", cut)
 	}
 }
 

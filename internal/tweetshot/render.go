@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/binpas/hcbot/internal/richtext"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/vector"
@@ -37,8 +38,8 @@ var (
 	colShade  = color.RGBA{0x00, 0x00, 0x00, 0xc0}
 )
 
-func textStyle(size float64, bold bool, c color.Color) style {
-	return style{size: size, bold: bold, color: c}
+func textStyle(size float64, bold bool, c color.Color) richtext.Style {
+	return richtext.Style{Size: size, Bold: bold, Color: c}
 }
 
 var (
@@ -66,11 +67,12 @@ func PNG(p *Post) ([]byte, error) {
 
 // Render draws p as an image of a dark post card.
 func Render(p *Post) (*image.RGBA, error) {
-	fc, err := newFaces(scale)
+	f, err := fonts()
 	if err != nil {
 		return nil, err
 	}
-	defer fc.close()
+	fc := richtext.NewFaces(f, scale)
+	defer fc.Close()
 	c := &canvas{fc: fc}
 	h := c.card(p) // measure
 	c.dst = image.NewRGBA(image.Rect(0, 0, c.px(cardW), c.px(h)))
@@ -81,7 +83,7 @@ func Render(p *Post) (*image.RGBA, error) {
 // canvas draws in logical pixels. With no dst, it only measures.
 type canvas struct {
 	dst *image.RGBA
-	fc  *faces
+	fc  *richtext.Faces
 }
 
 func (c *canvas) px(v float64) int { return int(math.Round(v * scale)) }
@@ -107,15 +109,15 @@ func (c *canvas) card(p *Post) float64 {
 	c.avatar(p, pad, y, avatarSize)
 	tx := pad + avatarSize + 12
 	nameMax := cardW - pad - tx - 24
-	nx := c.textLine([]styledText{{p.Name, stName}}, tx, y+20, nameMax)
+	nx := c.textLine([]richtext.Span{{Text: p.Name, Style: stName}}, tx, y+20, nameMax)
 	if p.Verified {
 		c.verified(nx+4, y+4, 18)
 	}
-	c.textLine([]styledText{{"@" + p.Handle, stHandle}}, tx, y+41, cardW-pad-tx)
+	c.textLine([]richtext.Span{{Text: "@" + p.Handle, Style: stHandle}}, tx, y+41, cardW-pad-tx)
 	y += avatarSize + 12
 
 	if p.ReplyTo != "" {
-		c.textLine([]styledText{{"Replying to ", textStyle(15, false, colDim)}, {"@" + p.ReplyTo, stSmallL}}, pad, y+15, inner)
+		c.textLine([]richtext.Span{{Text: "Replying to ", Style: textStyle(15, false, colDim)}, {Text: "@" + p.ReplyTo, Style: stSmallL}}, pad, y+15, inner)
 		y += 24
 	}
 
@@ -140,7 +142,7 @@ func (c *canvas) card(p *Post) float64 {
 		when += " · Edited"
 	}
 	if when != "" {
-		c.textLine([]styledText{{when, stHandle}}, pad, y+15, inner)
+		c.textLine([]richtext.Span{{Text: when, Style: stHandle}}, pad, y+15, inner)
 		y += 20
 	}
 
@@ -149,16 +151,16 @@ func (c *canvas) card(p *Post) float64 {
 		draw.Draw(c.dst, c.rect(pad, y, inner, 1), image.NewUniform(colBorder), image.Point{}, draw.Src)
 	}
 	y += 1 + 14
-	var counts []styledText
+	var counts []richtext.Span
 	add := func(n int, one, many string) {
 		if len(counts) > 0 {
-			counts = append(counts, styledText{"    ", stHandle})
+			counts = append(counts, richtext.Span{Text: "    ", Style: stHandle})
 		}
 		label := many
 		if n == 1 {
 			label = one
 		}
-		counts = append(counts, styledText{compact(n), textStyle(15, true, colText)}, styledText{" " + label, stHandle})
+		counts = append(counts, richtext.Span{Text: compact(n), Style: textStyle(15, true, colText)}, richtext.Span{Text: " " + label, Style: stHandle})
 	}
 	add(p.Replies, "Reply", "Replies")
 	add(p.Likes, "Like", "Likes")
@@ -185,7 +187,7 @@ func (c *canvas) quote(q *Post, x, y, w float64) float64 {
 // quoteBody lays out the content of a quote box, and returns the y below it.
 func (c *canvas) quoteBody(q *Post, x, y, w float64) float64 {
 	c.avatar(q, x, y, 20)
-	nx := c.textLine([]styledText{{q.Name, stName}}, x+26, y+15, w*0.55)
+	nx := c.textLine([]richtext.Span{{Text: q.Name, Style: stName}}, x+26, y+15, w*0.55)
 	if q.Verified {
 		nx = c.verified(nx+3, y+1, 16) + 1
 	}
@@ -193,7 +195,7 @@ func (c *canvas) quoteBody(q *Post, x, y, w float64) float64 {
 	if !q.Created.IsZero() {
 		rest += " · " + q.Created.UTC().Format("Jan 2, 2006")
 	}
-	c.textLine([]styledText{{rest, stHandle}}, nx, y+15, x+w-nx)
+	c.textLine([]richtext.Span{{Text: rest, Style: stHandle}}, nx, y+15, x+w-nx)
 	y += 26
 	if len(q.Text) > 0 {
 		y = c.paragraph(spansText(q.Text, stSmall, stSmallL), x, y, w, 20, 8)
@@ -205,59 +207,59 @@ func (c *canvas) quoteBody(q *Post, x, y, w float64) float64 {
 	return y
 }
 
-func spansText(spans []Span, plain, link style) []styledText {
-	out := make([]styledText, len(spans))
+func spansText(spans []Span, plain, link richtext.Style) []richtext.Span {
+	out := make([]richtext.Span, len(spans))
 	for i, s := range spans {
 		st := plain
 		if s.Link {
 			st = link
 		}
-		out[i] = styledText{s.Text, st}
+		out[i] = richtext.Span{Text: s.Text, Style: st}
 	}
 	return out
 }
 
 // paragraph wraps text to w and draws it from top y, with lineH between
 // lines. maxLines > 0 cuts the text with "…". It returns the y below it.
-func (c *canvas) paragraph(parts []styledText, x, y, w, lineH float64, maxLines int) float64 {
-	lines := c.fc.wrap(c.fc.words(parts), c.px(w))
+func (c *canvas) paragraph(parts []richtext.Span, x, y, w, lineH float64, maxLines int) float64 {
+	lines := c.fc.Wrap(c.fc.Words(parts), c.px(w))
 	if maxLines > 0 && len(lines) > maxLines {
 		lines = lines[:maxLines]
 		last := &lines[maxLines-1]
-		last.items = c.fc.ellipsize(append(itemsText(last.items), styledText{"  …", parts[0].st}), c.px(w))
+		last.Items = c.fc.Ellipsize(append(itemsText(last.Items), richtext.Span{Text: "  …", Style: parts[0].Style}), c.px(w))
 	}
 	for _, ln := range lines {
-		if c.dst != nil && len(ln.items) > 0 {
-			c.fc.drawItems(c.dst, ln.items, c.px(x), c.baseline(ln.items[0].st, y, lineH))
+		if c.dst != nil && len(ln.Items) > 0 {
+			c.fc.Draw(c.dst, ln.Items, c.px(x), c.baseline(ln.Items[0].Style, y, lineH))
 		}
 		y += lineH
 	}
 	return y
 }
 
-func itemsText(items []item) []styledText {
-	out := make([]styledText, len(items))
+func itemsText(items []richtext.Item) []richtext.Span {
+	out := make([]richtext.Span, len(items))
 	for i, it := range items {
-		out[i] = styledText{it.text, it.st}
+		out[i] = richtext.Span{Text: it.Text, Style: it.Style}
 	}
 	return out
 }
 
 // baseline is the device y of the baseline of a line with top y.
-func (c *canvas) baseline(st style, y, lineH float64) int {
-	m := c.fc.face(st).Metrics()
+func (c *canvas) baseline(st richtext.Style, y, lineH float64) int {
+	m := c.fc.Face(st).Metrics()
 	asc, desc := m.Ascent.Round(), m.Descent.Round()
 	return c.px(y) + (c.px(lineH)-(asc+desc))/2 + asc
 }
 
 // textLine draws one line of text, cut with "…" to maxW, with the baseline
 // at y. It returns the x after the text.
-func (c *canvas) textLine(parts []styledText, x, y, maxW float64) float64 {
-	items := c.fc.ellipsize(parts, c.px(maxW))
+func (c *canvas) textLine(parts []richtext.Span, x, y, maxW float64) float64 {
+	items := c.fc.Ellipsize(parts, c.px(maxW))
 	if c.dst == nil {
-		return x + float64(sumWidth(items).Round())/scale
+		return x + float64(richtext.SumWidth(items).Round())/scale
 	}
-	end := c.fc.drawItems(c.dst, items, c.px(x), c.px(y))
+	end := c.fc.Draw(c.dst, items, c.px(x), c.px(y))
 	return float64(end) / scale
 }
 
@@ -369,15 +371,15 @@ func (c *canvas) gifBadge(x, y float64) {
 
 // label draws text on a dark chip, centered at cx, cy.
 func (c *canvas) label(text string, cx, cy float64) {
-	w := float64(font.MeasureString(c.fc.face(stBadge), text).Round())/scale + 16
+	w := float64(font.MeasureString(c.fc.Face(stBadge), text).Round())/scale + 16
 	c.chip(text, cx-w/2, cy-11)
 }
 
 // chip draws text on a small dark rounded box with its top-left at x, y.
 func (c *canvas) chip(text string, x, y float64) {
-	w := float64(font.MeasureString(c.fc.face(stBadge), text).Round())/scale + 16
+	w := float64(font.MeasureString(c.fc.Face(stBadge), text).Round())/scale + 16
 	c.roundRect(x, y, w, 22, 4, colShade)
-	c.fc.drawItems(c.dst, []item{{text: text, st: stBadge}}, c.px(x+8), c.baseline(stBadge, y, 22))
+	c.fc.Draw(c.dst, []richtext.Item{{Text: text, Style: stBadge}}, c.px(x+8), c.baseline(stBadge, y, 22))
 }
 
 // roundRect fills a rounded rectangle.

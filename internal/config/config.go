@@ -42,6 +42,10 @@ type Env struct {
 	// TTSURL is the text to speech worker for /say. Empty turns /say off.
 	TTSURL   string
 	TTSToken string
+
+	// ComicArtDir is the art pack for /comic (deploy/comic-art.sh). When
+	// it has no art, the comic commands are not registered.
+	ComicArtDir string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -60,6 +64,7 @@ func LoadEnv() Env {
 		YtdlpCookies:       strings.TrimSpace(os.Getenv("YTDLP_COOKIES")),
 		TTSURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("TTS_URL")), "/"),
 		TTSToken:           strings.TrimSpace(os.Getenv("TTS_TOKEN")),
+		ComicArtDir:        envStr("COMIC_ART_DIR", "comic"),
 	}
 }
 
@@ -202,6 +207,14 @@ var SetupKeys = []SetupKey{
 		"Seconds a member must wait between /say requests (0: no wait)"},
 	{"TTS_QUEUE_MAX", "TTS_QUEUE_MAX", KindInt, "5",
 		"Most /say clips that can wait in the queue (each clip takes about 15–30 seconds)"},
+	{"COMIC_ENABLED", "COMIC_ENABLED", KindBool, "on",
+		"Let members make comics of the chat with /comic and \"Start comic here\" (needs the Message Content option and the comic art)"},
+	{"COMIC_CHANNELS", "COMIC_CHANNEL_IDS", KindChanList, "",
+		"Channels where comics work — pick up to 25. Empty: all channels"},
+	{"COMIC_MAX_MESSAGES", "COMIC_MAX_MESSAGES", KindInt, "10",
+		"Most messages in one comic (2-20)"},
+	{"COMIC_COOLDOWN", "COMIC_COOLDOWN", KindInt, "30",
+		"Seconds a member must wait between comics (0: no wait)"},
 }
 
 // Choice is one value of a KindChoice setting.

@@ -36,6 +36,10 @@ type command struct {
 	requires    int64 // Discord permissions the invoker must hold, e.g. BanMembers
 	defaultPerm int64 // top-level commands only; 0 = everyone
 	handler     func(*Ctx)
+
+	// autocomplete answers while the member types an option with
+	// Autocomplete set.
+	autocomplete func(*Ctx)
 }
 
 // group is a top-level command that only holds subcommands.
@@ -143,6 +147,8 @@ func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCr
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		b.dispatchCommand(c)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		b.dispatchAutocomplete(c)
 	case discordgo.InteractionMessageComponent:
 		b.dispatchCustomID(c, i.MessageComponentData().CustomID, b.components)
 	case discordgo.InteractionModalSubmit:
@@ -185,6 +191,20 @@ func (b *Bot) dispatchCommand(c *Ctx) {
 		return
 	}
 	cmd.handler(c)
+}
+
+// dispatchAutocomplete answers the choices for an option that the member
+// types. Commands that need a permission are not shown to others, so the
+// choices (character names) need no check.
+func (b *Bot) dispatchAutocomplete(c *Ctx) {
+	data := c.i.ApplicationCommandData()
+	cmd, ok := b.commands[data.Name]
+	if !ok || cmd.autocomplete == nil || c.i.Member == nil || b.env.SetupMode {
+		return
+	}
+	c.cmdName = data.Name
+	c.opts = data.Options
+	cmd.autocomplete(c)
 }
 
 func (b *Bot) dispatchCustomID(c *Ctx, customID string, routes map[string]func(*Ctx)) {

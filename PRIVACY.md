@@ -13,6 +13,7 @@ The bot keeps only the data that it needs for its features:
 - **Moderation records:** warnings, jail records (with the roles that the bot removed and will give back), temporary bans, and the reasons that moderators enter.
 - **Ticket records:** ticket numbers, open and close times, and notes that staff write about a ticket.
 - **Server settings:** the settings that administrators set with `/setup`, reaction-role menus, auto-reactions, trigger words, and permission templates.
+- **Comic character:** the comic character that you chose with `/character`, until you reset it.
 
 ## 2. Message content
 

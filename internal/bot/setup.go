@@ -28,11 +28,13 @@ const (
 )
 
 // contentOnlySettings belong to features that need
-// ENABLE_MESSAGE_CONTENT_FEATURES (curation, autoreacts, the media cache).
+// ENABLE_MESSAGE_CONTENT_FEATURES (curation, autoreacts, the media cache,
+// comics).
 // /setup hides them when the option is off; stored values are kept.
 var contentOnlySettings = map[string]bool{
 	"CURATED": true, "CURATED_EMOTE": true, "CURATED_THRESHOLD": true,
 	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
+	"COMIC_ENABLED": true, "COMIC_CHANNELS": true, "COMIC_MAX_MESSAGES": true, "COMIC_COOLDOWN": true,
 }
 
 // setupSections sets the order of /setup: each section shows its settings
@@ -54,6 +56,7 @@ var setupSections = []struct {
 		"MEDIA_CACHE_TOTAL_MB"}},
 	{"Video downloads", []string{"DOWNLOAD_ENABLED", "DOWNLOAD_MAX_MB"}},
 	{"Speech (/say)", []string{"TTS_ENABLED", "TTS_CHANNELS", "TTS_MAX_CHARS", "TTS_COOLDOWN", "TTS_QUEUE_MAX"}},
+	{"Comics", []string{"COMIC_ENABLED", "COMIC_CHANNELS", "COMIC_MAX_MESSAGES", "COMIC_COOLDOWN"}},
 	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
 }
 

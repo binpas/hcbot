@@ -24,6 +24,22 @@ var generalCommands = []helpEntry{
 	{"/help", "Show the commands available to you."},
 }
 
+var comicCommands = []helpEntry{
+	{"/comic [count]", "Draw the last messages of the channel as a comic. Also `@BotName comic [count]`."},
+	{"Apps → " + comicMenu, "Right-click a message to make a comic of it and the next messages. You can remove messages and see a preview first."},
+	{"/character [name]", "Show your character in comics, or choose one."},
+}
+
+// generalCommands are the commands for everyone. The comic commands are
+// registered only with the Message Content option and the comic art.
+func (b *Bot) generalCommands() []helpEntry {
+	if b.comics == nil {
+		return generalCommands
+	}
+	out := slices.Clone(generalCommands)
+	return slices.Insert(out, len(out)-1, comicCommands...)
+}
+
 // modCommandCategories is built per call so the warning thresholds shown
 // match the current /setup values.
 func (b *Bot) modCommandCategories() []helpCategory {
@@ -181,7 +197,7 @@ func (b *Bot) cmdHelp(c *Ctx) {
 	e := makeEmbed("📖 Command Reference",
 		"Every command below is a slash command. Arguments in `<>` are required, `[]` are optional.",
 		colourBlurple)
-	e.Fields = append(e.Fields, helpField("General", generalCommands, b.helpMention()))
+	e.Fields = append(e.Fields, helpField("General", b.generalCommands(), b.helpMention()))
 	e.Footer = &discordgo.MessageEmbedFooter{Text: "Ask a moderator if you think you're missing a command here."}
 	b.addLegalLinks(e)
 	c.Reply(true, e)
@@ -208,7 +224,7 @@ func (b *Bot) modHelpPage(invoker string, page int) ([]*discordgo.MessageEmbed, 
 		"Every command below is a slash command. Arguments in `<>` are required, `[]` are optional.",
 		colourBlurple)
 	if page == 0 {
-		e.Fields = append(e.Fields, helpField("General", generalCommands, b.helpMention()))
+		e.Fields = append(e.Fields, helpField("General", b.generalCommands(), b.helpMention()))
 		titles := make([]string, len(cats))
 		for i, cat := range cats {
 			titles[i] = fmt.Sprintf("%d. %s", i+2, cat.title)

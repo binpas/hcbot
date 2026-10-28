@@ -206,6 +206,13 @@ var schema = []string{
 		token      TEXT    NOT NULL,
 		created_at TEXT    NOT NULL
 	)`,
+	// The comic character each member chose with /character. Go bot only.
+	`CREATE TABLE IF NOT EXISTS comic_characters (
+		guild_id  TEXT NOT NULL,
+		user_id   TEXT NOT NULL,
+		character TEXT NOT NULL,
+		PRIMARY KEY (guild_id, user_id)
+	)`,
 	`CREATE TABLE IF NOT EXISTS markov_blocklist (
 		phrase     TEXT PRIMARY KEY,
 		created_by INTEGER,

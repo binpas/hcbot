@@ -11,6 +11,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Warnings** with a rap sheet, single-warning removal, and automatic arrest and kick thresholds.
 - **Post images:** mods make an image of a post on X, to share it without a link.
 - **Video downloads:** mods download a video from YouTube, X, or another site that [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and get it in a private reply.
+- **Comics:** everyone can draw the chat as a comic strip in the style of Microsoft Comic Chat: `/comic` for the last messages, or **Start comic here** to pick the messages first. Members choose their character with `/character`. *(Needs the Message Content option and the [comic art](#comic-art).)*
 - **Speech clips:** mods make a voice message or an audio clip of a text with `/say`, in a preset voice, with a local [Echo-TTS](https://github.com/jordandare/echo-tts) worker on a GPU. *(Needs the [text to speech worker](#text-to-speech).)*
 - **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
@@ -129,6 +130,7 @@ TTS_TOKEN=
 | `YTDLP_COOKIES` | A cookies file for yt-dlp, for [video downloads](#video-downloads) (for example `youtube-cookies.txt`, relative to the working folder). When it is not set, yt-dlp uses no cookies. |
 | `TTS_URL` | The address of the [text to speech worker](#text-to-speech), for example `http://host.docker.internal:8765`. When it is not set, `/say` and `/voices` are not registered. |
 | `TTS_TOKEN` | The secret token of the text to speech worker. It must be the same as `TTS_TOKEN` in the worker's `.env`. |
+| `COMIC_ART_DIR` | The folder with the [comic art](#comic-art) (default `comic`, relative to the working folder). When it has no art, or Message Content is off, the comic commands are not registered. |
 
 Keep `.env` private: the token gives full control of the bot, and the GIPHY key and the TTS token are also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
@@ -183,6 +185,10 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `TTS_MAX_CHARS` | Longest text for `/say`, in characters (at most 600) | 300 |
 | `TTS_COOLDOWN` | Seconds that a member must wait between `/say` requests. 0: no wait. | 30 |
 | `TTS_QUEUE_MAX` | Most `/say` clips of this bot that can wait in the queue, after the one that runs | 5 |
+| `COMIC_ENABLED` | Let members make [comics](#comics) ¹ | on |
+| `COMIC_CHANNELS` | Channels where comics work (up to 25). Empty: all channels ¹ | — |
+| `COMIC_MAX_MESSAGES` | Most messages in one comic (2–20) ¹ | 10 |
+| `COMIC_COOLDOWN` | Seconds that a member must wait between comics. 0: no wait. ¹ | 30 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -205,7 +211,8 @@ Set it to `false` (or remove it) and restart the bot when you are ready to switc
 - **autoreacts**, with the `/autoreact` commands,
 - **curation**,
 - the **message text** in the audit log (edits, deletes and bulk-delete transcripts),
-- **media recovery** for deleted messages.
+- **media recovery** for deleted messages,
+- **comics**, with `/comic`, **Start comic here**, and `/character` (they also need the [comic art](#comic-art)).
 
 When the option is off, the `/autoreact` commands are not registered, curation is off completely, and `/setup` and `/help` do not show them. The data stays in the database, so everything works again when you turn the option on.
 
@@ -320,6 +327,18 @@ The bot sends the text and the voice name to the [text to speech worker](#text-t
 The posts do not show who made them, so each clip is logged in `MOD_LOG`: who posted it, the format, the voice, the channel, the text, and a link to the clip (and to the message it answers). The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position while they wait. The queue is kept on disk, so a clip is not lost when the bot or the worker restarts. If the clip is not done 12 minutes after `/say`, the bot stops and shows an error. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
 
 Use only the voices of people who agree. Do not use `/say` to imitate a real person.
+
+### Comics
+
+| Command | Access | Description |
+|---|---|---|
+| `/comic [count]` | everyone | Draws the last `count` messages of the channel (default 4, at most `COMIC_MAX_MESSAGES`) as a comic, and posts it. `@BotName comic [count]` does the same. |
+| **Apps → Start comic here** (right-click a message) | everyone | Opens a private editor with that message and the next ones (at most 10). Remove the messages that you do not want (**Add back** undoes it), select a background, and use **Preview** to see the comic. Only you see the editor and the preview. **Post** sends the comic to the channel, with "Comic by" and your name (no ping). The editor closes after 14 minutes. |
+| `/character [name]` | everyone | Without a name, shows your character. With a name, sets it (type to see the names). **Show all** shows all characters, and **Reset** goes back to an automatic character. |
+
+The first panel is the cast: the head of each character, the profile picture, and the server name of each person. Then each panel has one or two speakers and their speech balloons, in the order of the messages. Each character has a small profile picture at the bottom, so you can see who is who. Members who did not choose a character get one from their user ID, so it is usually the same one. Two automatic characters in one comic are never the same; a chosen character is always used. The words and emoji in a message select the face and the pose, as in Comic Chat: for example "lol" or 😂 laughs, ":(" is sad, all capitals shout, "hi" waves, and "you" points at the other person.
+
+Messages with no text (only a file) and system messages are not drawn. Bot messages are drawn. Mentions become names, custom emoji their names, and links the word "link". A long message is cut. The bot reads the messages when it draws and keeps no text; the editor keeps only the message IDs. The bot needs Read Message History, Send Messages, and Attach Files.
 
 ### Post images
 
@@ -650,6 +669,17 @@ When `CLIPS_DIR` is set (`/clips` in the compose file), the worker saves each cl
 
 If the worker stops, `/say` gives an error, and the rest of the bot works as usual.
 
+### Comic art
+
+The comic art is not in the repository. `deploy/comic-art.sh` downloads it into a folder, at a fixed version: the Microsoft Comic Chat characters (by Jim Woodring) and the backgrounds with Microsoft's copyright, from Microsoft's open-source release under the MIT license, as sprite sheets made by [comic-chat-web](https://github.com/remsky/comic-chat-web). The license files go in the folder too.
+
+```bash
+deploy/comic-art.sh /mnt/POOL/apps/hcbot/comic   # the bot folder is /data in the container
+chown -R 568:568 /mnt/POOL/apps/hcbot/comic
+```
+
+The default `COMIC_ART_DIR` is `comic` in the working folder (`/data/comic` in the container). Restart the bot after you install or change the art. The folder has `avatars/manifest.json` with the sprite sheets, and `backgrounds/manifest.json` with the images, in the format of comic-chat-web.
+
 ---
 
 ## Development and tests
@@ -690,6 +720,7 @@ make check
 | `pending_actions` | Data behind buttons, for example imports and wizard drafts |
 | `markov_blocklist` | Words and phrases the Markov chat never learns or says |
 | `tts_jobs` | `/say` clips that wait for the worker, with the text and the interaction token, until the clip is posted |
+| `comic_characters` | The comic character that each member chose with `/character` |
 
 `markov.db` (SQLite) in the working folder, or at `MARKOV_DB_PATH`:
 
@@ -702,7 +733,9 @@ make check
 
 ## Credits
 
-`/tweetshot` uses these, and they are in the binary:
+`/tweetshot` and the comics use these, and they are in the binary:
+
+- [Comic Neue](https://github.com/crozynski/comicneue) by the Comic Neue Project Authors, under the SIL Open Font License 1.1 (`internal/comic/assets/OFL-ComicNeue.txt`), for the comic balloons.
 
 - [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) by the Noto Project Authors, under the SIL Open Font License 1.1 (`internal/tweetshot/assets/OFL-NotoSans.txt`).
-- [Twemoji](https://github.com/jdecked/twemoji) emoji graphics, copyright 2019 Twitter, Inc and other contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`internal/tweetshot/assets/LICENSE-Twemoji-graphics.txt`). The graphics are not changed; the bot makes them smaller when it draws them.
+- [Twemoji](https://github.com/jdecked/twemoji) emoji graphics, copyright 2019 Twitter, Inc and other contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`internal/richtext/assets/LICENSE-Twemoji-graphics.txt`). The graphics are not changed; the bot makes them smaller when it draws them.
