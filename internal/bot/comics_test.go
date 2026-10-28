@@ -131,9 +131,9 @@ func TestComicCommand(t *testing.T) {
 		t.Errorf("history requests = %+v", gets)
 	}
 	img := tb.pngFile("comic.png")
-	// The last 3 messages with text (1003, 1004, 1007): three panels and
-	// the cast panel, in two rows of two.
-	if b := img.Bounds(); b.Dx() < 600 || b.Dx() > 750 || b.Dy() < 400 || b.Dy() > 520 {
+	// The last 3 messages with text (1003, 1004, 1007): 2 or 3 panels and
+	// the cast.
+	if b := img.Bounds(); b.Dx() < 450 || b.Dx() > 950 || b.Dy() < 200 || b.Dy() > 470 {
 		t.Errorf("comic size = %v", b)
 	}
 	if len(*fetched) != 2 { // user and the bot

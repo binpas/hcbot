@@ -138,26 +138,38 @@ func TestAssign(t *testing.T) {
 }
 
 func TestSplit(t *testing.T) {
-	m := func(s string) Message { return Message{Speaker: s} }
-	in := []Message{m("a"), m("b"), m("a"), m("a"), m("b"), m("c")}
-	shape := func() []string {
-		var out []string
-		for _, pn := range split(in) {
-			var ids []string
-			for _, x := range pn {
-				ids = append(ids, x.Speaker)
+	m := func(s, text string) Message { return Message{Speaker: s, Text: text} }
+	in := []Message{m("a", "hi"), m("b", "yo"), m("a", "x"), m("a", "y"), m("b", strings.Repeat("long ", 30)),
+		m("c", "z"), {Speaker: "d", Image: image.NewRGBA(image.Rect(0, 0, 1, 1))}, m("e", "w")}
+	pairs := 0
+	for seed := range uint64(20) {
+		var got []Message
+		for _, pn := range split(in, rand.New(rand.NewPCG(seed, 1))) {
+			got = append(got, pn...)
+			if len(pn) == 2 {
+				pairs++
+				if !canPair(pn[0], pn[1]) {
+					t.Errorf("seed %d: %s and %s share a panel", seed, pn[0].Speaker, pn[1].Speaker)
+				}
 			}
-			out = append(out, strings.Join(ids, ""))
+			if len(pn) < 1 || len(pn) > 2 {
+				t.Errorf("seed %d: a panel with %d messages", seed, len(pn))
+			}
 		}
-		return out
+		if len(got) != len(in) {
+			t.Fatalf("seed %d: %d messages, want %d", seed, len(got), len(in))
+		}
+		for i := range got {
+			if got[i].Speaker != in[i].Speaker || got[i].Text != in[i].Text {
+				t.Fatalf("seed %d: the order changed", seed)
+			}
+		}
 	}
-	if got, want := shape(), []string{"a", "b", "a", "a", "b", "c"}; !slices.Equal(got, want) {
-		t.Errorf("one per panel = %v, want %v", got, want)
+	if pairs == 0 {
+		t.Error("no panel with two speakers")
 	}
-	defer func(n int) { perPanel = n }(perPanel)
-	perPanel = 2
-	if got, want := shape(), []string{"ab", "a", "ab", "c"}; !slices.Equal(got, want) {
-		t.Errorf("two per panel = %v, want %v", got, want)
+	if canPair(m("a", "x"), m("a", "y")) || canPair(m("a", "x"), m("b", strings.Repeat("y", pairChars))) {
+		t.Error("canPair is wrong")
 	}
 }
 
@@ -178,8 +190,8 @@ func TestRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The cast panel and 3 panels: two rows of two.
-	if b := img.Bounds(); b.Dx() != imageW() || b.Dy() != 2*margin+2*panelH+gap {
+	// Whole cells.
+	if b := img.Bounds(); (b.Dx()-2*margin+gap)%(cell+gap) != 0 || (b.Dy()-2*margin+gap)%(cell+gap) != 0 {
 		t.Errorf("size = %v", b)
 	}
 	again, _ := p.Render(msgs, Options{Background: "plain", Seed: 3})
@@ -187,30 +199,26 @@ func TestRender(t *testing.T) {
 		t.Error("the same seed gave a different comic")
 	}
 	one, err := p.Render(msgs[:1], Options{Background: "nothing"})
-	if err != nil || one.Bounds().Dy() != 2*margin+panelH {
+	if _, _, size := layout(1); err != nil || one.Bounds().Size() != size {
 		t.Errorf("one message: %v, %v", one.Bounds(), err)
 	}
 }
 
 func TestLayout(t *testing.T) {
-	for n, want := range map[int][]int{1: {1}, 2: {2}, 3: {3}, 4: {2, 2}, 5: {3, 2}, 6: {3, 3},
-		7: {3, 2, 2}, 8: {3, 3, 2}, 9: {3, 3, 3}, 10: {3, 3, 2, 2}, 11: {3, 3, 3, 2}} {
-		if got := rows(n); !slices.Equal(got, want) {
-			t.Errorf("rows(%d) = %v, want %v", n, got, want)
+	// comicgen's chat comics: columns and rows of cells, and the free
+	// cells for the cast at the start.
+	for n, want := range map[int][3]int{1: {2, 1, 1}, 2: {3, 1, 1}, 3: {2, 2, 1}, 4: {3, 2, 2}, 5: {3, 2, 1},
+		6: {4, 2, 2}, 7: {3, 3, 2}, 8: {3, 3, 1}, 9: {3, 4, 3}, 10: {4, 3, 2}, 12: {4, 4, 4}} {
+		castRect, panels, size := layout(n)
+		cols, rows := want[0], want[1]
+		if wantSize := image.Pt(2*margin+cols*(cell+gap)-gap, 2*margin+rows*(cell+gap)-gap); size != wantSize {
+			t.Errorf("n=%d: size = %v, want %v", n, size, wantSize)
 		}
-		// Each row fills the width.
-		rects := panelRects(n)
-		if len(rects) != n {
-			t.Fatalf("panelRects(%d) = %d rects", n, len(rects))
+		if free := (castRect.Dx() + gap) / (cell + gap); free != want[2] || castRect.Min != image.Pt(margin, margin) {
+			t.Errorf("n=%d: cast = %v (%d cells), want %d", n, castRect, free, want[2])
 		}
-		for i, r := range rects {
-			last := i == n-1 || rects[i+1].Min.Y != r.Min.Y
-			if r.Min.X == margin && r.Dx() < panelW {
-				t.Errorf("n=%d: panel %d is %d wide", n, i, r.Dx())
-			}
-			if last && r.Max.X != imageW()-margin {
-				t.Errorf("n=%d: row of panel %d ends at %d", n, i, r.Max.X)
-			}
+		if len(panels) != n || panels[n-1].Max != size.Sub(image.Pt(margin, margin)) {
+			t.Errorf("n=%d: panels = %v", n, panels)
 		}
 	}
 }
@@ -252,19 +260,20 @@ func TestPictures(t *testing.T) {
 	for i := 0; i < len(pic.Pix); i += 4 {
 		copy(pic.Pix[i:], []uint8{red.R, red.G, red.B, 0xff})
 	}
-	// Only a picture, no text: it fits in picH × the balloon width, and
-	// keeps its shape (2:1).
+	// Only a picture, no text: it fills the balloon area (the top half of
+	// the panel), and keeps its shape (2:1).
 	img, err := p.Render([]Message{{Speaker: "1", Name: "one", Image: pic}}, Options{Background: "plain"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := count(img, red); n < 2*picH*picH*9/10 || n > 2*picH*picH {
-		t.Errorf("red pixels = %d, want about %d", n, 2*picH*picH)
+	maxH := cell/2 - 18 - 2*balloonPad
+	if n := count(img, red); n < 2*maxH*maxH*9/10 || n > 2*maxH*maxH {
+		t.Errorf("red pixels = %d, want about %d", n, 2*maxH*maxH)
 	}
-	if got := pictureSize(Message{Image: pic}, 500, picH); got != image.Pt(2*picH, picH) {
+	if got := pictureSize(Message{Image: pic}, 500, 80); got != image.Pt(160, 80) {
 		t.Errorf("size = %v", got)
 	}
-	if got := pictureSize(Message{Image: image.NewRGBA(image.Rect(0, 0, 20, 10))}, 500, picH); got != image.Pt(20, 10) {
+	if got := pictureSize(Message{Image: image.NewRGBA(image.Rect(0, 0, 20, 10))}, 500, 80); got != image.Pt(20, 10) {
 		t.Errorf("small picture = %v, want it not enlarged", got)
 	}
 

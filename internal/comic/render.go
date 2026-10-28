@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/vector"
@@ -19,9 +20,9 @@ import (
 )
 
 var (
-	//go:embed assets/ComicNeue-Regular.ttf
+	//go:embed assets/LiberationSans-Regular.ttf
 	regularTTF []byte
-	//go:embed assets/ComicNeue-Bold.ttf
+	//go:embed assets/LiberationSans-Bold.ttf
 	boldTTF []byte
 )
 
@@ -29,27 +30,23 @@ var fonts = sync.OnceValues(func() (richtext.Fonts, error) {
 	return richtext.ParseFonts(regularTTF, boldTTF)
 })
 
-// Sizes in pixels. Discord shows an image in the chat at about 550 × 400
-// pixels at most, so the comic is small, with small panels and one
-// message in each, like Septapus: then Discord scales it down less and
-// the text stays readable. The art is drawn at figScale. They are
-// variables so that a test can try other sizes.
+// Sizes in pixels. The comic follows comicgen (the library of the
+// Septapus bot), whose comics read well when Discord shows them small in
+// the chat: square cells, a cast in the free cells of the first row, and
+// one or two speakers in each panel, with the balloons in the top half.
+// They are variables so that a test can try other sizes.
 var (
-	cols       = 3
-	panelW     = 220
-	panelH     = 230
-	margin     = 8
-	gap        = 8
+	cell       = 220 // a panel is cell × cell
+	margin     = 5
+	gap        = 5
 	border     = 4
-	figScale   = 0.5 // the characters, half the size of the art
-	avatarSize = 22  // the profile picture on each character
+	charScale  = 0.27 // the art at zoom 1 (our figures are about twice as tall as comicgen's)
+	avatarSize = 20   // the profile picture on each character
+	areaPad    = 8    // the balloon area: the top half of the panel, inside this
 	balloonPad = 6
-	balloonGap = 6
-	maxLines   = 7
-	picH       = 80 // the highest picture in a balloon; with two speakers, picH2
-	picH2      = 60
-	picGap     = 5
-	perPanel   = 1 // the most messages in one panel
+	minFont    = 6.0 // text gets smaller until it fits, down to this
+	pairChars  = 128 // two speakers share a panel only with shorter messages
+	castRowH   = 30
 )
 
 var (
@@ -59,11 +56,11 @@ var (
 	colWhite = color.RGBA{0xff, 0xff, 0xff, 0xff}
 	colDark  = color.RGBA{0x20, 0x22, 0x25, 0xff} // the spoiler box
 
-	stBalloon      = richtext.Style{Size: 14, Bold: true, Color: colInk} // Regular is too thin when Discord scales the comic down
-	stBalloonSmall = richtext.Style{Size: 13, Bold: true, Color: colInk}
-	stCastTitle    = richtext.Style{Size: 16, Bold: true, Color: colInk}
-	stCastName     = richtext.Style{Size: 14, Bold: true, Color: colInk}
-	stSpoiler      = richtext.Style{Size: 13, Bold: true, Color: colWhite}
+	// Liberation Sans has the sizes of Arial, the font of comicgen.
+	stBalloon   = richtext.Style{Size: 14, Color: colInk}
+	stCastTitle = richtext.Style{Size: 16, Color: colInk}
+	stCastName  = richtext.Style{Size: 14, Color: colInk}
+	stSpoiler   = richtext.Style{Size: 13, Bold: true, Color: colWhite}
 )
 
 // Message is one message of the comic.
@@ -104,7 +101,7 @@ type cast struct {
 	order  int // the order of the first message
 }
 
-// Render draws the comic: the cast panel, then the panels.
+// Render draws the comic: the cast, then the panels.
 func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 	if len(msgs) == 0 {
 		return nil, ErrNoMessages
@@ -118,59 +115,55 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 	rng := rand.New(rand.NewPCG(opt.Seed, 0x636f6d6963))
 
 	people := p.assign(msgs)
-	panels := split(msgs)
+	panels := split(msgs, rng)
 	bg := p.background(opt.Background, rng)
 
-	rects := panelRects(len(panels) + 1)
-	dst := image.NewRGBA(image.Rect(0, 0, imageW(), rects[len(rects)-1].Max.Y+margin))
+	castRect, rects, size := layout(len(panels))
+	dst := image.NewRGBA(image.Rectangle{Max: size})
 	draw.Draw(dst, dst.Bounds(), image.NewUniform(colPage), image.Point{}, draw.Src)
 
 	r := &renderer{dst: dst, fc: fc, rng: rng, bg: bg}
+	r.castList(castRect, people)
 	for i, rect := range rects {
-		if i == 0 {
-			r.castPanel(rect, people)
-		} else {
-			r.panel(rect, panels[i-1], people)
-		}
+		r.panel(rect, panels[i], people)
 		r.frame(rect)
 	}
 	return dst, nil
 }
 
-// imageW is the width of a comic: three panels side by side.
-func imageW() int { return 2*margin + cols*panelW + (cols-1)*gap }
-
-// rows splits n panels into rows of at most cols panels, as evenly as
-// possible, the larger rows first: 4 is 2+2, and 7 is 3+2+2.
-func rows(n int) []int {
-	out := make([]int, (n+cols-1)/cols)
-	for i := range out {
-		out[i] = n / len(out)
-		if i < n%len(out) {
-			out[i]++
+// layout places the cast and n panels in a grid of cells, with comicgen's
+// rule for the columns: 3 panels in rows of 2, 4 in rows of 3, and more in
+// rows of 4, or of 3 when n is odd or n+1 is a multiple of 3. The cast
+// fills the free cells at the start of the first row.
+func layout(n int) (castRect image.Rectangle, panels []image.Rectangle, size image.Point) {
+	total := n + 1
+	cols := min(total, 3)
+	if total <= 4 {
+		cols = total
+	}
+	switch {
+	case n == 3:
+		cols = 2
+	case n == 4:
+		cols = 3
+	case n > 4:
+		cols = 4
+		if n%2 == 1 || (n+1)%3 == 0 {
+			cols--
 		}
 	}
-	return out
-}
-
-// panelRects places n panels: each row fills the width of the image, so
-// a row with fewer panels has wider ones.
-func panelRects(n int) []image.Rectangle {
-	var out []image.Rectangle
-	for ri, k := range rows(n) {
-		y := margin + ri*(panelH+gap)
-		free := imageW() - 2*margin - (k-1)*gap
-		x := margin
-		for j := range k {
-			w := free / k
-			if j < free%k {
-				w++
-			}
-			out = append(out, image.Rect(x, y, x+w, y+panelH))
-			x += w + gap
-		}
+	rows := (total + cols - 1) / cols
+	free := cols*rows - n
+	at := func(i int) image.Point {
+		return image.Pt(margin+(i%cols)*(cell+gap), margin+(i/cols)*(cell+gap))
 	}
-	return out
+	castRect = image.Rectangle{Min: at(0), Max: at(0).Add(image.Pt(free*cell+(free-1)*gap, cell))}
+	for i := range n {
+		pt := at(free + i)
+		panels = append(panels, image.Rectangle{Min: pt, Max: pt.Add(image.Pt(cell, cell))})
+	}
+	size = image.Pt(2*margin+cols*(cell+gap)-gap, 2*margin+rows*(cell+gap)-gap)
+	return castRect, panels, size
 }
 
 // assign gives each speaker a character: the chosen one, or one picked
@@ -221,19 +214,28 @@ func hash(s string) uint64 {
 	return h.Sum64()
 }
 
-// split puts the messages in panels: at most two in a panel, from two
-// different speakers.
-func split(msgs []Message) [][]Message {
+// split puts the messages in panels. As in comicgen, two messages share a
+// panel at random (one time in two) when they are from two speakers, are
+// short, and have no picture.
+func split(msgs []Message, rng *rand.Rand) [][]Message {
 	var out [][]Message
-	var cur []Message
-	for _, m := range msgs {
-		if len(cur) == perPanel || (len(cur) == 1 && cur[0].Speaker == m.Speaker) {
-			out = append(out, cur)
-			cur = nil
+	for i := 0; i < len(msgs); {
+		if i+1 < len(msgs) && canPair(msgs[i], msgs[i+1]) && rng.IntN(2) == 0 {
+			out = append(out, msgs[i:i+2])
+			i += 2
+			continue
 		}
-		cur = append(cur, m)
+		out = append(out, msgs[i:i+1])
+		i++
 	}
-	return append(out, cur)
+	return out
+}
+
+func canPair(a, b Message) bool {
+	short := func(m Message) bool {
+		return m.Image == nil && !m.Spoiler && utf8.RuneCountInString(m.Text) < pairChars
+	}
+	return a.Speaker != b.Speaker && short(a) && short(b)
 }
 
 func (p *Pack) background(name string, rng *rand.Rand) image.Image {
@@ -255,12 +257,17 @@ type renderer struct {
 	bg  image.Image
 }
 
-func (r *renderer) fill(rect image.Rectangle) {
+// fill draws the background, stretched to the panel and zoomed in from
+// the left, at the middle height (as comicgen does).
+func (r *renderer) fill(rect image.Rectangle, zoom float64) {
 	if r.bg == nil {
 		draw.Draw(r.dst, rect, image.NewUniform(colPanel), image.Point{}, draw.Src)
 		return
 	}
-	cover(r.dst, rect, r.bg)
+	sb := r.bg.Bounds()
+	sw, sh := int(float64(sb.Dx())/zoom), int(float64(sb.Dy())/zoom)
+	y0 := sb.Min.Y + (sb.Dy()-sh)/2
+	xdraw.CatmullRom.Scale(r.dst, rect, r.bg, image.Rect(sb.Min.X, y0, sb.Min.X+sw, y0+sh), xdraw.Src, nil)
 }
 
 func (r *renderer) frame(rect image.Rectangle) {
@@ -274,23 +281,21 @@ func (r *renderer) frame(rect image.Rectangle) {
 	}
 }
 
-// castPanel lists each speaker: the character's head, the profile
-// picture, and the name.
-// The cast list is one block in the middle of the panel: the title,
-// then a row for each person. The rows are aligned on the left, so that
-// the heads and the pictures make columns.
-func (r *renderer) castPanel(rect image.Rectangle, people map[string]*cast) {
-	draw.Draw(r.dst, rect, image.NewUniform(colPanel), image.Point{}, draw.Src)
+// castList draws "A comic starring:" and a row for each speaker (the
+// character's head, the profile picture, and the name), as one block in
+// the middle of rect, with no frame. The rows are aligned on the left, so
+// that the heads and the pictures make columns.
+func (r *renderer) castList(rect image.Rectangle, people map[string]*cast) {
 	order := castOrder(people)
-	const pad, titleH = 14, 34
-	rowH := min(52, (rect.Dy()-2*pad-titleH)/max(len(order), 1))
-	icon := rowH - 6
+	const pad, titleH = 6, 24
+	rowH := min(castRowH, (rect.Dy()-2*pad-titleH)/max(len(order), 1))
+	icon := rowH - 4
 	pic := min(avatarSize, icon)
 	st := stCastName
-	if rowH < 30 {
-		st.Size = 13
+	if rowH < 24 {
+		st.Size = max(9, float64(rowH)-8)
 	}
-	nameX := icon + 8 + pic + 8 // from the left of the block
+	nameX := icon + 4 + pic + 6 // from the left of the block
 	maxName := rect.Dx() - 2*pad - nameX
 	names := make([][]richtext.Item, len(order))
 	blockW := 0
@@ -298,12 +303,11 @@ func (r *renderer) castPanel(rect image.Rectangle, people map[string]*cast) {
 		names[i] = r.fc.Ellipsize([]richtext.Span{{Text: c.name, Style: st}}, maxName)
 		blockW = max(blockW, nameX+richtext.SumWidth(names[i]).Ceil())
 	}
-	title := r.fc.Ellipsize([]richtext.Span{{Text: "Starring", Style: stCastTitle}}, rect.Dx()-2*pad)
+	title := r.fc.Ellipsize([]richtext.Span{{Text: "A comic starring:", Style: stCastTitle}}, rect.Dx()-2*pad)
 	titleW := richtext.SumWidth(title).Ceil()
-	blockW = max(blockW, titleW)
 	x0 := rect.Min.X + (rect.Dx()-blockW)/2
 	y := rect.Min.Y + (rect.Dy()-titleH-len(order)*rowH)/2
-	r.fc.Draw(r.dst, title, rect.Min.X+(rect.Dx()-titleW)/2, y+18)
+	r.fc.Draw(r.dst, title, rect.Min.X+(rect.Dx()-titleW)/2, y+16)
 	y += titleH
 	m := r.fc.Face(st).Metrics()
 	for i, c := range order {
@@ -315,7 +319,7 @@ func (r *renderer) castPanel(rect image.Rectangle, people map[string]*cast) {
 			dr := image.Rect(0, 0, iw, ih).Add(image.Pt(x0+(icon-iw)/2, cy-ih/2))
 			xdraw.CatmullRom.Scale(r.dst, dr, c.char.icon, b, xdraw.Over, nil)
 		}
-		px := x0 + icon + 8
+		px := x0 + icon + 4
 		r.avatar(c.avatar, px+pic/2, cy, pic)
 		r.fc.Draw(r.dst, names[i], x0+nameX, cy+(m.Ascent.Round()-m.Descent.Round())/2)
 		y += rowH
@@ -331,128 +335,148 @@ func castOrder(people map[string]*cast) []*cast {
 	return out
 }
 
-// panel draws one or two characters and their balloons.
+// balloonFit is a balloon's text and picture, fitted to a space.
+type balloonFit struct {
+	lines []richtext.Line
+	st    richtext.Style
+	pic   image.Point // the picture (or spoiler box) size; 0 for none
+	size  image.Point // the whole balloon
+}
+
+// fitBalloon lays out a message to fit in w × h: the text at 14 px, or
+// smaller until it fits (as comicgen does), and the picture under it in
+// the space that is left.
+func (r *renderer) fitBalloon(m Message, w, h int) balloonFit {
+	maxW, maxH := w-2*balloonPad, h-2*balloonPad
+	hasPic := m.Image != nil || m.Spoiler
+	text := strings.TrimSpace(m.Text)
+	var f balloonFit
+	for size := stBalloon.Size; ; size -= 0.5 {
+		f = balloonFit{st: stBalloon}
+		f.st.Size = size
+		var textH, textW int
+		if text != "" {
+			f.lines = r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: text, Style: f.st}}), maxW)
+			textH = len(f.lines) * lineHeight(f.st)
+			for _, ln := range f.lines {
+				textW = max(textW, ln.W.Ceil())
+			}
+		}
+		left := maxH - textH
+		if hasPic && text != "" {
+			left -= balloonPad
+		}
+		if hasPic {
+			f.pic = pictureSize(m, maxW, left)
+		}
+		fits := left >= 0 && (!hasPic || left >= maxH/3)
+		if fits || size-0.5 < minFont {
+			if !fits && text != "" {
+				f.cut(r.fc, maxW, maxH-f.pic.Y)
+				textH = len(f.lines) * lineHeight(f.st)
+			}
+			bh := textH + f.pic.Y + 2*balloonPad
+			if hasPic && text != "" {
+				bh += balloonPad
+			}
+			f.size = image.Pt(max(textW, f.pic.X)+2*balloonPad, bh)
+			return f
+		}
+	}
+}
+
+// cut keeps the lines that fit in h, and ends the last one with "…".
+func (f *balloonFit) cut(fc *richtext.Faces, maxW, h int) {
+	n := max(h/lineHeight(f.st), 1)
+	if len(f.lines) <= n {
+		return
+	}
+	f.lines = f.lines[:n]
+	last := &f.lines[n-1]
+	last.Items = fc.Ellipsize(append(spans(last.Items), richtext.Span{Text: " …", Style: f.st}), maxW)
+}
+
+// panel draws one or two characters and their balloons, as comicgen does:
+// a random zoom (1 to 2) for the background and the characters, the
+// characters from the middle height down, and the balloons in the top
+// half, the second under the first.
 func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string]*cast) {
-	r.fill(rect)
+	zoom := 1 + r.rng.Float64()
+	r.fill(rect, zoom)
 	inner := rect.Inset(border)
 	two := len(msgs) == 2
+	areaW, areaH := cell-2*areaPad, cell/2-18
+	figTop := rect.Min.Y + cell/2 - 10
+	scale := charScale * zoom
 
-	// The balloons, from the top, in message order.
-	type balloon struct {
-		lines []richtext.Line
-		st    richtext.Style
-		box   image.Rectangle
-		pic   image.Point // the picture (or spoiler box) size; 0 for none
-		msg   Message
-	}
-	maxW := inner.Dx() - 2*balloonPad - 12
-	maxPic := picH
-	if two {
-		maxW = inner.Dx()*64/100 - 2*balloonPad
-		maxPic = picH2
-	}
-	var bs []balloon
-	y := inner.Min.Y + 8
-	for i, m := range msgs {
-		st := stBalloon
-		var lines []richtext.Line
-		if strings.TrimSpace(m.Text) != "" {
-			lines = r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: m.Text, Style: st}}), maxW)
-			if len(lines) > 4 {
-				st = stBalloonSmall
-				lines = r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: m.Text, Style: st}}), maxW)
-			}
-			if len(lines) > maxLines {
-				lines = lines[:maxLines]
-				last := &lines[maxLines-1]
-				last.Items = r.fc.Ellipsize(append(spans(last.Items), richtext.Span{Text: " …", Style: st}), maxW)
-			}
-		}
-		var tw int
-		for _, ln := range lines {
-			tw = max(tw, ln.W.Ceil())
-		}
-		pic := pictureSize(m, maxW, maxPic)
-		lh := lineHeight(st)
-		bw := max(tw, pic.X) + 2*balloonPad
-		bh := len(lines)*lh + 2*balloonPad - 4
-		if pic.Y > 0 {
-			bh += pic.Y + 4
-			if len(lines) > 0 {
-				bh += picGap
-			}
-		}
-		bx := inner.Min.X + (inner.Dx()-bw)/2
-		if two && i == 0 {
-			bx = inner.Min.X + 8
-		} else if two {
-			bx = inner.Max.X - 8 - bw
-		}
-		bs = append(bs, balloon{lines: lines, st: st, box: image.Rect(bx, y, bx+bw, y+bh), pic: pic, msg: m})
-		y += bh + balloonGap
-	}
-
-	// The characters stand below the balloons; the panel cuts their legs.
-	top := max(y+14, inner.Min.Y+panelH*28/100)
+	// The characters: one in the middle, or two that face each other.
 	type placed struct {
-		fig  figure
 		rect image.Rectangle
 		head image.Point
 	}
 	var figs []placed
 	for i, m := range msgs {
-		c := people[m.Speaker]
-		f := c.char.figure(moodOf(m.Text), r.rng)
-		flip := two && i == 1 // the right one faces left
-		fw := int(float64(f.img.Bounds().Dx()) * figScale)
-		fh := int(float64(f.img.Bounds().Dy()) * figScale)
-		hx := int(float64(f.headX) * figScale)
-		if flip {
-			hx = fw - hx
-		}
-		cx := inner.Min.X + inner.Dx()/2
+		f := people[m.Speaker].char.figure(moodOf(m.Text), r.rng)
+		flip := two && i == 1
+		fw := int(float64(f.img.Bounds().Dx()) * scale)
+		fh := int(float64(f.img.Bounds().Dy()) * scale)
+		slotW := cell
 		if two {
-			cx = inner.Min.X + inner.Dx()*28/100
-			if i == 1 {
-				cx = inner.Min.X + inner.Dx()*72/100
-			}
+			slotW = cell / 2
 		}
-		fx := cx - hx
-		fr := image.Rect(fx, top, fx+fw, top+fh)
+		fx := rect.Min.X + i*slotW + (slotW-fw)/2
+		fr := image.Rect(fx, figTop, fx+fw, figTop+fh)
 		img := image.Image(f.img)
+		hx := int(float64(f.headX) * scale)
 		if flip {
 			img = flipH(f.img)
+			hx = fw - hx
 		}
-		xdraw.CatmullRom.Scale(r.dst, fr.Intersect(inner), img, srcRect(img.Bounds(), fr, inner, figScale), xdraw.Over, nil)
-		figs = append(figs, placed{fig: f, rect: fr, head: image.Pt(fx+hx, top+int(float64(f.headY)*figScale))})
+		xdraw.CatmullRom.Scale(r.dst, fr.Intersect(inner), img, srcRect(img.Bounds(), fr, inner, scale), xdraw.Over, nil)
+		figs = append(figs, placed{rect: fr, head: image.Pt(fx+hx, figTop+int(float64(f.headY)*scale))})
 	}
 
 	// The profile pictures, at the bottom middle of each character.
 	for i, m := range msgs {
 		fr := figs[i].rect
-		cx := fr.Min.X + fr.Dx()/2
-		cy := min(fr.Max.Y, inner.Max.Y) - avatarSize/2 - 8
-		r.avatar(people[m.Speaker].avatar, cx, cy, avatarSize)
+		cy := min(fr.Max.Y, inner.Max.Y) - avatarSize/2 - 6
+		r.avatar(people[m.Speaker].avatar, fr.Min.X+fr.Dx()/2, cy, avatarSize)
 	}
 
-	// The balloons and their tails.
-	for i, b := range bs {
-		head := figs[i].head
-		r.balloon(b.box, head, top)
-		ty := b.box.Min.Y + balloonPad - 2
-		for _, ln := range b.lines {
-			lh := lineHeight(b.st)
-			m := r.fc.Face(b.st).Metrics()
-			r.fc.Draw(r.dst, ln.Items, b.box.Min.X+balloonPad, ty+m.Ascent.Round())
-			ty += lh
+	// The balloons: near their speaker, at a random place across.
+	y := rect.Min.Y + areaPad
+	for i, m := range msgs {
+		h := areaH
+		if two {
+			h = areaH / 2
 		}
-		if b.pic.Y > 0 {
-			if len(b.lines) > 0 {
-				ty += picGap
-			}
-			pr := image.Rectangle{Max: b.pic}.Add(image.Pt(b.box.Min.X+(b.box.Dx()-b.pic.X)/2, ty+2))
-			r.picture(pr, b.msg)
+		if i == 1 {
+			h = max(h, rect.Min.Y+areaPad+areaH-y)
 		}
+		f := r.fitBalloon(m, areaW, h)
+		arrowX := figs[i].head.X
+		minX, maxX := rect.Min.X+areaPad, rect.Max.X-areaPad-f.size.X
+		bx := min(max(arrowX-int(float64(f.size.X)*r.rng.Float64()), minX), max(maxX, minX))
+		box := image.Rectangle{Min: image.Pt(bx, y), Max: image.Pt(bx, y).Add(f.size)}
+		r.balloon(box, figs[i].head, figs[i].rect.Min.Y)
+		r.balloonContent(box, f, m)
+		y = box.Max.Y + 4
+	}
+}
+
+func (r *renderer) balloonContent(box image.Rectangle, f balloonFit, m Message) {
+	ty := box.Min.Y + balloonPad
+	mt := r.fc.Face(f.st).Metrics()
+	for _, ln := range f.lines {
+		r.fc.Draw(r.dst, ln.Items, box.Min.X+balloonPad, ty+mt.Ascent.Round())
+		ty += lineHeight(f.st)
+	}
+	if f.pic.Y > 0 {
+		if len(f.lines) > 0 {
+			ty += balloonPad
+		}
+		pr := image.Rectangle{Max: f.pic}.Add(image.Pt(box.Min.X+(box.Dx()-f.pic.X)/2, ty))
+		r.picture(pr, m)
 	}
 }
 
@@ -507,9 +531,10 @@ func srcRect(src, dr, clip image.Rectangle, s float64) image.Rectangle {
 	return image.Rect(x0, y0, min(x1, src.Max.X), min(y1, src.Max.Y))
 }
 
-// balloon draws a speech balloon with a tail to just above the head.
+// balloon draws a speech balloon with a tail to just above the head (or
+// a short one, when the balloon is low).
 func (r *renderer) balloon(box image.Rectangle, head image.Point, figTop int) {
-	tipY := figTop - 2
+	tipY := max(figTop-2, box.Max.Y+8)
 	baseX := min(max(head.X, box.Min.X+18), box.Max.X-18)
 	tipX := head.X + (baseX-head.X)/3
 	tail := func(half, grow float64) [][2]float64 {
@@ -588,16 +613,6 @@ func circle(d int) *image.Alpha {
 	m := image.NewAlpha(image.Rect(0, 0, d, d))
 	z.Draw(m, m.Bounds(), image.Opaque, image.Point{})
 	return m
-}
-
-// cover scales src to fill r, cut in the middle.
-func cover(dst draw.Image, r image.Rectangle, src image.Image) {
-	sb := src.Bounds()
-	s := math.Max(float64(r.Dx())/float64(sb.Dx()), float64(r.Dy())/float64(sb.Dy()))
-	cw, ch := int(float64(r.Dx())/s), int(float64(r.Dy())/s)
-	x0 := sb.Min.X + (sb.Dx()-cw)/2
-	y0 := sb.Min.Y + (sb.Dy()-ch)/2
-	xdraw.CatmullRom.Scale(dst, r, src, image.Rect(x0, y0, x0+cw, y0+ch), xdraw.Src, nil)
 }
 
 func flipH(src *image.NRGBA) *image.NRGBA {
