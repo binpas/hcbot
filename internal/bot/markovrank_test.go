@@ -33,13 +33,24 @@ func (tb *testBot) lastMarkov() string {
 func TestMarkovRankBest(t *testing.T) {
 	tb, f := rankBot(t)
 	for range 5 {
+		n := len(f.ranks)
 		tb.say(tUser, tChGeneral, "hello apple", true)
+		// The chain knows two replies, so its candidates can (by chance)
+		// all be the same one. One candidate is not ranked.
+		if len(f.ranks) == n {
+			continue
+		}
 		if got := tb.lastMarkov(); got != longReply {
 			t.Fatalf("reply = %q, want the best: %q", got, longReply)
 		}
 	}
-	if len(f.ranks) != 5 || f.ranks[0].Context != "hello apple" || len(f.ranks[0].Candidates) != 2 {
-		t.Errorf("rank requests = %+v", f.ranks)
+	if len(f.ranks) < 3 {
+		t.Errorf("only %d of 5 replies were ranked", len(f.ranks))
+	}
+	for _, r := range f.ranks {
+		if r.Context != "hello apple" || len(r.Candidates) != 2 {
+			t.Errorf("rank request = %+v", r)
+		}
 	}
 }
 
