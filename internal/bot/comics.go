@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"image"
-	_ "image/gif" // animated profile pictures (the first frame)
+	_ "image/gif" // animated pictures: the first frame
+	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"io/fs"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	_ "golang.org/x/image/webp"
 
 	"github.com/binpas/hcbot/internal/comic"
 )
@@ -31,7 +33,9 @@ import (
 // opens a private editor with the selected message and the next ones,
 // where the member can remove messages, pick a background, and preview the
 // comic before it is posted. "@Bot comic [count]" works like /comic.
-// /character sets the member's own character.
+// /character sets the member's own character. The first picture of a
+// message (an image file, a sticker, or a GIF or image link) goes in its
+// balloon; a spoiler picture is a "spoiler" box.
 //
 // The commands need the Message Content option (the comic shows the text
 // of the messages) and the art pack in COMIC_ART_DIR. The bot keeps no
@@ -45,7 +49,10 @@ const (
 	comicEditorFor    = 14 * time.Minute // the interaction token lasts 15
 	comicTextMax      = 300              // characters of one message in a comic
 	comicAvatarFor    = 10 * time.Minute // how long a profile picture is cached
-	comicAvatarMaxB   = 2 << 20
+	comicFetchMax     = 8 << 20          // the largest picture file
+	comicPicPixels    = 4096 * 4096      // the largest picture, in pixels
+	comicPicWidth     = 480              // pictures are fetched at most this wide
+	attachmentSpoiler = 1 << 3           // the IS_SPOILER attachment flag
 	comicMenu         = "Start comic here"
 	comicRandom       = "random"
 )
@@ -257,11 +264,14 @@ func (b *Bot) lastComicMessages(channelID, before string, n int) ([]*discordgo.M
 }
 
 // comicUsable sorts messages oldest first, and keeps the normal messages
-// and replies that have text.
+// and replies that have text or a picture.
 func comicUsable(msgs []*discordgo.Message) []*discordgo.Message {
 	out := slices.DeleteFunc(slices.Clone(msgs), func(m *discordgo.Message) bool {
-		return m == nil || m.Author == nil || strings.TrimSpace(m.Content) == "" ||
-			(m.Type != discordgo.MessageTypeDefault && m.Type != discordgo.MessageTypeReply)
+		if m == nil || m.Author == nil || (m.Type != discordgo.MessageTypeDefault && m.Type != discordgo.MessageTypeReply) {
+			return true
+		}
+		_, pic := comicPicture(m)
+		return strings.TrimSpace(m.Content) == "" && !pic
 	})
 	slices.SortFunc(out, func(a, b *discordgo.Message) int { return cmpSnowflake(a.ID, b.ID) })
 	return out
@@ -290,18 +300,29 @@ func (b *Bot) drawComic(guildID string, msgs []*discordgo.Message, background st
 	if err != nil {
 		log.Printf("comic: characters: %v", err) // draw with picked ones
 	}
-	avatars := b.comicAvatars(guildID, msgs)
+	var avatars, pics map[string]image.Image
+	var wg sync.WaitGroup
+	wg.Go(func() { avatars = b.comicAvatars(guildID, msgs) })
+	wg.Go(func() { pics = b.comicPictures(msgs) })
+	wg.Wait()
 	h := fnv.New64a()
 	out := make([]comic.Message, 0, len(msgs))
 	for _, m := range msgs {
 		_, _ = h.Write([]byte(m.ID))
-		out = append(out, comic.Message{
+		pic, hasPic := comicPicture(m)
+		cm := comic.Message{
 			Speaker:   m.Author.ID,
 			Name:      b.comicName(guildID, m.Author),
 			Avatar:    avatars[m.Author.ID],
 			Character: chosen[m.Author.ID],
-			Text:      cutText(b.spokenText(guildID, m), comicTextMax),
-		})
+			Text:      cutText(b.comicText(guildID, m, pic), comicTextMax),
+			Image:     pics[m.ID],
+			Spoiler:   pic.spoiler,
+		}
+		if hasPic && !pic.spoiler && cm.Image == nil {
+			cm.Text = strings.TrimSpace(cm.Text + " 🖼️ image") // it could not be fetched
+		}
+		out = append(out, cm)
 	}
 	if background == comicRandom {
 		background = ""
@@ -350,6 +371,138 @@ func (b *Bot) comicAvatars(guildID string, msgs []*discordgo.Message) map[string
 	return out
 }
 
+// comicPic is the first picture of a message.
+type comicPic struct {
+	url     string
+	spoiler bool
+	link    string // the link in the text that shows the picture
+}
+
+// comicPicture finds the first picture of a message: an image file, a
+// sticker (not an animated Lottie one), or a GIF or image link. Link
+// previews of pages are not pictures.
+func comicPicture(m *discordgo.Message) (comicPic, bool) {
+	for _, a := range m.Attachments {
+		if a == nil || !isImageFile(a) {
+			continue
+		}
+		return comicPic{
+			url:     sizedProxy(cmp.Or(a.ProxyURL, a.URL), a.Width, a.Height),
+			spoiler: strings.HasPrefix(a.Filename, "SPOILER_") || a.Flags&attachmentSpoiler != 0,
+		}, true
+	}
+	for _, s := range m.StickerItems {
+		ext := map[discordgo.StickerFormat]string{discordgo.StickerFormatTypePNG: ".png",
+			discordgo.StickerFormatTypeAPNG: ".png", discordgo.StickerFormatTypeGIF: ".gif"}[s.FormatType]
+		if s != nil && ext != "" {
+			return comicPic{url: "https://media.discordapp.net/stickers/" + s.ID + ext + "?size=160"}, true
+		}
+	}
+	for _, e := range m.Embeds {
+		if e == nil || (e.Type != discordgo.EmbedTypeGifv && e.Type != discordgo.EmbedTypeImage) || e.Thumbnail == nil {
+			continue
+		}
+		t := e.Thumbnail
+		if src := cmp.Or(t.ProxyURL, t.URL); src != "" {
+			return comicPic{url: sizedProxy(src, t.Width, t.Height), link: e.URL, spoiler: inSpoiler(m.Content, e.URL)}, true
+		}
+	}
+	return comicPic{}, false
+}
+
+func isImageFile(a *discordgo.MessageAttachment) bool {
+	if strings.HasPrefix(a.ContentType, "image/") {
+		return true
+	}
+	ext := strings.ToLower(a.Filename[strings.LastIndex(a.Filename, ".")+1:])
+	return slices.Contains([]string{"png", "jpg", "jpeg", "gif", "webp"}, ext)
+}
+
+// sizedProxy asks Discord's media server for a picture at most
+// comicPicWidth wide.
+func sizedProxy(url string, w, h int) string {
+	if w <= comicPicWidth || h <= 0 || !strings.Contains(url, "media.discordapp.net") {
+		return url
+	}
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	return fmt.Sprintf("%s%swidth=%d&height=%d", url, sep, comicPicWidth, max(h*comicPicWidth/w, 1))
+}
+
+// inSpoiler reports whether a link is inside ||spoiler|| marks.
+func inSpoiler(text, link string) bool {
+	if link == "" {
+		return false
+	}
+	parts := strings.Split(text, "||")
+	for i := 1; i < len(parts)-1; i += 2 {
+		if strings.Contains(parts[i], link) {
+			return true
+		}
+	}
+	return false
+}
+
+// comicText is the text of a message for its balloon: the link of its
+// picture is removed, and the rest is made readable (spokenText).
+func (b *Bot) comicText(guildID string, m *discordgo.Message, pic comicPic) string {
+	if pic.link != "" {
+		cp := *m
+		cp.Content = strings.ReplaceAll(strings.ReplaceAll(m.Content, pic.link, ""), "||||", "")
+		m = &cp
+	}
+	return b.spokenText(guildID, m)
+}
+
+// comicPictures gets the pictures of the messages that have one (not the
+// spoilers), at the same time, by message ID. A picture that fails is
+// missing.
+func (b *Bot) comicPictures(msgs []*discordgo.Message) map[string]image.Image {
+	out := map[string]image.Image{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, m := range msgs {
+		pic, ok := comicPicture(m)
+		if !ok || pic.spoiler {
+			continue
+		}
+		wg.Go(func() {
+			img, err := b.fetchPicture(pic.url)
+			if err != nil {
+				log.Printf("comic: picture: %v", err)
+				return
+			}
+			mu.Lock()
+			out[m.ID] = img
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	return out
+}
+
+// fetchPicture gets and decodes a picture (PNG, JPEG, GIF, or WebP). It
+// refuses a picture with too many pixels.
+func (b *Bot) fetchPicture(url string) (image.Image, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, err := b.fetchImage(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width*cfg.Height > comicPicPixels {
+		return nil, fmt.Errorf("%dx%d is too large", cfg.Width, cfg.Height)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
+}
+
 func (b *Bot) comicAvatar(url string) image.Image {
 	st := b.comics
 	st.mu.Lock()
@@ -358,13 +511,7 @@ func (b *Bot) comicAvatar(url string) image.Image {
 		return a.img
 	}
 	st.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var img image.Image
-	data, err := b.fetchAvatar(ctx, url)
-	if err == nil {
-		img, _, err = image.Decode(bytes.NewReader(data))
-	}
+	img, err := b.fetchPicture(url)
 	if err != nil {
 		log.Printf("comic: profile picture: %v", err)
 		return nil // not cached: the next comic tries again
@@ -380,7 +527,7 @@ func (b *Bot) comicAvatar(url string) image.Image {
 	return img
 }
 
-// httpFetch gets a small file (a profile picture from Discord's CDN).
+// httpFetch gets a small file (a picture from Discord's media server).
 func httpFetch(client *http.Client) func(ctx context.Context, url string) ([]byte, error) {
 	return func(ctx context.Context, url string) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -395,7 +542,7 @@ func httpFetch(client *http.Client) func(ctx context.Context, url string) ([]byt
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("%s: %s", url, resp.Status)
 		}
-		return io.ReadAll(io.LimitReader(resp.Body, comicAvatarMaxB))
+		return io.ReadAll(io.LimitReader(resp.Body, comicFetchMax))
 	}
 }
 
@@ -456,8 +603,15 @@ func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Me
 		"Remove the messages that you do not want. **Preview** shows the comic only to you. **Post** sends it to the channel."}}
 	kept := 0
 	for _, m := range msgs {
-		line := fmt.Sprintf("**%s**: %s", escapeMarkdown(b.comicName(guildID, m.Author)),
-			escapeMarkdown(cutText(b.spokenText(guildID, m), 150)))
+		pic, hasPic := comicPicture(m)
+		text := escapeMarkdown(cutText(b.comicText(guildID, m, pic), 150))
+		switch {
+		case hasPic && pic.spoiler:
+			text = strings.TrimSpace(text + " 🖼️ spoiler")
+		case hasPic:
+			text = strings.TrimSpace(text + " 🖼️ image")
+		}
+		line := fmt.Sprintf("**%s**: %s", escapeMarkdown(b.comicName(guildID, m.Author)), text)
 		btn := discordgo.Button{Label: "Remove", Style: discordgo.SecondaryButton, CustomID: "comicx:" + id + ":" + m.ID}
 		if slices.Contains(d.Removed, m.ID) {
 			line = "~~" + line + "~~"

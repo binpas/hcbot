@@ -31,7 +31,7 @@ func newComicBot(t *testing.T) (*testBot, *[]string) {
 	var mu sync.Mutex
 	var fetched []string
 	pic := testPNG(t)
-	tb.fetchAvatar = func(_ context.Context, url string) ([]byte, error) {
+	tb.fetchImage = func(_ context.Context, url string) ([]byte, error) {
 		mu.Lock()
 		fetched = append(fetched, url)
 		mu.Unlock()
@@ -392,5 +392,96 @@ func TestComicUsesChosenCharacter(t *testing.T) {
 	}
 	if cmpSnowflake("999", "1000") >= 0 || cmpSnowflake("1001", "1000") <= 0 {
 		t.Error("cmpSnowflake is wrong")
+	}
+}
+
+func TestComicPictures(t *testing.T) {
+	tb, fetched := newComicBot(t)
+	user := &discordgo.User{ID: tUser, Username: "user"}
+	tenor := "https://tenor.com/view/cat-dance-123"
+	msgs := []*discordgo.Message{
+		{ID: "1", Author: user, Attachments: []*discordgo.MessageAttachment{
+			{Filename: "notes.txt", ContentType: "text/plain", URL: "https://cdn.example/notes.txt"},
+			{Filename: "cat.png", ContentType: "image/png", Width: 1000, Height: 500,
+				ProxyURL: "https://media.discordapp.net/attachments/1/2/cat.png?ex=1&hm=2"}}},
+		{ID: "2", Author: user, Content: "secret", Attachments: []*discordgo.MessageAttachment{
+			{Filename: "SPOILER_x.jpg", ProxyURL: "https://media.discordapp.net/attachments/1/3/SPOILER_x.jpg"}}},
+		{ID: "3", Author: user, StickerItems: []*discordgo.StickerItem{{ID: "77", FormatType: discordgo.StickerFormatTypePNG}}},
+		{ID: "4", Author: user, Content: "look " + tenor, Embeds: []*discordgo.MessageEmbed{{Type: discordgo.EmbedTypeGifv, URL: tenor,
+			Thumbnail: &discordgo.MessageEmbedThumbnail{ProxyURL: "https://media.discordapp.net/external/cat.png", Width: 300, Height: 200}}}},
+		{ID: "5", Author: user, Content: "||" + tenor + "||", Embeds: []*discordgo.MessageEmbed{{Type: discordgo.EmbedTypeGifv, URL: tenor,
+			Thumbnail: &discordgo.MessageEmbedThumbnail{ProxyURL: "https://media.discordapp.net/external/hidden.png"}}}},
+		{ID: "6", Author: user, Content: "read https://news.example/a", Embeds: []*discordgo.MessageEmbed{{Type: discordgo.EmbedTypeArticle,
+			URL: "https://news.example/a", Thumbnail: &discordgo.MessageEmbedThumbnail{ProxyURL: "https://media.discordapp.net/external/news.png"}}}},
+		{ID: "7", Author: user, Attachments: []*discordgo.MessageAttachment{
+			{Filename: "broken.png", ProxyURL: "https://media.discordapp.net/attachments/666/broken.png"}}},
+		{ID: "8", Author: user, Attachments: []*discordgo.MessageAttachment{{Filename: "a.zip", URL: "https://cdn.example/a.zip"}}},
+		{ID: "9", Author: user, StickerItems: []*discordgo.StickerItem{{ID: "78", FormatType: discordgo.StickerFormatTypeLottie}}},
+	}
+	usable := comicUsable(msgs)
+	var ids []string
+	for _, m := range usable {
+		ids = append(ids, m.ID)
+	}
+	if got := strings.Join(ids, ","); got != "1,2,3,4,5,6,7" {
+		t.Errorf("usable = %s, want the ones with text or a picture", got)
+	}
+
+	want := map[string]comicPic{
+		"1": {url: "https://media.discordapp.net/attachments/1/2/cat.png?ex=1&hm=2&width=480&height=240"},
+		"2": {url: "https://media.discordapp.net/attachments/1/3/SPOILER_x.jpg", spoiler: true},
+		"3": {url: "https://media.discordapp.net/stickers/77.png?size=160"},
+		"4": {url: "https://media.discordapp.net/external/cat.png", link: tenor},
+		"5": {url: "https://media.discordapp.net/external/hidden.png", link: tenor, spoiler: true},
+		"7": {url: "https://media.discordapp.net/attachments/666/broken.png"}, // the fetch fails
+	}
+	for _, m := range usable {
+		pic, ok := comicPicture(m)
+		if w, has := want[m.ID]; has != ok || (has && pic != w) {
+			t.Errorf("picture of %s = %+v, %v; want %+v", m.ID, pic, ok, w)
+		}
+	}
+	if got := tb.comicText(tGuild, usable[3], comicPic{link: tenor}); got != "look" {
+		t.Errorf("text of the GIF message = %q, want the link removed", got)
+	}
+
+	*fetched = nil
+	if _, err := tb.drawComic(tGuild, usable, "plain"); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(*fetched, " ")
+	for _, url := range []string{want["1"].url, want["3"].url, want["4"].url, "broken.png"} {
+		if !strings.Contains(got, url) {
+			t.Errorf("not fetched: %s", url)
+		}
+	}
+	for _, url := range []string{"SPOILER_x", "hidden.png", "news.png"} {
+		if strings.Contains(got, url) {
+			t.Errorf("fetched %s", url)
+		}
+	}
+	// A picture with too many pixels is refused.
+	big := image.NewGray(image.Rect(0, 0, 5000, 4000))
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, big)
+	tb.fetchImage = func(context.Context, string) ([]byte, error) { return buf.Bytes(), nil }
+	if _, err := tb.fetchPicture("x"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("big picture: %v", err)
+	}
+}
+
+func TestComicEditorPictures(t *testing.T) {
+	tb, _ := newComicBot(t)
+	msgs := []*discordgo.Message{
+		{ID: "1", Author: &discordgo.User{ID: tUser, Username: "user"}, Attachments: []*discordgo.MessageAttachment{
+			{Filename: "cat.png", ProxyURL: "https://media.discordapp.net/attachments/1/2/cat.png"}}},
+		{ID: "2", Author: &discordgo.User{ID: tUser, Username: "user"}, Content: "hm", Attachments: []*discordgo.MessageAttachment{
+			{Filename: "SPOILER_x.png", ProxyURL: "https://media.discordapp.net/attachments/1/3/SPOILER_x.png"}}},
+	}
+	data, _ := json.Marshal(tb.comicEditor(tGuild, "1", comicDraft{IDs: []string{"1", "2"}}, msgs, false))
+	for _, want := range []string{"**user**: 🖼️ image", "**user**: hm 🖼️ spoiler"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("editor has no %q: %s", want, data)
+		}
 	}
 }

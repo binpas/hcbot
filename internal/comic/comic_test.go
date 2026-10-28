@@ -225,3 +225,47 @@ func TestAngleDist(t *testing.T) {
 		t.Errorf("laugh to happy = %v", d)
 	}
 }
+
+// count returns how many pixels of img have the color c.
+func count(img *image.RGBA, c color.RGBA) int {
+	n := 0
+	for i := 0; i+3 < len(img.Pix); i += 4 {
+		if img.Pix[i] == c.R && img.Pix[i+1] == c.G && img.Pix[i+2] == c.B {
+			n++
+		}
+	}
+	return n
+}
+
+func TestPictures(t *testing.T) {
+	p := loadTestPack(t)
+	red := color.RGBA{0xf0, 0x10, 0x10, 0xff}
+	pic := image.NewRGBA(image.Rect(0, 0, 600, 300))
+	for i := 0; i < len(pic.Pix); i += 4 {
+		copy(pic.Pix[i:], []uint8{red.R, red.G, red.B, 0xff})
+	}
+	// Only a picture, no text: it fits in picH (120) × the balloon width.
+	img, err := p.Render([]Message{{Speaker: "1", Name: "one", Image: pic}}, Options{Background: "plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := count(img, red); n < 200*100 || n > 240*120 {
+		t.Errorf("red pixels = %d", n)
+	}
+	if got := pictureSize(Message{Image: pic}, 500, picH); got != image.Pt(240, 120) {
+		t.Errorf("size = %v", got)
+	}
+	if got := pictureSize(Message{Image: image.NewRGBA(image.Rect(0, 0, 20, 10))}, 500, picH); got != image.Pt(20, 10) {
+		t.Errorf("small picture = %v, want it not enlarged", got)
+	}
+
+	// A spoiler: the dark box, not the picture.
+	img, err = p.Render([]Message{{Speaker: "1", Name: "one", Text: "look", Image: pic, Spoiler: true},
+		{Speaker: "2", Name: "two", Text: "wow"}}, Options{Background: "plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count(img, red) != 0 || count(img, colDark) < 100*40 {
+		t.Errorf("spoiler: red %d, dark %d", count(img, red), count(img, colDark))
+	}
+}

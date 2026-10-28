@@ -36,6 +36,11 @@ func TestSample(t *testing.T) {
 		{Speaker: "3", Name: "torquebot", Avatar: c, Text: "that is very sad. I will remember this forever and ever, and I will tell all the other bots about it."},
 		{Speaker: "1", Name: "binpas", Avatar: a, Text: "ok"},
 	}
+	// A picture (a background, as a test image) and a spoiler.
+	msgs = append(msgs,
+		Message{Speaker: "2", Name: "Skaldi", Avatar: b, Text: "look at this place", Image: p.backs[0].img},
+		Message{Speaker: "3", Name: "torquebot", Avatar: c, Image: p.backs[1].img},
+		Message{Speaker: "1", Name: "binpas", Avatar: a, Text: "don't open this", Spoiler: true})
 	data, err := p.PNG(msgs, Options{Seed: 1})
 	if err != nil {
 		t.Fatal(err)

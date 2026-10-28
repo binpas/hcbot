@@ -9,6 +9,7 @@ import (
 	"image/draw"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"sync"
 
 	xdraw "golang.org/x/image/draw"
@@ -42,6 +43,9 @@ const (
 	balloonPad = 9
 	balloonGap = 8
 	maxLines   = 7
+	picH       = 120 // the highest picture in a balloon; with two speakers, picH2
+	picH2      = 90
+	picGap     = 6
 )
 
 var (
@@ -49,11 +53,13 @@ var (
 	colInk   = color.RGBA{0x00, 0x00, 0x00, 0xff}
 	colPanel = color.RGBA{0xfb, 0xf8, 0xee, 0xff} // when there is no background
 	colWhite = color.RGBA{0xff, 0xff, 0xff, 0xff}
+	colDark  = color.RGBA{0x20, 0x22, 0x25, 0xff} // the spoiler box
 
 	stBalloon      = richtext.Style{Size: 16, Color: colInk}
 	stBalloonSmall = richtext.Style{Size: 14, Color: colInk}
 	stCastTitle    = richtext.Style{Size: 20, Bold: true, Color: colInk}
 	stCastName     = richtext.Style{Size: 16, Bold: true, Color: colInk}
+	stSpoiler      = richtext.Style{Size: 15, Bold: true, Color: colWhite}
 )
 
 // Message is one message of the comic.
@@ -63,6 +69,8 @@ type Message struct {
 	Avatar    image.Image // the profile picture, or nil
 	Character string      // the chosen character, or "" for one picked from Speaker
 	Text      string
+	Image     image.Image // a picture under the text in the balloon, or nil
+	Spoiler   bool        // a "spoiler" box in place of the picture
 }
 
 // Options change a comic.
@@ -330,38 +338,53 @@ func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string
 		lines []richtext.Line
 		st    richtext.Style
 		box   image.Rectangle
+		pic   image.Point // the picture (or spoiler box) size; 0 for none
+		msg   Message
 	}
 	maxW := inner.Dx() - 2*balloonPad - 12
+	maxPic := picH
 	if two {
 		maxW = inner.Dx()*64/100 - 2*balloonPad
+		maxPic = picH2
 	}
 	var bs []balloon
 	y := inner.Min.Y + 8
 	for i, m := range msgs {
 		st := stBalloon
-		lines := r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: m.Text, Style: st}}), maxW)
-		if len(lines) > 4 {
-			st = stBalloonSmall
+		var lines []richtext.Line
+		if strings.TrimSpace(m.Text) != "" {
 			lines = r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: m.Text, Style: st}}), maxW)
-		}
-		if len(lines) > maxLines {
-			lines = lines[:maxLines]
-			last := &lines[maxLines-1]
-			last.Items = r.fc.Ellipsize(append(spans(last.Items), richtext.Span{Text: " …", Style: st}), maxW)
+			if len(lines) > 4 {
+				st = stBalloonSmall
+				lines = r.fc.Wrap(r.fc.Words([]richtext.Span{{Text: m.Text, Style: st}}), maxW)
+			}
+			if len(lines) > maxLines {
+				lines = lines[:maxLines]
+				last := &lines[maxLines-1]
+				last.Items = r.fc.Ellipsize(append(spans(last.Items), richtext.Span{Text: " …", Style: st}), maxW)
+			}
 		}
 		var tw int
 		for _, ln := range lines {
 			tw = max(tw, ln.W.Ceil())
 		}
+		pic := pictureSize(m, maxW, maxPic)
 		lh := lineHeight(st)
-		bw, bh := tw+2*balloonPad, len(lines)*lh+2*balloonPad-4
+		bw := max(tw, pic.X) + 2*balloonPad
+		bh := len(lines)*lh + 2*balloonPad - 4
+		if pic.Y > 0 {
+			bh += pic.Y + 4
+			if len(lines) > 0 {
+				bh += picGap
+			}
+		}
 		bx := inner.Min.X + (inner.Dx()-bw)/2
 		if two && i == 0 {
 			bx = inner.Min.X + 8
 		} else if two {
 			bx = inner.Max.X - 8 - bw
 		}
-		bs = append(bs, balloon{lines: lines, st: st, box: image.Rect(bx, y, bx+bw, y+bh)})
+		bs = append(bs, balloon{lines: lines, st: st, box: image.Rect(bx, y, bx+bw, y+bh), pic: pic, msg: m})
 		y += bh + balloonGap
 	}
 
@@ -419,7 +442,44 @@ func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string
 			r.fc.Draw(r.dst, ln.Items, b.box.Min.X+balloonPad, ty+m.Ascent.Round())
 			ty += lh
 		}
+		if b.pic.Y > 0 {
+			if len(b.lines) > 0 {
+				ty += picGap
+			}
+			pr := image.Rectangle{Max: b.pic}.Add(image.Pt(b.box.Min.X+(b.box.Dx()-b.pic.X)/2, ty+2))
+			r.picture(pr, b.msg)
+		}
 	}
+}
+
+// pictureSize is the size of a message's picture in a balloon: the image
+// scaled to fit maxW × maxH (never larger than it is), or the spoiler box.
+func pictureSize(m Message, maxW, maxH int) image.Point {
+	if m.Spoiler {
+		return image.Pt(min(140, maxW), min(56, maxH))
+	}
+	if m.Image == nil {
+		return image.Point{}
+	}
+	b := m.Image.Bounds()
+	if b.Dx() <= 0 || b.Dy() <= 0 {
+		return image.Point{}
+	}
+	s := min(float64(maxW)/float64(b.Dx()), float64(maxH)/float64(b.Dy()), 1)
+	return image.Pt(max(int(float64(b.Dx())*s), 1), max(int(float64(b.Dy())*s), 1))
+}
+
+// picture draws a message's picture, or a dark "spoiler" box, in r.
+func (r *renderer) picture(pr image.Rectangle, m Message) {
+	if m.Spoiler {
+		r.roundRect(pr, 8, colDark)
+		items := r.fc.Ellipsize([]richtext.Span{{Text: "spoiler", Style: stSpoiler}}, pr.Dx()-8)
+		mt := r.fc.Face(stSpoiler).Metrics()
+		r.fc.Draw(r.dst, items, pr.Min.X+(pr.Dx()-richtext.SumWidth(items).Ceil())/2,
+			pr.Min.Y+(pr.Dy()+mt.Ascent.Round()-mt.Descent.Round())/2)
+		return
+	}
+	xdraw.CatmullRom.Scale(r.dst, pr, m.Image, m.Image.Bounds(), xdraw.Over, nil)
 }
 
 func lineHeight(st richtext.Style) int { return int(st.Size*1.25 + 0.5) }

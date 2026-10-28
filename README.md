@@ -338,7 +338,9 @@ Use only the voices of people who agree. Do not use `/say` to imitate a real per
 
 The first panel is the cast: the head of each character, the profile picture, and the server name of each person. Then each panel has one or two speakers and their speech balloons, in the order of the messages. Each character has a small profile picture at the bottom, so you can see who is who. Members who did not choose a character get one from their user ID, so it is usually the same one. Two automatic characters in one comic are never the same; a chosen character is always used. The words and emoji in a message select the face and the pose, as in Comic Chat: for example "lol" or 😂 laughs, ":(" is sad, all capitals shout, "hi" waves, and "you" points at the other person.
 
-Messages with no text (only a file) and system messages are not drawn. Bot messages are drawn. Mentions become names, custom emoji their names, and links the word "link". A long message is cut. The bot reads the messages when it draws and keeps no text; the editor keeps only the message IDs. The bot needs Read Message History, Send Messages, and Attach Files.
+**Pictures:** the first picture of a message goes in its balloon, under the text: an uploaded image (PNG, JPEG, GIF, or WebP), a sticker, or a GIF or image link (for example from Tenor or GIPHY; the link is removed from the text). An animated picture shows its first frame. Link previews of web pages are not used. A picture marked as a spoiler is not shown: the balloon has a dark "spoiler" box. The bot gets each picture at a small size (at most 480 px wide) and keeps it only while it draws. If a picture cannot be fetched, the balloon says "🖼️ image".
+
+Messages with no text and no picture, and system messages, are not drawn. Bot messages are drawn. Mentions become names, custom emoji their names, and links the word "link". A long message is cut. The bot reads the messages when it draws and keeps no text; the editor keeps only the message IDs. The bot needs Read Message History, Send Messages, and Attach Files.
 
 ### Post images
 
