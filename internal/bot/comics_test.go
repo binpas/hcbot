@@ -185,11 +185,31 @@ func TestComicMention(t *testing.T) {
 		t.Fatalf("posts = %v", tb.callList())
 	}
 
+	// "comic 1" is one message (and "comic 0" too).
+	tb.config(map[string]string{"COMIC_COOLDOWN": "0"})
+	for _, n := range []string{"1", "0"} {
+		tb.api.reset()
+		tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+		tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
+			ID: "1100", ChannelID: tChGeneral, GuildID: tGuild, Content: "<@" + tBot + "> comic " + n,
+			Author: &discordgo.User{ID: tUser}, Mentions: []*discordgo.User{{ID: tBot}}}})
+		if g := tb.api.find("GET", `/channels/`+tChGeneral+`/messages`); len(g) != 1 || !strings.Contains(g[0].Query, "limit=3") {
+			t.Errorf("comic %s: history requests = %+v", n, g)
+		}
+		// One message: the cast and one panel, side by side.
+		if b := tb.pngFile("comic.png").Bounds(); b.Dx() > 2*230+20 || b.Dy() > 240 {
+			t.Errorf("comic %s: size = %v, want one panel", n, b)
+		}
+	}
+	tb.config(map[string]string{"COMIC_COOLDOWN": "30"})
+	tb.comicWait(tUser, true)
+
 	// The cooldown answers in the channel.
+	tb.api.reset()
 	tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
 		ID: "1101", ChannelID: tChGeneral, GuildID: tGuild, Content: "<@" + tBot + "> comic",
 		Author: &discordgo.User{ID: tUser}, Mentions: []*discordgo.User{{ID: tBot}}}})
-	if s := tb.sent(tChGeneral); len(s) != 2 || !strings.Contains(s[1], "Wait") {
+	if s := tb.sent(tChGeneral); len(s) != 1 || !strings.Contains(s[0], "Wait") {
 		t.Errorf("sent = %q", s)
 	}
 }

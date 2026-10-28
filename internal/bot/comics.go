@@ -103,7 +103,7 @@ func (b *Bot) registerComics() {
 		options: []*discordgo.ApplicationCommandOption{{
 			Type: discordgo.ApplicationCommandOptionInteger, Name: "count",
 			Description: fmt.Sprintf("How many messages (default %d)", comicDefaultCount),
-			MinValue:    new(float64(2)), MaxValue: comicHardMax,
+			MinValue:    new(float64(1)), MaxValue: comicHardMax,
 		}},
 		handler: b.cmdComic,
 	})
@@ -178,7 +178,7 @@ func (b *Bot) cmdComic(c *Ctx) {
 		c.Reply(true, errEmbed(why))
 		return
 	}
-	n := min(max(int(c.Int("count", comicDefaultCount)), 2), b.comicMax())
+	n := min(max(int(c.Int("count", comicDefaultCount)), 1), b.comicMax())
 	if d := b.comicWait(c.UserID(), true); d > 0 {
 		c.Reply(true, errEmbed(waitMessage(d)))
 		return
@@ -236,7 +236,7 @@ func (b *Bot) comicMention(m *discordgo.Message) bool {
 			n = v
 		}
 	}
-	n = min(max(n, 2), b.comicMax())
+	n = min(max(n, 1), b.comicMax())
 	if d := b.comicWait(m.Author.ID, true); d > 0 {
 		reply(waitMessage(d))
 		return true
