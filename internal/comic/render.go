@@ -109,18 +109,12 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 	panels := split(msgs)
 	bg := p.background(opt.Background, rng)
 
-	n := len(panels) + 1
-	rows := (n + cols - 1) / cols
-	w := 2*margin + cols*panelW + (cols-1)*gap
-	h := 2*margin + rows*panelH + (rows-1)*gap
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	rects := panelRects(len(panels) + 1)
+	dst := image.NewRGBA(image.Rect(0, 0, imageW, rects[len(rects)-1].Max.Y+margin))
 	draw.Draw(dst, dst.Bounds(), image.NewUniform(colPage), image.Point{}, draw.Src)
 
 	r := &renderer{dst: dst, fc: fc, rng: rng, bg: bg}
-	for i := range n {
-		x := margin + (i%cols)*(panelW+gap)
-		y := margin + (i/cols)*(panelH+gap)
-		rect := image.Rect(x, y, x+panelW, y+panelH)
+	for i, rect := range rects {
 		if i == 0 {
 			r.castPanel(rect, people)
 		} else {
@@ -129,6 +123,42 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 		r.frame(rect)
 	}
 	return dst, nil
+}
+
+// imageW is the width of a comic: three panels side by side.
+const imageW = 2*margin + cols*panelW + (cols-1)*gap
+
+// rows splits n panels into rows of at most cols panels, as evenly as
+// possible, the larger rows first: 4 is 2+2, and 7 is 3+2+2.
+func rows(n int) []int {
+	out := make([]int, (n+cols-1)/cols)
+	for i := range out {
+		out[i] = n / len(out)
+		if i < n%len(out) {
+			out[i]++
+		}
+	}
+	return out
+}
+
+// panelRects places n panels: each row fills the width of the image, so
+// a row with fewer panels has wider ones.
+func panelRects(n int) []image.Rectangle {
+	var out []image.Rectangle
+	for ri, k := range rows(n) {
+		y := margin + ri*(panelH+gap)
+		free := imageW - 2*margin - (k-1)*gap
+		x := margin
+		for j := range k {
+			w := free / k
+			if j < free%k {
+				w++
+			}
+			out = append(out, image.Rect(x, y, x+w, y+panelH))
+			x += w + gap
+		}
+	}
+	return out
 }
 
 // assign gives each speaker a character: the chosen one, or one picked
@@ -234,34 +264,48 @@ func (r *renderer) frame(rect image.Rectangle) {
 
 // castPanel lists each speaker: the character's head, the profile
 // picture, and the name.
+// The cast list is one block in the middle of the panel: the title,
+// then a row for each person. The rows are aligned on the left, so that
+// the heads and the pictures make columns.
 func (r *renderer) castPanel(rect image.Rectangle, people map[string]*cast) {
 	draw.Draw(r.dst, rect, image.NewUniform(colPanel), image.Point{}, draw.Src)
 	order := castOrder(people)
-	x0, y := rect.Min.X+14, rect.Min.Y+16
-	title := r.fc.Ellipsize([]richtext.Span{{Text: "Starring", Style: stCastTitle}}, panelW-28)
-	r.fc.Draw(r.dst, title, x0, y+18)
-	y += 34
-	rowH := min(52, (rect.Max.Y-12-y)/max(len(order), 1))
+	const pad, titleH = 14, 34
+	rowH := min(52, (rect.Dy()-2*pad-titleH)/max(len(order), 1))
 	icon := rowH - 6
 	pic := min(avatarSize, icon)
-	for _, c := range order {
+	st := stCastName
+	if rowH < 30 {
+		st.Size = 13
+	}
+	nameX := icon + 8 + pic + 8 // from the left of the block
+	maxName := rect.Dx() - 2*pad - nameX
+	names := make([][]richtext.Item, len(order))
+	blockW := 0
+	for i, c := range order {
+		names[i] = r.fc.Ellipsize([]richtext.Span{{Text: c.name, Style: st}}, maxName)
+		blockW = max(blockW, nameX+richtext.SumWidth(names[i]).Ceil())
+	}
+	title := r.fc.Ellipsize([]richtext.Span{{Text: "Starring", Style: stCastTitle}}, rect.Dx()-2*pad)
+	titleW := richtext.SumWidth(title).Ceil()
+	blockW = max(blockW, titleW)
+	x0 := rect.Min.X + (rect.Dx()-blockW)/2
+	y := rect.Min.Y + (rect.Dy()-titleH-len(order)*rowH)/2
+	r.fc.Draw(r.dst, title, rect.Min.X+(rect.Dx()-titleW)/2, y+18)
+	y += titleH
+	m := r.fc.Face(st).Metrics()
+	for i, c := range order {
 		cy := y + rowH/2
 		if c.char.icon != nil {
 			b := c.char.icon.Bounds()
 			s := float64(icon) / float64(max(b.Dx(), b.Dy()))
-			dr := image.Rect(0, 0, int(float64(b.Dx())*s), int(float64(b.Dy())*s)).Add(image.Pt(x0, cy-int(float64(b.Dy())*s)/2))
+			iw, ih := int(float64(b.Dx())*s), int(float64(b.Dy())*s)
+			dr := image.Rect(0, 0, iw, ih).Add(image.Pt(x0+(icon-iw)/2, cy-ih/2))
 			xdraw.CatmullRom.Scale(r.dst, dr, c.char.icon, b, xdraw.Over, nil)
 		}
 		px := x0 + icon + 8
 		r.avatar(c.avatar, px+pic/2, cy, pic)
-		nx := px + pic + 8
-		st := stCastName
-		if rowH < 30 {
-			st.Size = 13
-		}
-		name := r.fc.Ellipsize([]richtext.Span{{Text: c.name, Style: st}}, rect.Max.X-12-nx)
-		m := r.fc.Face(st).Metrics()
-		r.fc.Draw(r.dst, name, nx, cy+(m.Ascent.Round()-m.Descent.Round())/2)
+		r.fc.Draw(r.dst, names[i], x0+nameX, cy+(m.Ascent.Round()-m.Descent.Round())/2)
 		y += rowH
 	}
 }

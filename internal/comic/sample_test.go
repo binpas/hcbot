@@ -1,6 +1,7 @@
 package comic
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"os"
@@ -41,6 +42,16 @@ func TestSample(t *testing.T) {
 	}
 	if err := os.WriteFile(out, data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+	// The layouts: 2 to 5 panels.
+	for n := 1; n < len(msgs); n += 2 {
+		data, err := p.PNG(msgs[:n], Options{Seed: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fmt.Sprintf("%s.%d.png", out, n), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for name, f := range map[string]func() ([]byte, error){
 		"portrait": func() ([]byte, error) { return p.PortraitPNG("tiki") },

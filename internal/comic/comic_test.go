@@ -170,8 +170,8 @@ func TestRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The cast panel and 3 panels: two rows of three.
-	if b := img.Bounds(); b.Dx() != 2*margin+3*panelW+2*gap || b.Dy() != 2*margin+2*panelH+gap {
+	// The cast panel and 3 panels: two rows of two.
+	if b := img.Bounds(); b.Dx() != imageW || b.Dy() != 2*margin+2*panelH+gap {
 		t.Errorf("size = %v", b)
 	}
 	again, _ := p.Render(msgs, Options{Background: "plain", Seed: 3})
@@ -181,6 +181,29 @@ func TestRender(t *testing.T) {
 	one, err := p.Render(msgs[:1], Options{Background: "nothing"})
 	if err != nil || one.Bounds().Dy() != 2*margin+panelH {
 		t.Errorf("one message: %v, %v", one.Bounds(), err)
+	}
+}
+
+func TestLayout(t *testing.T) {
+	for n, want := range map[int][]int{1: {1}, 2: {2}, 3: {3}, 4: {2, 2}, 5: {3, 2}, 6: {3, 3},
+		7: {3, 2, 2}, 8: {3, 3, 2}, 9: {3, 3, 3}, 10: {3, 3, 2, 2}, 11: {3, 3, 3, 2}} {
+		if got := rows(n); !slices.Equal(got, want) {
+			t.Errorf("rows(%d) = %v, want %v", n, got, want)
+		}
+		// Each row fills the width.
+		rects := panelRects(n)
+		if len(rects) != n {
+			t.Fatalf("panelRects(%d) = %d rects", n, len(rects))
+		}
+		for i, r := range rects {
+			last := i == n-1 || rects[i+1].Min.Y != r.Min.Y
+			if r.Min.X == margin && r.Dx() < panelW {
+				t.Errorf("n=%d: panel %d is %d wide", n, i, r.Dx())
+			}
+			if last && r.Max.X != imageW-margin {
+				t.Errorf("n=%d: row of panel %d ends at %d", n, i, r.Max.X)
+			}
+		}
 	}
 }
 
