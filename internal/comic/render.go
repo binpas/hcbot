@@ -37,7 +37,7 @@ const (
 	panelH     = 340
 	margin     = 12
 	gap        = 10
-	border     = 3
+	border     = 4
 	figScale   = 0.8 // the characters, a bit smaller than the art
 	avatarSize = 30  // the profile picture on each character
 	balloonPad = 9
@@ -55,10 +55,10 @@ var (
 	colWhite = color.RGBA{0xff, 0xff, 0xff, 0xff}
 	colDark  = color.RGBA{0x20, 0x22, 0x25, 0xff} // the spoiler box
 
-	stBalloon      = richtext.Style{Size: 16, Color: colInk}
-	stBalloonSmall = richtext.Style{Size: 14, Color: colInk}
-	stCastTitle    = richtext.Style{Size: 20, Bold: true, Color: colInk}
-	stCastName     = richtext.Style{Size: 16, Bold: true, Color: colInk}
+	stBalloon      = richtext.Style{Size: 17, Color: colInk}
+	stBalloonSmall = richtext.Style{Size: 15, Color: colInk}
+	stCastTitle    = richtext.Style{Size: 21, Bold: true, Color: colInk}
+	stCastName     = richtext.Style{Size: 17, Bold: true, Color: colInk}
 	stSpoiler      = richtext.Style{Size: 15, Bold: true, Color: colWhite}
 )
 
