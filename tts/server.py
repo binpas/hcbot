@@ -7,12 +7,23 @@ One clip is made at a time, and one ranking; the two can run together.
 See README.md, "Text to speech" and "Markov chat".
 
 Endpoints (all except /health need "Authorization: Bearer <TTS_TOKEN>"):
-  GET  /health   {"ok": true, "voices": n, "rank": true}
-  GET  /voices   {"voices": ["alex", "sam"]}
-  POST /reload   reads the voices folder again
-  POST /tts      {"text": "...", "voice": "alex"} -> audio/wav
-  POST /rank     {"context": "...", "candidates": ["...", ...]}
-                 -> {"scores": [...]}, higher is better
+  GET    /health           {"ok": true, "voices": n, "rank": true}
+  GET    /voices           {"voices": ["alex", "sam"]}
+  POST   /reload           reads the voices folder again
+  POST   /jobs             {"text": "...", "voice": "alex"}
+                           -> 202 {"id": "...", "ahead": n}; 404 for an
+                           unknown voice. ahead is the number of clips
+                           before it, with the one that runs.
+  GET    /jobs/<id>        {"state": "queued"|"running"|"done"|"failed",
+                            "ahead": n, "error": null|"unknown voice"|...}
+  GET    /jobs/<id>/audio  audio/wav, when the state is done
+  DELETE /jobs/<id>        removes a queued or finished job
+  POST   /tts              the old API: a job, and the WAV when it is done
+  POST   /rank             {"context": "...", "candidates": ["...", ...]}
+                           -> {"scores": [...]}, higher is better
+
+The clip jobs are kept in QUEUE_DIR (see Queue), so they stay after a
+restart.
 
 A voice is an audio file in VOICES_DIR (wav, mp3, flac, ogg, m4a). The
 file name is the voice name. An optional <name>.json next to it can turn
@@ -24,14 +35,14 @@ with their text. With DASHBOARD_TOKEN set, it asks for that token as the
 password (any user name). It does not show the Markov rankings.
   GET  /           the page (dashboard.html)
   GET  /api/jobs   the jobs and the counts as JSON
-  GET  /clips/<id> the saved WAV of a recent job (?download=1 to save it)
+  GET  /clips/<id> the saved clip of a recent job (?download=1 to save it)
 
 When CLIPS_DIR is set, the worker saves each clip there for the operator,
-as <date>/<time>-<id>_<voice>_<text>.wav with a .json next to it (the
-text, the voice, and the times). CLIPS_KEEP_DAYS > 0 deletes the date
-folders that are older.
+as <date>/<time>-<id>_<voice>_<text>.ogg (Ogg/Opus, like the bot posts)
+with a .json next to it (the text, the voice, and the times).
+CLIPS_KEEP_DAYS > 0 deletes the date folders that are older.
 
-The worker does not log the text. The jobs list is only in memory.
+The worker does not log the text.
 """
 
 import base64
@@ -45,6 +56,7 @@ import logging
 import os
 import re
 import secrets
+import subprocess
 import threading
 import time
 import wave
@@ -81,6 +93,11 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8766"))
 DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 DASHBOARD_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 RECENT_JOBS = 50
+QUEUE_DIR = os.environ.get("QUEUE_DIR", "/data/queue")
+KEEP_FINISHED = 30 * 60  # seconds a finished job waits for the bot
+LEGACY_WAIT = 600
+JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+JOB_PATH_RE = re.compile(r"^/jobs/([0-9a-f]{32})(/audio)?$")
 CLIPS_DIR = os.environ.get("CLIPS_DIR", "")
 CLIPS_KEEP_DAYS = int(os.environ.get("CLIPS_KEEP_DAYS", "0"))
 DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -175,10 +192,9 @@ class Engine:
         self.pca_state = load_pca_state_from_hf()
         self.gpu = threading.Lock()
 
-    def speak(self, text, voice, on_start=None):
+    def speak(self, text, voice):
         """Returns mono 16-bit WAV bytes and the length in seconds. voice is
-        None or (audio, opts). on_start is called when the GPU is free and
-        the clip starts."""
+        None or (audio, opts)."""
         seq = 320 if len(text) <= SHORT_CHARS else 640
         speaker, kv = None, {}
         if voice is not None:
@@ -206,8 +222,6 @@ class Engine:
             sequence_length=seq,
         )
         with self.gpu, torch.inference_mode():
-            if on_start:
-                on_start()
             out, _ = sample_pipeline(
                 model=self.model,
                 fish_ae=self.fish_ae,
@@ -229,54 +243,189 @@ class Engine:
         return buf.getvalue(), len(pcm) / SAMPLE_RATE
 
 
-class Jobs:
-    """The clip jobs for the dashboard: the queued and running ones, and the
-    last RECENT_JOBS finished ones, with counts since the start. Only in
-    memory."""
+class Queue:
+    """The clip jobs. One thread makes them in the order they came. Each
+    job is a file in QUEUE_DIR (<id>.json, and <id>.wav when it is done),
+    so the queue stays after a restart; a job that was running starts
+    again. A finished job stays until the bot deletes it, or for
+    KEEP_FINISHED seconds. The last RECENT_JOBS finished jobs and the
+    counts since the start are only in memory, for the dashboard."""
 
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.next_id = 1
-        self.active = {}
+    def __init__(self, folder, engine, voices, clips):
+        self.folder = folder
+        self.engine, self.voices, self.clips = engine, voices, clips
+        self.cond = threading.Condition()
+        self.jobs = {}
+        self.waiting = []  # the IDs of the queued jobs, in order
         self.recent = collections.deque(maxlen=RECENT_JOBS)
         self.started = time.time()
         self.done = 0
         self.failed = 0
         self.audio_seconds = 0.0
         self.gen_seconds = 0.0
+        os.makedirs(folder, exist_ok=True)
+        self.load()
 
-    def add(self, text, voice):
-        with self.lock:
-            job = {"id": self.next_id, "text": text, "voice": voice, "state": "queued",
-                   "received": time.time(), "started": None, "finished": None,
-                   "audio_seconds": None, "gen_seconds": None, "clip": None}
-            self.next_id += 1
-            self.active[job["id"]] = job
-        return job
+    def path(self, job_id, ext):
+        return os.path.join(self.folder, job_id + ext)
 
-    def start(self, job):
-        with self.lock:
-            job["state"] = "running"
-            job["started"] = time.time()
+    def load(self):
+        names = os.listdir(self.folder)
+        for fname in names:
+            stem, ext = os.path.splitext(fname)
+            if ext == ".part" or (ext == ".wav" and stem + ".json" not in names):
+                self.remove_files(stem, (ext,))
+                continue
+            if ext != ".json" or not JOB_ID_RE.match(stem):
+                continue
+            try:
+                with open(os.path.join(self.folder, fname)) as f:
+                    job = json.load(f)
+            except (OSError, ValueError) as e:
+                log.warning("job %s not loaded: %s", stem, e)
+                continue
+            if job["state"] in ("queued", "running"):
+                job.update(state="queued", started=None)
+            elif job["state"] == "done" and not os.path.exists(self.path(stem, ".wav")):
+                self.remove_files(stem)
+                continue
+            self.jobs[stem] = job
+        queued = [j for j in self.jobs.values() if j["state"] == "queued"]
+        self.waiting = [j["id"] for j in sorted(queued, key=lambda j: j["received"])]
+        if self.waiting:
+            log.info("%d clips in the queue from before the restart", len(self.waiting))
 
-    def finish(self, job, audio_seconds=None, gen_seconds=None, clip=None):
-        """Without audio_seconds, the job failed."""
-        with self.lock:
-            self.active.pop(job["id"], None)
+    def persist(self, job):
+        _write_file(self.path(job["id"], ".json"), json.dumps(job).encode())
+
+    def remove_files(self, job_id, exts=(".json", ".wav")):
+        for ext in exts:
+            try:
+                os.remove(self.path(job_id, ext))
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                log.warning("job %s: %s", job_id, e)
+
+    def submit(self, text, voice):
+        """Adds a job. Returns its ID and the number of jobs before it."""
+        job = {"id": secrets.token_hex(16), "text": text, "voice": voice, "state": "queued",
+               "error": None, "received": time.time(), "started": None, "finished": None,
+               "audio_seconds": None, "gen_seconds": None, "clip": None}
+        with self.cond:
+            self.persist(job)
+            self.jobs[job["id"]] = job
+            self.waiting.append(job["id"])
+            self.cond.notify_all()
+            return job["id"], self._ahead(job)
+
+    def _ahead(self, job):
+        """The number of jobs before a queued job, with the running one."""
+        if job["state"] != "queued":
+            return 0
+        running = any(j["state"] == "running" for j in self.jobs.values())
+        return self.waiting.index(job["id"]) + running
+
+    def status(self, job_id):
+        with self.cond:
+            job = self.jobs.get(job_id)
+            if job is None:
+                return None
+            return {"state": job["state"], "ahead": self._ahead(job), "error": job["error"]}
+
+    def audio(self, job_id):
+        with self.cond:
+            job = self.jobs.get(job_id)
+            if job is None or job["state"] != "done":
+                return None
+        try:
+            with open(self.path(job_id, ".wav"), "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def delete(self, job_id):
+        """Removes a queued or finished job. A running job stays until it
+        is finished, and then for KEEP_FINISHED seconds."""
+        with self.cond:
+            job = self.jobs.get(job_id)
+            if job is None or job["state"] == "running":
+                return False
+            if job_id in self.waiting:
+                self.waiting.remove(job_id)
+            del self.jobs[job_id]
+        self.remove_files(job_id)
+        return True
+
+    def wait(self, job_id, timeout):
+        """Waits until a job is finished (for the old /tts)."""
+        def finished():
+            job = self.jobs.get(job_id)
+            return job is None or job["state"] in ("done", "failed")
+
+        with self.cond:
+            self.cond.wait_for(finished, timeout)
+
+    def run(self):
+        while True:
+            with self.cond:
+                while not self.waiting:
+                    self._expire()
+                    self.cond.wait(60)
+                job = self.jobs[self.waiting.pop(0)]
+                job["state"] = "running"
+                job["started"] = time.time()
+                self._persist_or_log(job)
+            self._make(job)
+
+    def _make(self, job):
+        voice, error, wav, secs = None, None, None, None
+        if job["voice"] != "random":
+            voice = self.voices.get(job["voice"])
+            if voice is None:
+                error = "unknown voice"  # removed while the job waited
+        if error is None:
+            try:
+                wav, secs = self.engine.speak(job["text"], voice)
+                _write_file(self.path(job["id"], ".wav"), wav)
+            except Exception:
+                log.exception("speak failed")
+                error = "speak failed"
+        with self.cond:
             job["finished"] = time.time()
-            if audio_seconds is None:
-                job["state"] = "failed"
+            if error:
+                job.update(state="failed", error=error)
                 self.failed += 1
             else:
-                job.update(state="done", audio_seconds=audio_seconds,
-                           gen_seconds=gen_seconds, clip=clip)
+                job.update(state="done", audio_seconds=secs, gen_seconds=job["finished"] - job["started"])
                 self.done += 1
-                self.audio_seconds += audio_seconds
-                self.gen_seconds += gen_seconds
+                self.audio_seconds += secs
+                self.gen_seconds += job["gen_seconds"]
+            if job["id"] in self.jobs:
+                self._persist_or_log(job)
             self.recent.appendleft(job)
+            self.cond.notify_all()
+        # After the bot can have the clip.
+        if wav is not None and self.clips is not None:
+            clip = self.clips.save(job, wav, secs)
+            with self.cond:
+                job["clip"] = clip
+
+    def _persist_or_log(self, job):
+        try:
+            self.persist(job)
+        except OSError as e:
+            log.warning("job %s not saved: %s", job["id"], e)
+
+    def _expire(self):
+        old = time.time() - KEEP_FINISHED
+        for job in list(self.jobs.values()):
+            if job["finished"] is not None and job["finished"] < old:
+                del self.jobs[job["id"]]
+                self.remove_files(job["id"])
 
     def clip(self, job_id):
-        with self.lock:
+        with self.cond:
             for job in self.recent:
                 if job["id"] == job_id:
                     return job["clip"]
@@ -286,22 +435,22 @@ class Jobs:
         def pub(job):
             return {k: v for k, v in job.items() if k != "clip"} | {"clip": bool(job["clip"])}
 
-        with self.lock:
-            active = sorted(self.active.values(), key=lambda j: j["id"])
+        with self.cond:
             return {
                 "uptime": time.time() - self.started,
                 "done": self.done,
                 "failed": self.failed,
                 "audio_seconds": self.audio_seconds,
                 "gen_seconds": self.gen_seconds,
-                "running": [pub(j) for j in active if j["state"] == "running"],
-                "queued": [pub(j) for j in active if j["state"] == "queued"],
+                "running": [pub(j) for j in self.jobs.values() if j["state"] == "running"],
+                "queued": [pub(self.jobs[i]) for i in self.waiting],
                 "recent": [pub(j) for j in self.recent],
             }
 
 
 class Clips:
-    """Saves the clips in CLIPS_DIR, one folder for each day (UTC)."""
+    """Saves the clips in CLIPS_DIR as Ogg/Opus (the format the bot posts),
+    one folder for each day (UTC)."""
 
     def __init__(self, folder, keep_days):
         self.folder = folder
@@ -309,17 +458,22 @@ class Clips:
         self.lock = threading.Lock()
 
     def save(self, job, wav, audio_seconds):
-        """Returns the path of the WAV, or None if it was not saved."""
+        """Returns the path of the clip, or None if it was not saved."""
         now = datetime.datetime.now(datetime.timezone.utc)
         day = os.path.join(self.folder, now.strftime("%Y-%m-%d"))
         slug = re.sub(r"[^a-z0-9]+", "-", job["text"].lower())[:40].strip("-")
-        stem = f"{now:%H%M%S}-{job['id']}_{job['voice']}" + (f"_{slug}" if slug else "")
-        path = os.path.join(day, stem + ".wav")
+        stem = f"{now:%H%M%S}-{job['id'][:8]}_{job['voice']}" + (f"_{slug}" if slug else "")
+        try:
+            data, ext = to_ogg(wav), ".ogg"
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("clip not encoded, saved as WAV: %s", e)
+            data, ext = wav, ".wav"
+        path = os.path.join(day, stem + ext)
         meta = {"text": job["text"], "voice": job["voice"], "audio_seconds": round(audio_seconds, 2),
                 "created": now.isoformat(timespec="seconds")}
         try:
             os.makedirs(day, exist_ok=True)
-            _write_file(path, wav)
+            _write_file(path, data)
             _write_file(os.path.join(day, stem + ".json"),
                         json.dumps(meta, ensure_ascii=False, indent=2).encode())
         except OSError as e:
@@ -344,12 +498,23 @@ class Clips:
                 try:
                     # Only our files; a folder with other files stays.
                     for f in os.listdir(folder):
-                        if f.endswith((".wav", ".json")):
+                        if f.endswith((".ogg", ".wav", ".json")):
                             os.remove(os.path.join(folder, f))
                     os.rmdir(folder)
                     log.info("deleted the clips of %s", name)
                 except OSError as e:
                     log.warning("clips of %s not deleted: %s", name, e)
+
+
+def to_ogg(wav):
+    """Encodes WAV data as Ogg/Opus, with the bot's settings."""
+    p = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+         "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-f", "ogg", "pipe:1"],
+        input=wav, capture_output=True, timeout=120)
+    if p.returncode != 0 or not p.stdout:
+        raise OSError(p.stderr.decode(errors="replace").strip()[:300] or f"ffmpeg exit {p.returncode}")
+    return p.stdout
 
 
 def _write_file(path, data):
@@ -407,7 +572,10 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "hcbot-tts"
 
     def log_message(self, fmt, *args):
-        # Only the method, the path, and the status. Never the text.
+        # Only the method, the path, and the status. Never the text. The
+        # bot asks for the job state every 2 seconds, so not those.
+        if self.command == "GET" and self.path.startswith("/jobs/") and args[1:2] == ("200",):
+            return
         log.info("%s %s", self.address_string(), fmt % args)
 
     def send_json(self, status, obj):
@@ -417,6 +585,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_wav(self, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def authorized(self):
         got = self.headers.get("Authorization", "")
@@ -429,14 +604,40 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self.send_json(200, {"ok": True, "voices": len(self.server.voices.names()),
                                  "rank": self.server.ranker is not None})
-        elif self.path == "/voices":
-            if self.authorized():
-                self.send_json(200, {"voices": self.server.voices.names()})
+            return
+        if not self.authorized():
+            return
+        m = JOB_PATH_RE.match(self.path)
+        if self.path == "/voices":
+            self.send_json(200, {"voices": self.server.voices.names()})
+        elif m and not m[2]:
+            st = self.server.queue.status(m[1])
+            if st is None:
+                self.send_json(404, {"error": "unknown job"})
+            else:
+                self.send_json(200, st)
+        elif m:
+            data = self.server.queue.audio(m[1])
+            if data is None:
+                self.send_json(404, {"error": "no audio"})
+            else:
+                self.send_wav(data)
         else:
             self.send_json(404, {"error": "not found"})
 
+    def do_DELETE(self):
+        if not self.authorized():
+            return
+        m = JOB_PATH_RE.match(self.path)
+        if not m or m[2]:
+            self.send_json(404, {"error": "not found"})
+        elif self.server.queue.status(m[1]) is None:
+            self.send_json(404, {"error": "unknown job"})
+        else:
+            self.send_json(200, {"deleted": self.server.queue.delete(m[1])})
+
     def do_POST(self):
-        if self.path not in ("/tts", "/reload", "/rank"):
+        if self.path not in ("/jobs", "/tts", "/reload", "/rank"):
             self.send_json(404, {"error": "not found"})
             return
         if not self.authorized():
@@ -461,35 +662,27 @@ class Handler(BaseHTTPRequestHandler):
         if not text or len(text) > MAX_CHARS:
             self.send_json(400, {"error": f"text must have 1 to {MAX_CHARS} characters"})
             return
-        voice = None
-        if voice_name != "random":
-            voice = self.server.voices.get(voice_name)
-            if voice is None:
-                self.send_json(404, {"error": "unknown voice"})
-                return
-        jobs = self.server.jobs
-        job = jobs.add(text, voice_name)
-        try:
-            data, audio_seconds = self.server.engine.speak(text, voice, lambda: jobs.start(job))
-        except Exception:
-            jobs.finish(job)
-            log.exception("speak failed")
-            self.send_json(500, {"error": "speak failed"})
+        if voice_name != "random" and self.server.voices.get(voice_name) is None:
+            self.send_json(404, {"error": "unknown voice"})
             return
-        gen_seconds = time.time() - job["started"]
+        queue = self.server.queue
         try:
-            self.send_response(200)
-            self.send_header("Content-Type", "audio/wav")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-        finally:
-            # Also when the bot went away: the clip is made.
-            clip = None
-            if self.server.clips is not None:
-                clip = self.server.clips.save(job, data, audio_seconds)
-            jobs.finish(job, audio_seconds, gen_seconds, clip)
-
+            job_id, ahead = queue.submit(text, voice_name)
+        except OSError as e:
+            log.warning("job not saved: %s", e)
+            self.send_json(500, {"error": "queue failed"})
+            return
+        if self.path == "/jobs":
+            self.send_json(202, {"id": job_id, "ahead": ahead})
+            return
+        # The old API: wait for the clip. Remove it when no bot uses it.
+        queue.wait(job_id, LEGACY_WAIT)
+        data = queue.audio(job_id)
+        queue.delete(job_id)
+        if data is None:
+            self.send_json(500, {"error": "speak failed"})
+        else:
+            self.send_wav(data)
 
     def rank(self, body):
         if self.server.ranker is None:
@@ -562,13 +755,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 gpu = {"used": total - free, "total": total}
             except Exception:
                 pass
-            body = srv.jobs.snapshot() | {
+            body = srv.queue.snapshot() | {
                 "now": time.time(), "voices": len(srv.voices.names()),
                 "rank": srv.ranker is not None, "saving": srv.clips is not None, "gpu": gpu,
             }
             self.send_body(200, "application/json", json.dumps(body).encode())
-        elif path.startswith("/clips/") and path[7:].isdigit():
-            clip = srv.jobs.clip(int(path[7:]))
+        elif path.startswith("/clips/") and JOB_ID_RE.match(path[7:]):
+            clip = srv.queue.clip(path[7:])
             try:
                 with open(clip, "rb") as f:
                     data = f.read()
@@ -579,7 +772,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if query == "download=1":
                 extra.append(("Content-Disposition",
                               f'attachment; filename="{os.path.basename(clip)}"'))
-            self.send_body(200, "audio/wav", data, extra)
+            ctype = "audio/ogg" if clip.endswith(".ogg") else "audio/wav"
+            self.send_body(200, ctype, data, extra)
         else:
             self.send_body(404, "text/plain", b"not found")
 
@@ -602,10 +796,11 @@ def main():
         ranker = Ranker()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.engine, srv.voices, srv.ranker = engine, voices, ranker
-    srv.jobs = Jobs()
     srv.clips = Clips(CLIPS_DIR, CLIPS_KEEP_DAYS) if CLIPS_DIR else None
     if srv.clips:
         log.info("saving the clips in %s", CLIPS_DIR)
+    srv.queue = Queue(QUEUE_DIR, engine, voices, srv.clips)
+    threading.Thread(target=srv.queue.run, daemon=True).start()
     if DASHBOARD_PORT:
         with open(DASHBOARD_HTML, "rb") as f:
             srv.html = f.read()

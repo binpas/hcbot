@@ -182,7 +182,7 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `TTS_CHANNELS` | Channels where `/say` works (up to 25). Empty: all channels. | |
 | `TTS_MAX_CHARS` | Longest text for `/say`, in characters (at most 600) | 300 |
 | `TTS_COOLDOWN` | Seconds that a member must wait between `/say` requests. 0: no wait. | 30 |
-| `TTS_QUEUE_MAX` | Most `/say` clips that can wait in the queue, after the one that runs | 5 |
+| `TTS_QUEUE_MAX` | Most `/say` clips of this bot that can wait in the queue, after the one that runs | 5 |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -317,7 +317,7 @@ Use this command only for videos that you have the right to download and share. 
 
 The bot sends the text and the voice name to the [text to speech worker](#text-to-speech), and uses ffmpeg to make the WAV into Ogg/Opus. For a voice message, the bot also calculates the length and the waveform. If Discord refuses the voice message, the bot posts an audio file without the text. Only you see the queue position, the status, and the errors; the status goes away when the clip is posted. A mod can post only in a channel where they have View Channel and Send Messages, and `TTS_CHANNELS` applies to the channel where the clip goes. The bot needs Send Messages, Attach Files, and Send Voice Messages there.
 
-The posts do not show who made them, so each clip is logged in `MOD_LOG`: who posted it, the format, the voice, the channel, the text, and a link to the clip (and to the message it answers). The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
+The posts do not show who made them, so each clip is logged in `MOD_LOG`: who posted it, the format, the voice, the channel, the text, and a link to the clip (and to the message it answers). The voice list shows `random` and the first 24 voices (a Discord limit). The worker makes one clip at a time. A clip of up to 150 characters takes about 15 seconds, and a longer clip about 30 seconds. The other clips wait in a queue, and the reply shows their position while they wait. The queue is kept on disk, so a clip is not lost when the bot or the worker restarts. If the clip is not done 12 minutes after `/say`, the bot stops and shows an error. A clip has a maximum of about 30 seconds of speech; the model speaks faster to fit a long text.
 
 Use only the voices of people who agree. Do not use `/say` to imitate a real person.
 
@@ -626,7 +626,7 @@ To run `hcbot-train` in the container, use the app shell, or `docker exec -it hc
 
 ### Text to speech
 
-`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 11 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time. It does not log the text, but it can save each clip with its text for the operator (see **Dashboard and saved clips** below).
+`/say` needs a text to speech worker: `tts/server.py`, which runs [Echo-TTS](https://github.com/jordandare/echo-tts) on an NVIDIA GPU with at least 11 GB of video memory. The model uses about 6.3 GB when it is loaded, and up to 8.7 GB while it makes a clip. It stays loaded. The worker makes one clip at a time, in the order the clips come (from all bots that use it). It keeps the queue in `queue/` in its data folder, so the clips stay after a restart. A job file is deleted when the bot has the clip, or 30 minutes after the clip is done. The worker does not log the text, but it can save each clip with its text for the operator (see **Dashboard and saved clips** below).
 
 The same worker also does the [Markov picking](#markov-chat), with a second, small model (about 1 GB more video memory). A ranking does not wait for a clip. `RANK_ENABLED=0` in the worker's `.env` turns the ranking model off.
 
@@ -646,7 +646,7 @@ The image is large (about 8 GB, most of it PyTorch and CUDA), so it is built on 
 
 **Dashboard and saved clips:** the worker has a web page for the operator on port 8766 (`http://<host>:8766/`). It shows the running clip, the queue, and the last 50 clips with their text, voice, and times, and counts since the worker started. You can play or download each recent clip. It does not show the Markov rankings. The list is only in memory, so it is empty after a restart. When `DASHBOARD_TOKEN` is set, the browser asks for a login: type the token as the password (any user name). The port is open on the LAN, so set the token if other people use your network.
 
-When `CLIPS_DIR` is set (`/clips` in the compose file), the worker saves each clip as `<date>/<time>-<id>_<voice>_<text>.wav`, with a `.json` next to it that has the full text. The date and time are UTC. `CLIPS_KEEP_DAYS` in the worker's `.env` deletes the date folders that are older than that number of days (the default, 0, keeps all clips). `DASHBOARD_PORT=0` turns the page off.
+When `CLIPS_DIR` is set (`/clips` in the compose file), the worker saves each clip as `<date>/<time>-<id>_<voice>_<text>.ogg` (Ogg/Opus, the same format that the bot posts), with a `.json` next to it that has the full text. The date and time are UTC. `CLIPS_KEEP_DAYS` in the worker's `.env` deletes the date folders that are older than that number of days (the default, 0, keeps all clips). `DASHBOARD_PORT=0` turns the page off.
 
 If the worker stops, `/say` gives an error, and the rest of the bot works as usual.
 
@@ -689,6 +689,7 @@ make check
 | `scheduled_actions` | Tempban and MOTD timers |
 | `pending_actions` | Data behind buttons, for example imports and wizard drafts |
 | `markov_blocklist` | Words and phrases the Markov chat never learns or says |
+| `tts_jobs` | `/say` clips that wait for the worker, with the text and the interaction token, until the clip is posted |
 
 `markov.db` (SQLite) in the working folder, or at `MARKOV_DB_PATH`:
 

@@ -51,7 +51,6 @@ type Bot struct {
 	runTool  toolRunner                                               // a fake in tests
 	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
 	dlSlot   chan struct{}
-	ttsSlot  chan struct{} // one /say clip at a time
 	ttsHTTP  *http.Client
 	tts      ttsState
 	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)                                            // one video download at a time
@@ -59,6 +58,7 @@ type Bot struct {
 	// forwardRetry is how long forwardOrLink waits before it checks a
 	// forward again (short in tests).
 	forwardRetry time.Duration
+	ttsPollEvery time.Duration // ttsPoll (short in tests)
 
 	loopsOnce sync.Once
 	stop      chan struct{}
@@ -106,12 +106,12 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		confirms:     map[string]func(*Ctx, []string){},
 		stop:         make(chan struct{}),
 		forwardRetry: 2 * time.Second,
+		ttsPollEvery: ttsPoll,
 		giphyURL:     giphySearchURL,
 		giphyHTTP:    &http.Client{Timeout: giphyTimeout},
 		runTool:      execTool,
 		lookupIP:     lookupIP,
 		dlSlot:       make(chan struct{}, 1),
-		ttsSlot:      make(chan struct{}, 1),
 		ttsHTTP:      &http.Client{Timeout: ttsRequestTimeout},
 		tweets:       tweetshot.NewClient(),
 		backupDir:    "backups",
@@ -189,6 +189,7 @@ func (b *Bot) startLoops() {
 		b.every(30*time.Second, b.runJailReleases)
 		b.daily(4, 0, b.runDailyBackup)
 		b.every(markovFlushEvery, b.flushMarkov)
+		b.resumeTTSJobs()
 	})
 }
 

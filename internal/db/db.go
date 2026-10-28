@@ -189,6 +189,23 @@ var schema = []string{
 		message_text TEXT,
 		message_time TEXT
 	)`,
+	// /say clips that wait for the text to speech worker, so a restart
+	// does not lose them. A row is deleted when the clip is posted or
+	// fails. token is the interaction token (valid for 15 minutes), for
+	// the member's status message. Go bot only.
+	`CREATE TABLE IF NOT EXISTS tts_jobs (
+		worker_id  TEXT    PRIMARY KEY,
+		guild_id   TEXT    NOT NULL,
+		user_id    TEXT    NOT NULL,
+		channel_id TEXT    NOT NULL,
+		reply_to   TEXT    NOT NULL DEFAULT '',
+		voice      TEXT    NOT NULL,
+		text       TEXT    NOT NULL,
+		voice_msg  INTEGER NOT NULL,
+		app_id     TEXT    NOT NULL,
+		token      TEXT    NOT NULL,
+		created_at TEXT    NOT NULL
+	)`,
 	`CREATE TABLE IF NOT EXISTS markov_blocklist (
 		phrase     TEXT PRIMARY KEY,
 		created_by INTEGER,

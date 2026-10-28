@@ -15,24 +15,35 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/binpas/hcbot/internal/config"
+	"github.com/binpas/hcbot/internal/db"
 )
 
 const testTTSToken = "test-token-0123456789abcdef0123456789"
 
-// fakeTTS is the text to speech worker. It records each /tts request.
+// fakeTTS is the text to speech worker. It records each new job (POST
+// /jobs). A job is done at once, unless steps has states to give first.
 type fakeTTS struct {
 	mu      sync.Mutex
 	voices  []string
 	speaks  []map[string]string
 	reloads int
-	status  int // for /tts; 0 is 200
+	status  int // for POST /jobs; 0 is 202
+
+	jobs    map[string]*fakeJob
+	steps   []ttsJobState // the next job's states before "done"
+	deleted []string
 
 	ranks      []rankRequest
 	rankStatus int // for /rank; 0 is 200
+}
+
+type fakeJob struct {
+	steps []ttsJobState
 }
 
 // rankRequest is one /rank request. The fake gives each candidate its
@@ -69,7 +80,7 @@ func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			scores[i] = float64(len(c))
 		}
 		_ = json.NewEncoder(w).Encode(map[string][]float64{"scores": scores})
-	case "/tts":
+	case "/jobs":
 		var req map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		f.speaks = append(f.speaks, req)
@@ -77,10 +88,47 @@ func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(f.status)
 			return
 		}
+		id := fmt.Sprintf("%032x", len(f.speaks))
+		if f.jobs == nil {
+			f.jobs = map[string]*fakeJob{}
+		}
+		f.jobs[id] = &fakeJob{steps: f.steps}
+		f.steps = nil
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "ahead": 0})
+	default:
+		f.serveJob(w, r)
+	}
+}
+
+// serveJob answers GET /jobs/<id>, GET /jobs/<id>/audio, and DELETE
+// /jobs/<id>. A step with State "" is a 503 (the worker restarts).
+func (f *fakeTTS) serveJob(w http.ResponseWriter, r *http.Request) {
+	rest, ok := strings.CutPrefix(r.URL.Path, "/jobs/")
+	id, audio := strings.CutSuffix(rest, "/audio")
+	job := f.jobs[id]
+	if !ok || job == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	switch {
+	case r.Method == http.MethodDelete:
+		f.deleted = append(f.deleted, id)
+		delete(f.jobs, id)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"deleted": true})
+	case audio:
 		w.Header().Set("Content-Type", "audio/wav")
 		_, _ = w.Write(testWAV(44100, 22050, 16384)) // 0.5 s at half volume
 	default:
-		w.WriteHeader(http.StatusNotFound)
+		st := ttsJobState{State: "done"}
+		if len(job.steps) > 0 {
+			st, job.steps = job.steps[0], job.steps[1:]
+		}
+		if st.State == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(st)
 	}
 }
 
@@ -98,6 +146,7 @@ func newTTSBot(t *testing.T) (*testBot, *fakeTTS, *[][]string) {
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	tb := newTestBot(t, func(e *config.Env) { e.TTSURL, e.TTSToken = srv.URL, testTTSToken })
+	tb.ttsPollEvery = 0
 	var ff [][]string
 	tb.runTool = func(_ context.Context, name string, args []string) ([]byte, []byte, error) {
 		if name != "ffmpeg" {
@@ -297,8 +346,140 @@ func TestSayVoiceMessage(t *testing.T) {
 		!strings.Contains(logs[0], "/"+tChGeneral+"/8000") || !strings.Contains(logs[0], "hello there") {
 		t.Errorf("mod log = %q", logs)
 	}
-	if tb.tts.pending != 0 || len(tb.ttsSlot) != 0 {
-		t.Errorf("queue not empty: pending %d, slot %d", tb.tts.pending, len(tb.ttsSlot))
+	if tb.tts.pending != 0 {
+		t.Errorf("queue not empty: pending %d", tb.tts.pending)
+	}
+	if len(f.deleted) != 1 || len(f.jobs) != 0 {
+		t.Errorf("worker jobs = %v, deleted %v", f.jobs, f.deleted)
+	}
+	if jobs, _ := tb.db.TTSJobs(); len(jobs) != 0 {
+		t.Errorf("tts_jobs = %v", jobs)
+	}
+}
+
+// statusEdits returns the texts of the edits of the /say status message.
+func (tb *testBot) statusEdits() []string {
+	var out []string
+	for _, c := range tb.api.find("PATCH", `/webhooks/`+tBot+`/tok\w+/messages/@original`) {
+		out = append(out, string(c.Body))
+	}
+	return out
+}
+
+func TestSayQueuePosition(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	f.steps = []ttsJobState{{State: "queued", Ahead: 2}, {State: "queued", Ahead: 2}, {State: "queued", Ahead: 1},
+		{}, {State: "running"}, {State: "running"}}
+	tb.api.reset()
+	tb.submitSay(tMod, "hello", "random", sayFormatMsg)
+	edits := tb.statusEdits()
+	want := []string{"Position 2.", "Position 1.", "Making the clip"} // only the changes
+	if len(edits) != len(want) {
+		t.Fatalf("status edits = %q", edits)
+	}
+	for i, w := range want {
+		if !strings.Contains(edits[i], w) {
+			t.Errorf("edit %d = %s, want %q", i, edits[i], w)
+		}
+	}
+	if len(tb.voiceMessages()) != 1 {
+		t.Errorf("no voice message after the worker came back: %v", tb.callList())
+	}
+	if len(tb.api.find("DELETE", `/webhooks/`+tBot+`/tok\d+/messages/@original`)) != 1 {
+		t.Errorf("the status reply was not deleted: %v", tb.callList())
+	}
+}
+
+func TestSayJobFails(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	tb.config(map[string]string{"TTS_COOLDOWN": "0"})
+	f.steps = []ttsJobState{{State: "failed", Error: "unknown voice"}}
+	tb.submitSay(tMod, "hi", "sam", sayFormatMsg)
+	tb.expect(true, "no voice named `sam`")
+
+	f.steps = []ttsJobState{{State: "failed", Error: "speak failed"}}
+	tb.submitSay(tMod, "hi", "sam", sayFormatMsg)
+	tb.expect(true, "could not make the clip")
+	if len(tb.voiceMessages()) != 0 || len(f.deleted) != 2 {
+		t.Errorf("voice messages %v, deleted jobs %v", tb.voiceMessages(), f.deleted)
+	}
+	if jobs, _ := tb.db.TTSJobs(); len(jobs) != 0 || tb.tts.pending != 0 {
+		t.Errorf("tts_jobs = %v, pending %d", jobs, tb.tts.pending)
+	}
+}
+
+// waitTTSJobs waits until the bot has no open clip jobs.
+func (tb *testBot) waitTTSJobs() {
+	tb.t.Helper()
+	for range 500 {
+		tb.tts.mu.Lock()
+		n := tb.tts.pending
+		tb.tts.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tb.t.Fatal("the clip jobs did not end")
+}
+
+func TestSayResumeAfterRestart(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	f.jobs = map[string]*fakeJob{"aa": {steps: []ttsJobState{{State: "queued", Ahead: 1}}}, "bb": {}, "cc": {}}
+	add := func(id, text string, age time.Duration) {
+		t.Helper()
+		if err := tb.db.AddTTSJob(db.TTSJob{WorkerID: id, GuildID: tGuild, UserID: tMod, ChannelID: tChGeneral,
+			ReplyTo: "7001", Voice: "sam", Text: text, VoiceMsg: false, AppID: tBot, Token: "tok" + id,
+			Created: time.Now().Add(-age)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("aa", "from before", time.Minute)
+	add("bb", "late but done", 20*time.Minute) // after the time limit: posted all the same
+	add("dd", "lost", time.Minute)             // the worker does not know it
+	tb.resumeTTSJobs()
+	tb.waitTTSJobs()
+
+	posts := strings.Join(tb.sent(tChGeneral), "\n")
+	for _, want := range []string{"from before", "late but done"} {
+		if !strings.Contains(posts, want) {
+			t.Errorf("%q not posted: %q", want, posts)
+		}
+	}
+	if len(tb.api.find("PATCH", `/webhooks/`+tBot+`/tokaa/messages/@original`)) != 1 {
+		t.Errorf("no queue status for aa: %v", tb.callList())
+	}
+	if len(tb.api.find("DELETE", `/webhooks/`+tBot+`/tokaa/messages/@original`)) != 1 {
+		t.Errorf("status of aa not deleted: %v", tb.callList())
+	}
+	if !strings.Contains(strings.Join(tb.statusEdits(), ""), "lost the clip") {
+		t.Errorf("no error for the lost job: %q", tb.statusEdits())
+	}
+	if logs := tb.sent(tChModLog); len(logs) != 2 || !strings.Contains(logs[0], "<@"+tMod+">") {
+		t.Errorf("mod log = %q", logs)
+	}
+	if jobs, _ := tb.db.TTSJobs(); len(jobs) != 0 {
+		t.Errorf("tts_jobs = %v", jobs)
+	}
+	if _, ok := f.jobs["cc"]; !ok || len(f.jobs) != 1 {
+		t.Errorf("worker jobs = %v (cc is not the bot's)", f.jobs)
+	}
+}
+
+func TestSayTimeout(t *testing.T) {
+	tb, f, _ := newTTSBot(t)
+	f.jobs = map[string]*fakeJob{"aa": {steps: slices.Repeat([]ttsJobState{{State: "queued", Ahead: 3}}, 1000)}}
+	if err := tb.db.AddTTSJob(db.TTSJob{WorkerID: "aa", GuildID: tGuild, UserID: tMod, ChannelID: tChGeneral,
+		Voice: "sam", Text: "hi", AppID: tBot, Token: "tokaa", Created: time.Now().Add(-ttsTimeout)}); err != nil {
+		t.Fatal(err)
+	}
+	tb.resumeTTSJobs()
+	tb.waitTTSJobs()
+	if !strings.Contains(strings.Join(tb.statusEdits(), ""), "took too long") {
+		t.Errorf("status edits = %q", tb.statusEdits())
+	}
+	if !slices.Equal(f.deleted, []string{"aa"}) || len(tb.voiceMessages())+len(tb.sent(tChGeneral)) != 0 {
+		t.Errorf("deleted %v; calls %v", f.deleted, tb.callList())
 	}
 }
 

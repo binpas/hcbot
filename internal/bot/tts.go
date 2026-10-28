@@ -22,6 +22,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/binpas/hcbot/internal/db"
 )
 
 // Text to speech: a mod opens /say, a modal with the text, the voice, and
@@ -29,27 +31,33 @@ import (
 // (tts/server.py, Echo-TTS on a GPU) for a clip. ffmpeg makes the WAV into
 // Ogg/Opus, and the bot posts it in the channel: as a voice message
 // (without the text), or as an audio file with the text.
-// The worker makes one clip at a time, so the bot keeps a queue. A voice is
-// a reference clip in the worker's voices folder; "random" uses none.
+// The worker keeps the queue and makes one clip at a time. The bot adds the
+// clip to it, keeps the job in tts_jobs (so a restart of the bot does not
+// lose it), and asks for its state until it is done. A voice is a reference
+// clip in the worker's voices folder; "random" uses none.
 //
 // The commands are registered only when TTS_URL is set. The bot only sends
 // the text and the voice name. The worker can save the clips with their
 // text for the operator (CLIPS_DIR).
 
 const (
-	ttsRequestTimeout = 3 * time.Minute  // one clip takes about 15-30 s
+	ttsRequestTimeout = 30 * time.Second // one request to the worker
 	ttsTimeout        = 12 * time.Minute // the interaction token lasts 15
+	ttsPoll           = 2 * time.Second  // how often the bot asks for a job's state
 	ttsVoicesFor      = time.Minute      // how long the voice list is cached
 	ttsHardMaxChars   = 600              // the worker's limit
 	ttsRandomVoice    = "random"
 )
 
-var errTTSVoice = errors.New("unknown voice")
+var (
+	errTTSVoice = errors.New("unknown voice")
+	errTTSGone  = errors.New("the worker does not know the job")
+)
 
 // ttsState is the queue, the cooldowns, and the cached voice list.
 type ttsState struct {
 	mu       sync.Mutex
-	pending  int // clips in the queue, with the one that runs
+	pending  int // this bot's open clip jobs
 	last     map[string]time.Time
 	voices   []string
 	voicesAt time.Time
@@ -452,11 +460,11 @@ func (b *Bot) parentOf(channelID string) *discordgo.Channel {
 	return ch
 }
 
-// say makes the clip and posts it to the target. The member sees the
-// queue, the status, and the errors in an ephemeral reply, which is
-// deleted when the clip is posted.
+// say sends the clip to the worker's queue and follows it (ttsWatch). The
+// member sees the queue position, the status, and the errors in an
+// ephemeral reply, which is deleted when the clip is posted.
 func (b *Bot) say(c *Ctx, target sayTarget, text, voice string, voiceMsg bool) {
-	ahead, wait, ok := b.ttsEnqueue(c.UserID())
+	wait, ok := b.ttsEnqueue(c.UserID())
 	if !ok {
 		if wait > 0 {
 			c.Reply(true, errEmbed(fmt.Sprintf("Wait %s before you use `/say` again.", humaniseDuration(int64((wait+time.Second-1)/time.Second)))))
@@ -465,30 +473,13 @@ func (b *Bot) say(c *Ctx, target sayTarget, text, voice string, voiceMsg bool) {
 		}
 		return
 	}
-	defer b.ttsDone()
 
 	c.Defer(true)
-	working := makeEmbed("🗣️ Making the clip", "This takes about 15–30 seconds.", colourBlurple)
-	ctx, cancel := context.WithTimeout(context.Background(), ttsTimeout)
-	defer cancel()
-	select {
-	case b.ttsSlot <- struct{}{}:
-		c.EditResponse(working)
-	default:
-		c.EditResponse(makeEmbed("⏳ In the queue",
-			fmt.Sprintf("Position %d. Each clip takes about 15–30 seconds.", max(ahead, 1)), colourBlurple))
-		select {
-		case b.ttsSlot <- struct{}{}:
-			c.EditResponse(working)
-		case <-ctx.Done():
-			c.Reply(true, errEmbed("The speech queue took too long. Try again later."))
-			return
-		}
-	}
-	defer func() { <-b.ttsSlot }()
-
-	wav, err := b.ttsSpeak(ctx, text, voice)
+	ctx, cancel := context.WithTimeout(context.Background(), ttsRequestTimeout)
+	id, err := b.ttsSubmit(ctx, text, voice)
+	cancel()
 	if err != nil {
+		b.ttsDone()
 		msg := "The speech worker is not available. Try again later."
 		if errors.Is(err, errTTSVoice) {
 			msg = fmt.Sprintf("There is no voice named `%s`. Use `/voices` to see them.", voice)
@@ -498,20 +489,132 @@ func (b *Bot) say(c *Ctx, target sayTarget, text, voice string, voiceMsg bool) {
 		c.Reply(true, errEmbed(msg))
 		return
 	}
+	j := db.TTSJob{WorkerID: id, GuildID: c.GuildID(), UserID: c.UserID(), ChannelID: target.channelID,
+		ReplyTo: target.replyTo, Voice: voice, Text: text, VoiceMsg: voiceMsg,
+		AppID: c.i.AppID, Token: c.i.Token, Created: time.Now()}
+	if err := b.db.AddTTSJob(j); err != nil {
+		log.Printf("say: save job: %v", err) // it runs, but not after a restart
+	}
+	b.ttsWatch(j)
+}
+
+// resumeTTSJobs follows the clip jobs that were open when the bot stopped.
+func (b *Bot) resumeTTSJobs() {
+	if b.env.TTSURL == "" {
+		return
+	}
+	jobs, err := b.db.TTSJobs()
+	if err != nil {
+		log.Printf("say: load jobs: %v", err)
+		return
+	}
+	if len(jobs) > 0 {
+		log.Printf("Speech: %d clips from before the restart", len(jobs))
+	}
+	b.tts.mu.Lock()
+	b.tts.pending += len(jobs)
+	b.tts.mu.Unlock()
+	for _, j := range jobs {
+		go b.ttsWatch(j)
+	}
+}
+
+// ttsWatch asks the worker for the state of a clip job every ttsPoll, and
+// shows the member the queue position when it changes. When the clip is
+// done, it posts it and deletes the status. It ends the job on the worker,
+// in tts_jobs, and in the bot's queue count. If the worker does not
+// answer (for example, while it restarts), it tries again until ttsTimeout
+// after the /say. When the bot stops, the job stays for the next start.
+func (b *Bot) ttsWatch(j db.TTSJob) {
+	defer b.ttsDone()
+	it := &discordgo.Interaction{AppID: j.AppID, Token: j.Token}
+	status := func(e *discordgo.MessageEmbed) {
+		if _, err := b.s.InteractionResponseEdit(it, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{e}}); err != nil {
+			log.Printf("say: status: %v", err)
+		}
+	}
+	finish := func(errMsg string) {
+		if errMsg != "" {
+			status(errEmbed(errMsg))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), ttsRequestTimeout)
+		defer cancel()
+		if err := b.ttsDelete(ctx, j.WorkerID); err != nil {
+			log.Printf("say: delete job: %v", err)
+		}
+		if err := b.db.DeleteTTSJob(j.WorkerID); err != nil {
+			log.Printf("say: delete job: %v", err)
+		}
+	}
+
+	deadline := time.NewTimer(time.Until(j.Created.Add(ttsTimeout)))
+	defer deadline.Stop()
+	shown := -1 // the position on the status; 0 is "making"
+	for done, logged := false, false; !done; {
+		st, err := b.ttsStatus(j.WorkerID)
+		switch {
+		case errors.Is(err, errTTSGone):
+			finish("The speech worker lost the clip. Try again.")
+			return
+		case err != nil:
+			if !logged {
+				log.Printf("say: job state: %v", err)
+				logged = true
+			}
+		case st.State == "done":
+			done = true
+			continue
+		case st.State == "failed":
+			msg := "The speech worker could not make the clip. Try again later."
+			if st.Error == "unknown voice" {
+				msg = fmt.Sprintf("There is no voice named `%s`. Use `/voices` to see them.", j.Voice)
+			}
+			finish(msg)
+			return
+		case st.State == "running" && shown != 0:
+			shown = 0
+			status(makeEmbed("🗣️ Making the clip", "This takes about 15–30 seconds.", colourBlurple))
+		case st.State == "queued" && shown != max(st.Ahead, 1):
+			shown = max(st.Ahead, 1)
+			status(makeEmbed("⏳ In the queue",
+				fmt.Sprintf("Position %d. Each clip takes about 15–30 seconds.", shown), colourBlurple))
+		}
+		select {
+		case <-time.After(b.ttsPollEvery):
+		case <-deadline.C:
+			finish("The speech queue took too long. Try again later.")
+			return
+		case <-b.stop:
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ttsRequestTimeout)
+	defer cancel()
+	wav, err := b.ttsAudio(ctx, j.WorkerID)
+	if err != nil {
+		log.Printf("say: %v", err)
+		finish("The speech worker is not available. Try again later.")
+		return
+	}
 	ogg, err := b.toOpus(ctx, wav)
 	if err != nil {
 		log.Printf("say: encode: %v", err)
-		c.Reply(true, errEmbed("I could not encode the clip."))
+		finish("I could not encode the clip.")
 		return
 	}
-	posted, sentAsVoice, err := b.postClip(target, ogg, wav, voice, text, voiceMsg)
+	target := sayTarget{j.ChannelID, j.ReplyTo}
+	posted, sentAsVoice, err := b.postClip(target, ogg, wav, j.Voice, j.Text, j.VoiceMsg)
 	if err != nil {
 		log.Printf("say: post: %v", err)
-		c.Reply(true, errEmbed(fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID)))
+		finish(fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID))
 		return
 	}
-	c.DeleteResponse()
-	b.logSay(c, target, posted, voice, text, sentAsVoice)
+	if err := b.s.InteractionResponseDelete(it); err != nil {
+		log.Printf("say: delete status: %v", err)
+	}
+	b.logSay(j.GuildID, j.UserID, target, posted, j.Voice, j.Text, sentAsVoice)
+	finish("")
 }
 
 // postClip posts the clip in the target channel: as a voice message when
@@ -576,18 +679,18 @@ func (b *Bot) postVoiceMessage(channelID string, ref *discordgo.MessageReference
 
 // logSay tells the mod log who posted a clip and what it says, with a link
 // to it.
-func (b *Bot) logSay(c *Ctx, target sayTarget, posted *discordgo.Message, voice, text string, voiceMsg bool) {
+func (b *Bot) logSay(guildID, userID string, target sayTarget, posted *discordgo.Message, voice, text string, voiceMsg bool) {
 	kind := "an audio clip"
 	if voiceMsg {
 		kind = "a voice message"
 	}
-	desc := fmt.Sprintf("<@%s> posted %s (voice: `%s`) in <#%s>", c.UserID(), kind, voice, target.channelID)
+	desc := fmt.Sprintf("<@%s> posted %s (voice: `%s`) in <#%s>", userID, kind, voice, target.channelID)
 	if target.replyTo != "" {
 		desc += fmt.Sprintf(", as a reply to [this message](https://discord.com/channels/%s/%s/%s)",
-			c.GuildID(), target.channelID, target.replyTo)
+			guildID, target.channelID, target.replyTo)
 	}
 	if posted != nil && posted.ID != "" {
-		desc += fmt.Sprintf(".\n[Jump to the clip](https://discord.com/channels/%s/%s/%s)", c.GuildID(), target.channelID, posted.ID)
+		desc += fmt.Sprintf(".\n[Jump to the clip](https://discord.com/channels/%s/%s/%s)", guildID, target.channelID, posted.ID)
 	}
 	embed := makeEmbed("🗣️ Speech clip", desc, colourBlurple)
 	embed.Fields = []*discordgo.MessageEmbedField{{Name: "Text", Value: text}}
@@ -643,29 +746,27 @@ func wavPCM(wav []byte) (int, []byte) {
 	return 0, nil
 }
 
-// ttsEnqueue adds a clip to the queue. It returns the number of clips
-// before it. When the user must wait (wait > 0) or the queue is full, ok
-// is false.
-func (b *Bot) ttsEnqueue(userID string) (ahead int, wait time.Duration, ok bool) {
+// ttsEnqueue counts a new clip job. When the user must wait (wait > 0) or
+// the queue is full, ok is false.
+func (b *Bot) ttsEnqueue(userID string) (wait time.Duration, ok bool) {
 	st := &b.tts
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	now := time.Now()
 	cooldown := time.Duration(max(b.cfg.Int("TTS_COOLDOWN"), 0)) * time.Second
 	if t, seen := st.last[userID]; seen && now.Sub(t) < cooldown {
-		return 0, cooldown - now.Sub(t), false
+		return cooldown - now.Sub(t), false
 	}
 	// One clip runs; at most TTS_QUEUE_MAX wait.
 	if st.pending > max(b.cfg.Int("TTS_QUEUE_MAX"), 0) {
-		return 0, 0, false
+		return 0, false
 	}
 	if st.last == nil {
 		st.last = map[string]time.Time{}
 	}
 	st.last[userID] = now
-	ahead = st.pending
 	st.pending++
-	return ahead, 0, true
+	return 0, true
 }
 
 func (b *Bot) ttsDone() {
@@ -695,24 +796,86 @@ func (b *Bot) ttsDo(ctx context.Context, method, path string, body any) (*http.R
 	return b.ttsHTTP.Do(req)
 }
 
-// ttsSpeak asks the worker for a clip and returns the WAV data.
-func (b *Bot) ttsSpeak(ctx context.Context, text, voice string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, ttsRequestTimeout)
-	defer cancel()
-	resp, err := b.ttsDo(ctx, http.MethodPost, "/tts", map[string]string{"text": text, "voice": voice})
+// ttsJobState is the worker's answer to GET /jobs/<id>.
+type ttsJobState struct {
+	State string `json:"state"` // queued, running, done, or failed
+	Ahead int    `json:"ahead"` // clips before it, with the one that runs
+	Error string `json:"error"`
+}
+
+// ttsSubmit adds a clip to the worker's queue and returns the job ID.
+func (b *Bot) ttsSubmit(ctx context.Context, text, voice string) (string, error) {
+	resp, err := b.ttsDo(ctx, http.MethodPost, "/jobs", map[string]string{"text": text, "voice": voice})
 	if err != nil {
-		return nil, err
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+	case http.StatusNotFound:
+		return "", errTTSVoice
+	default:
+		return "", ttsStatusErr(resp)
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.ID == "" {
+		return "", fmt.Errorf("worker: bad job answer: %v", err)
+	}
+	return out.ID, nil
+}
+
+// ttsStatus returns the state of a clip job, or errTTSGone when the
+// worker does not know it.
+func (b *Bot) ttsStatus(id string) (ttsJobState, error) {
+	var st ttsJobState
+	ctx, cancel := context.WithTimeout(context.Background(), ttsRequestTimeout)
+	defer cancel()
+	resp, err := b.ttsDo(ctx, http.MethodGet, "/jobs/"+id, nil)
+	if err != nil {
+		return st, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:
-		return nil, errTTSVoice
+		return st, errTTSGone
 	default:
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("worker: %s: %s", resp.Status, bytes.TrimSpace(msg))
+		return st, ttsStatusErr(resp)
+	}
+	return st, json.NewDecoder(resp.Body).Decode(&st)
+}
+
+// ttsAudio returns the WAV data of a done clip job.
+func (b *Bot) ttsAudio(ctx context.Context, id string) ([]byte, error) {
+	resp, err := b.ttsDo(ctx, http.MethodGet, "/jobs/"+id+"/audio", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, ttsStatusErr(resp)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+}
+
+// ttsDelete tells the worker that the bot does not need a job any more.
+func (b *Bot) ttsDelete(ctx context.Context, id string) error {
+	resp, err := b.ttsDo(ctx, http.MethodDelete, "/jobs/"+id, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		return ttsStatusErr(resp)
+	}
+	return nil
+}
+
+func ttsStatusErr(resp *http.Response) error {
+	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	return fmt.Errorf("worker: %s: %s", resp.Status, bytes.TrimSpace(msg))
 }
 
 // ttsVoices returns the worker's voice names. The list is cached for a
