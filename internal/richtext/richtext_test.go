@@ -1,6 +1,7 @@
 package richtext
 
 import (
+	"image"
 	"image/color"
 	"strings"
 	"testing"
@@ -64,5 +65,29 @@ func TestWrap(t *testing.T) {
 	cut := fc.Ellipsize([]Span{{strings.Repeat("long name ", 20), st}}, 200)
 	if SumWidth(cut) > fixed.I(200) || cut[len(cut)-1].Text != "…" {
 		t.Errorf("ellipsize = %+v", cut)
+	}
+}
+
+func TestThicken(t *testing.T) {
+	f, err := ParseFonts(goregular.TTF, gobold.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc := NewFaces(f, 1)
+	defer fc.Close()
+	ink := func(st Style) int {
+		dst := image.NewRGBA(image.Rect(0, 0, 200, 40))
+		fc.Draw(dst, fc.Ellipsize([]Span{{Text: "thin text", Style: st}}, 200), 2, 30)
+		n := 0
+		for i := 3; i < len(dst.Pix); i += 4 {
+			n += int(dst.Pix[i])
+		}
+		return n
+	}
+	st := Style{Size: 17, Color: color.Black}
+	plain := ink(st)
+	st.Thicken = 0.8
+	if thick := ink(st); thick <= plain {
+		t.Errorf("thickened ink %d is not more than %d", thick, plain)
 	}
 }

@@ -43,10 +43,13 @@ func ParseFonts(regular, bold []byte) (Fonts, error) {
 }
 
 // Style is how a piece of text looks. Size is in logical pixels.
+// Thicken draws the text again that many logical pixels to the right, so
+// thin letters look a little bolder (0: no).
 type Style struct {
-	Size  float64
-	Bold  bool
-	Color color.Color
+	Size    float64
+	Bold    bool
+	Color   color.Color
+	Thicken float64
 }
 
 // Faces makes and keeps the sized font faces of one render. An opentype
@@ -425,6 +428,10 @@ func (fc *Faces) Draw(dst draw.Image, items []Item, x, y int) int {
 		}
 		d := font.Drawer{Dst: dst, Src: image.NewUniform(it.Style.Color), Face: fc.Face(it.Style), Dot: fixed.Point26_6{X: dot, Y: fixed.I(y)}}
 		d.DrawString(it.Text)
+		if it.Style.Thicken > 0 {
+			d.Dot = fixed.Point26_6{X: dot + fixed.Int26_6(it.Style.Thicken*fc.scale*64), Y: fixed.I(y)}
+			d.DrawString(it.Text)
+		}
 		dot += it.W
 	}
 	return dot.Round()
