@@ -83,11 +83,21 @@
   .num { font-variant-numeric: tabular-nums; }
   md-linear-progress { width: 100%; }
   .failed md-icon { color: var(--md-sys-color-error); }
+  .tabs { background: var(--md-sys-color-surface-container); }
+  md-tabs { max-width: 960px; margin: 0 auto; --md-primary-tab-container-color: transparent; }
+  [role="tabpanel"][hidden] { display: none; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 16px; }
+  .toolbar md-outlined-select { min-width: 220px; }
+  .toolbar md-outlined-text-field { flex: 1; min-width: 180px; }
+  #voice-filter { padding: 4px 16px 8px; }
+  #saved-count { padding: 4px 16px 0; }
   #offline { display: none; color: var(--md-sys-color-error); }
   #offline.on { display: inline-flex; align-items: center; gap: 4px; }
   @media (max-width: 600px) {
     header { padding: 12px 16px; }
     main { padding: 12px 16px; }
+    .toolbar { padding: 8px 0; }
+    .toolbar md-outlined-select { min-width: 0; flex: 1 1 100%; }
   }
 </style>
 </head>
@@ -97,7 +107,13 @@
   <span id="offline" class="md-typescale-label-large"><md-icon>cloud_off</md-icon>No answer from the worker</span>
   <md-chip-set id="chips"></md-chip-set>
 </header>
-<main>
+<div class="tabs">
+  <md-tabs id="tabs" aria-label="Views">
+    <md-primary-tab id="tab-live" aria-controls="live">Live</md-primary-tab>
+    <md-primary-tab id="tab-saved" aria-controls="saved">Saved clips</md-primary-tab>
+  </md-tabs>
+</div>
+<main id="live" role="tabpanel" aria-labelledby="tab-live">
   <section class="stats" aria-label="Counts since the worker started">
     <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Clips</span><span id="s-done" class="value md-typescale-headline-small">–</span></div>
     <div class="stat"><md-elevation></md-elevation><span class="label md-typescale-label-medium">Failed</span><span id="s-failed" class="value md-typescale-headline-small">–</span></div>
@@ -122,14 +138,30 @@
   </section>
 </main>
 
+<main id="saved" role="tabpanel" aria-labelledby="tab-saved" hidden>
+  <section class="card"><md-elevation></md-elevation>
+    <div class="toolbar">
+      <md-outlined-select id="day" label="Day (UTC)"></md-outlined-select>
+      <md-outlined-text-field id="search" label="Search the text" type="search">
+        <md-icon slot="leading-icon">search</md-icon>
+      </md-outlined-text-field>
+      <md-icon-button id="refresh" aria-label="Refresh"><md-icon>refresh</md-icon></md-icon-button>
+    </div>
+    <md-chip-set id="voice-filter" aria-label="Voices"></md-chip-set>
+    <div id="saved-count" class="label md-typescale-label-medium"></div>
+    <div id="saved-list"></div>
+  </section>
+</main>
+
 <script>
 const POLL_MS = 2000;
 let data = null;
 let skew = 0;          // server clock minus browser clock, in seconds
 let lastJSON = "";
-let playing = null;    // job id of the clip that plays
+let playing = null;    // the key of the clip that plays: a job id, or "saved/<day>/<file>"
 const audio = new Audio();
-audio.addEventListener("ended", () => { playing = null; renderRecent(); });
+audio.addEventListener("ended", () => { playing = null; renderPlayers(); });
+let saved = {days: null, day: "", clips: [], voices: new Set(), query: ""};
 
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() / 1000 + skew;
@@ -207,16 +239,30 @@ function renderQueued() {
   box.append(list);
 }
 
-function togglePlay(job) {
-  if (playing === job.id) {
+function renderPlayers() {
+  if (data) renderRecent();
+  renderSavedList();
+}
+
+function togglePlay(key, url) {
+  if (playing === key) {
     audio.pause();
     playing = null;
   } else {
-    audio.src = "clips/" + job.id;
-    audio.play().catch(() => { playing = null; renderRecent(); });
-    playing = job.id;
+    audio.src = url;
+    audio.play().catch(() => { playing = null; renderPlayers(); });
+    playing = key;
   }
-  renderRecent();
+  renderPlayers();
+}
+
+function clipActions(key, url) {
+  return el("div", {slot: "end", style: "display: flex"},
+    el("md-icon-button", {"aria-label": playing === key ? "Stop" : "Play", onclick: () => togglePlay(key, url)},
+      el("md-icon", {}, playing === key ? "stop" : "play_arrow")),
+    el("md-icon-button", {"aria-label": "Download", href: url + "?download=1"},
+      el("md-icon", {}, "download")),
+  );
 }
 
 function renderRecent() {
@@ -238,15 +284,7 @@ function renderRecent() {
       textLine(job),
       el("div", {slot: "supporting-text"}, info),
     );
-    if (job.clip) {
-      const actions = el("div", {slot: "end", style: "display: flex"},
-        el("md-icon-button", {"aria-label": playing === job.id ? "Stop" : "Play", onclick: () => togglePlay(job)},
-          el("md-icon", {}, playing === job.id ? "stop" : "play_arrow")),
-        el("md-icon-button", {"aria-label": "Download", href: `clips/${job.id}?download=1`},
-          el("md-icon", {}, "download")),
-      );
-      item.append(actions);
-    }
+    if (job.clip) item.append(clipActions(job.id, "clips/" + job.id));
     list.append(item);
   });
   box.append(list);
@@ -298,6 +336,119 @@ async function poll() {
   }
   tick();
 }
+
+// Saved clips: the days in CLIPS_DIR, and the clips of one day.
+
+function dayLabel(d) {
+  const date = new Date(d.day + "T00:00:00Z").toLocaleDateString([],
+    {weekday: "short", year: "numeric", month: "short", day: "numeric", timeZone: "UTC"});
+  return `${date} (${d.count})`;
+}
+
+async function loadDays() {
+  try {
+    const r = await fetch("api/days", {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const body = await r.json();
+    saved.days = body.saving ? body.days : null;
+  } catch {
+    saved.days = [];
+  }
+  const days = saved.days || [];
+  if (!days.some((d) => d.day === saved.day)) saved.day = days.length ? days[0].day : "";
+  // A new select with its options in it: it shows the selected day at once.
+  const select = el("md-outlined-select", {id: "day", label: "Day (UTC)"}, ...days.map((d) =>
+    el("md-select-option", {value: d.day, selected: d.day === saved.day},
+      el("div", {slot: "headline"}, dayLabel(d)))));
+  select.addEventListener("change", () => { saved.day = select.value; loadClips(); });
+  $("day").replaceWith(select);
+  await loadClips();
+}
+
+async function loadClips() {
+  saved.clips = [];
+  if (saved.day) {
+    try {
+      const r = await fetch("api/clips?day=" + encodeURIComponent(saved.day), {cache: "no-store"});
+      if (!r.ok) throw new Error(r.status);
+      saved.clips = (await r.json()).clips;
+    } catch {
+      saved.clips = [];
+    }
+  }
+  // Keep the selected voices that the day has.
+  const voices = new Set(saved.clips.map((c) => c.voice));
+  saved.voices = new Set([...saved.voices].filter((v) => voices.has(v)));
+  renderVoiceFilter();
+  renderSavedList();
+}
+
+function renderVoiceFilter() {
+  const counts = {};
+  for (const c of saved.clips) counts[c.voice] = (counts[c.voice] || 0) + 1;
+  const chips = Object.keys(counts).sort().map((v) => {
+    const c = el("md-filter-chip", {label: `${v} (${counts[v]})`, selected: saved.voices.has(v)});
+    // The chip changes its own state; read it after the click.
+    c.addEventListener("click", () => setTimeout(() => {
+      if (c.selected) saved.voices.add(v); else saved.voices.delete(v);
+      renderSavedList();
+    }));
+    return c;
+  });
+  $("voice-filter").replaceChildren(...chips);
+}
+
+function renderSavedList() {
+  const box = $("saved-list");
+  box.replaceChildren();
+  const empty = (text) => box.append(el("div", {class: "empty md-typescale-body-medium"}, text));
+  if (saved.days === null) {
+    $("saved-count").textContent = "";
+    return empty("The worker does not save clips (CLIPS_DIR is not set).");
+  }
+  if (!saved.day) {
+    $("saved-count").textContent = "";
+    return empty("No saved clips yet.");
+  }
+  const q = saved.query.trim().toLowerCase();
+  const shown = saved.clips.filter((c) =>
+    (!saved.voices.size || saved.voices.has(c.voice)) && (!q || c.text.toLowerCase().includes(q)));
+  $("saved-count").textContent = shown.length === saved.clips.length
+    ? `${saved.clips.length} clips` : `${shown.length} of ${saved.clips.length} clips`;
+  if (!shown.length) return empty("No clips match.");
+  const list = el("md-list");
+  shown.forEach((c, i) => {
+    if (i) list.append(el("md-divider"));
+    const url = `saved/${saved.day}/${encodeURIComponent(c.file)}`;
+    const when = c.created ? clock(Date.parse(c.created) / 1000) : "";
+    const info = [c.voice, c.audio_seconds != null ? dur(c.audio_seconds) : null, when].filter(Boolean).join(" · ");
+    list.append(el("md-list-item", {},
+      el("md-icon", {slot: "start"}, "graphic_eq"),
+      el("div", {slot: "headline", class: "clip-text"}, c.text || c.file),
+      el("div", {slot: "supporting-text"}, info),
+      clipActions("saved/" + saved.day + "/" + c.file, url),
+    ));
+  });
+  box.append(list);
+}
+
+$("search").addEventListener("input", (e) => { saved.query = e.target.value; renderSavedList(); });
+$("refresh").addEventListener("click", loadDays);
+
+// The tabs. The last tab is kept in this browser; #saved or #live in the
+// address opens that tab.
+function showTab(name) {
+  $("live").hidden = name !== "live";
+  $("saved").hidden = name !== "saved";
+  try { localStorage.setItem("tab", name); } catch {}
+  if (name === "saved") loadDays();
+}
+$("tabs").addEventListener("change", (e) => showTab(e.target.activeTabIndex === 1 ? "saved" : "live"));
+let firstTab = "live";
+try { firstTab = localStorage.getItem("tab") === "saved" ? "saved" : "live"; } catch {}
+if (location.hash === "#saved" || location.hash === "#live") firstTab = location.hash.slice(1);
+$(firstTab === "saved" ? "tab-saved" : "tab-live").setAttribute("active", "");
+showTab(firstTab);
 
 poll();
 setInterval(poll, POLL_MS);

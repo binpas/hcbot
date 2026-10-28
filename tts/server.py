@@ -35,6 +35,9 @@ password (any user name). It does not show the Markov rankings.
   GET  /           the page (dashboard.html)
   GET  /api/jobs   the jobs and the counts as JSON
   GET  /clips/<id> the saved clip of a recent job (?download=1 to save it)
+  GET  /api/days   the days in CLIPS_DIR, with their number of clips
+  GET  /api/clips?day=YYYY-MM-DD   the saved clips of a day, with their text
+  GET  /saved/<day>/<file>         one saved clip (?download=1 to save it)
 
 When CLIPS_DIR is set, the worker saves each clip there for the operator,
 as <date>/<time>-<id>_<voice>_<text>.ogg (Ogg/Opus, like the bot posts)
@@ -58,6 +61,7 @@ import secrets
 import subprocess
 import threading
 import time
+import urllib.parse
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -98,7 +102,8 @@ JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 JOB_PATH_RE = re.compile(r"^/jobs/([0-9a-f]{32})(/audio)?$")
 CLIPS_DIR = os.environ.get("CLIPS_DIR", "")
 CLIPS_KEEP_DAYS = int(os.environ.get("CLIPS_KEEP_DAYS", "0"))
-DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DATE_DIR_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+CLIP_FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.(ogg|wav)$")
 
 # The model versions are fixed, so an upload to Hugging Face cannot change
 # the worker without a rebuild.
@@ -495,6 +500,64 @@ class Clips:
                     log.warning("clips of %s not deleted: %s", name, e)
 
 
+    def days(self):
+        """The date folders, the newest first, with their number of clips."""
+        try:
+            names = sorted(os.listdir(self.folder), reverse=True)
+        except OSError:
+            return []
+        out = []
+        for name in names:
+            if not DATE_DIR_RE.match(name):
+                continue
+            try:
+                files = os.listdir(os.path.join(self.folder, name))
+            except OSError:
+                continue
+            out.append({"day": name, "count": sum(1 for f in files if CLIP_FILE_RE.match(f))})
+        return out
+
+    def list(self, day):
+        """The clips of a day, the newest first, with the data of their
+        .json files. None for a day that does not exist."""
+        if not DATE_DIR_RE.match(day):
+            return None
+        folder = os.path.join(self.folder, day)
+        try:
+            files = sorted(os.listdir(folder), reverse=True)
+        except OSError:
+            return None
+        out = []
+        for fname in files:
+            if not CLIP_FILE_RE.match(fname):
+                continue
+            meta = {}
+            try:
+                with open(os.path.join(folder, os.path.splitext(fname)[0] + ".json")) as f:
+                    meta = json.load(f)
+            except (OSError, ValueError):
+                pass
+            if not isinstance(meta, dict):
+                meta = {}
+            # <time>-<id>_<voice>_<text>: the name has the voice too.
+            parts = fname.split("_")
+            out.append({
+                "file": fname,
+                "text": str(meta.get("text") or ""),
+                "voice": str(meta.get("voice") or (parts[1] if len(parts) > 1 else "")),
+                "audio_seconds": meta.get("audio_seconds"),
+                "created": meta.get("created"),
+            })
+        return out
+
+    def file(self, day, fname):
+        """The path of a saved clip, or None."""
+        if not DATE_DIR_RE.match(day) or not CLIP_FILE_RE.match(fname):
+            return None
+        path = os.path.join(self.folder, day, fname)
+        return path if os.path.isfile(path) else None
+
+
 def to_ogg(wav):
     """Encodes WAV data as Ogg/Opus, with the bot's settings."""
     p = subprocess.run(
@@ -719,10 +782,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
                        [("WWW-Authenticate", 'Basic realm="hcbot-tts"')])
         return False
 
+    def send_clip(self, path, query):
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except (OSError, TypeError):
+            self.send_body(404, "text/plain", b"not found")
+            return
+        extra = []
+        if query == "download=1":
+            extra.append(("Content-Disposition",
+                          f'attachment; filename="{os.path.basename(path)}"'))
+        ctype = "audio/ogg" if path.endswith(".ogg") else "audio/wav"
+        self.send_body(200, ctype, data, extra)
+
     def do_GET(self):
         if not self.authorized():
             return
         path, _, query = self.path.partition("?")
+        path = urllib.parse.unquote(path)
         srv = self.server.worker
         if path == "/":
             self.send_body(200, "text/html; charset=utf-8", srv.html)
@@ -739,19 +817,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
             self.send_body(200, "application/json", json.dumps(body).encode())
         elif path.startswith("/clips/") and JOB_ID_RE.match(path[7:]):
-            clip = srv.queue.clip(path[7:])
-            try:
-                with open(clip, "rb") as f:
-                    data = f.read()
-            except (OSError, TypeError):
+            self.send_clip(srv.queue.clip(path[7:]), query)
+        elif path == "/api/days":
+            body = {"saving": srv.clips is not None, "days": srv.clips.days() if srv.clips else []}
+            self.send_body(200, "application/json", json.dumps(body).encode())
+        elif path == "/api/clips":
+            day = urllib.parse.parse_qs(query).get("day", [""])[0]
+            clips = srv.clips.list(day) if srv.clips else None
+            if clips is None:
                 self.send_body(404, "text/plain", b"not found")
-                return
-            extra = []
-            if query == "download=1":
-                extra.append(("Content-Disposition",
-                              f'attachment; filename="{os.path.basename(clip)}"'))
-            ctype = "audio/ogg" if clip.endswith(".ogg") else "audio/wav"
-            self.send_body(200, ctype, data, extra)
+            else:
+                self.send_body(200, "application/json", json.dumps({"day": day, "clips": clips}).encode())
+        elif path.startswith("/saved/") and srv.clips:
+            day, _, fname = path[7:].partition("/")
+            self.send_clip(srv.clips.file(day, fname), query)
         else:
             self.send_body(404, "text/plain", b"not found")
 
