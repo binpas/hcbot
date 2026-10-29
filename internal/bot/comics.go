@@ -344,8 +344,8 @@ func (b *Bot) drawComic(guildID string, msgs []*discordgo.Message, background st
 // display name, or the user name.
 func (b *Bot) comicName(guildID string, u *discordgo.User) string {
 	if !u.Bot && u.Discriminator != "0000" { // webhooks have no member
-		if m := b.resolveMember(guildID, u.ID); m != nil && m.Nick != "" {
-			return m.Nick
+		if nick := b.memberNick(guildID, u.ID); nick != "" {
+			return nick
 		}
 	}
 	return cmp.Or(u.GlobalName, u.Username)

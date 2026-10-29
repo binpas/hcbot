@@ -39,6 +39,7 @@ type Bot struct {
 	confirms   map[string]func(*Ctx, []string)
 
 	msgs  *lru[cachedMessage] // audit log message cache
+	nicks *lru[string]        // member nicknames (see nicks.go)
 	media *mediaCache
 	snap  *snapshots
 
@@ -122,6 +123,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
 		msgs:         newLRU[cachedMessage](),
+		nicks:        newLRU[string](),
 		media:        newMediaCache(),
 		snap:         &snapshots{roles: map[string]discordgo.Role{}, threads: map[string]discordgo.Channel{}},
 	}

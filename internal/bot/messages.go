@@ -25,6 +25,9 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		return
 	}
 	b.cacheMessage(m.Message) // for the audit log; bots are marked, not skipped
+	if m.Member != nil {
+		b.seeNick(m.GuildID, m.Author.ID, m.Member.Nick)
+	}
 	if m.Author.Bot {
 		return
 	}

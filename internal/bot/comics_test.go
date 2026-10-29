@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -610,5 +611,31 @@ func TestCharacterPrivate(t *testing.T) {
 	tb.expect(true, "You have not chosen")
 	if c, _ := tb.db.ComicCharacter(tGuild, tMod); c != "secret" {
 		t.Errorf("stored = %q", c)
+	}
+}
+
+func TestComicNickCache(t *testing.T) {
+	tb, _ := newComicBot(t)
+	const gone = "999" // not a member, and not in the member cache
+	var msgs []*discordgo.Message
+	for i := range 4 {
+		msgs = append(msgs, &discordgo.Message{ID: strconv.Itoa(i + 1), Content: "hi", Author: &discordgo.User{ID: gone, Username: "old"}})
+	}
+	tb.api.reset()
+	tb.comicEditor(tGuild, "1", comicDraft{}, msgs, false)
+	tb.comicEditor(tGuild, "1", comicDraft{}, msgs, false)
+	if n := len(tb.api.find("GET", `/guilds/`+tGuild+`/members/`+gone)); n != 1 {
+		t.Errorf("%d member fetches, want 1", n)
+	}
+
+	// A message shows the nickname: no fetch.
+	const seen = "998"
+	tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{ID: "9", GuildID: tGuild, ChannelID: tChGeneral,
+		Content: "yo", Author: &discordgo.User{ID: seen, Username: "seen"}, Member: &discordgo.Member{Nick: "Zap"}}})
+	tb.api.reset()
+	msgs[0].Author = &discordgo.User{ID: seen, Username: "seen"}
+	data, _ := json.Marshal(tb.comicEditor(tGuild, "1", comicDraft{}, msgs[:1], false))
+	if !strings.Contains(string(data), "**Zap**") || len(tb.api.find("GET", `/members/`)) != 0 {
+		t.Errorf("editor = %s, calls %v", data, tb.callList())
 	}
 }

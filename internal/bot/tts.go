@@ -259,8 +259,8 @@ func (b *Bot) spokenText(guildID string, m *discordgo.Message) string {
 		id := userMentionRE.FindStringSubmatch(s)[1]
 		for _, u := range m.Mentions {
 			if u.ID == id {
-				if mem, err := b.s.State.Member(guildID, id); err == nil && mem.Nick != "" {
-					return "@" + mem.Nick
+				if nick, _ := b.cachedNick(guildID, id); nick != "" {
+					return "@" + nick
 				}
 				return "@" + cmp.Or(u.GlobalName, u.Username)
 			}

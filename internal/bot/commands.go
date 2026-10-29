@@ -138,6 +138,9 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 // submit that onRawInteraction read itself; it is nil otherwise.
 func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, fields map[string][]string) {
 	c := &Ctx{b: b, s: s, i: i, fields: fields}
+	if i.Member != nil && i.Member.User != nil {
+		b.seeNick(i.GuildID, i.Member.User.ID, i.Member.Nick)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in interaction %s: %v\n%s", c.name(), r, debug.Stack())
