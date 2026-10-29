@@ -23,6 +23,7 @@ import (
 // Pack is the art: the characters and the backgrounds.
 type Pack struct {
 	chars    []*Character // in cast order, then the custom ones
+	public   []*Character // the chars that comics give to anyone
 	byName   map[string]*Character
 	backs    []*Background
 	problems []string // custom art that could not be used, and why
@@ -33,6 +34,7 @@ type Pack struct {
 type Character struct {
 	Name   string
 	icon   image.Image
+	users  []string // when set, the only users that can use it (private)
 	faces  []part
 	torsos []part
 	bodies []part
@@ -119,6 +121,14 @@ func LoadPack(dir string) (*Pack, error) {
 			err = errors.New("comic: no characters in the art pack")
 		}
 		return nil, err
+	}
+	for _, c := range p.chars {
+		if len(c.users) == 0 {
+			p.public = append(p.public, c)
+		}
+	}
+	if len(p.public) == 0 {
+		return nil, errors.New("comic: all the characters are private; at least one must be public")
 	}
 	return p, nil
 }
@@ -225,6 +235,35 @@ func (p *Pack) Names() []string {
 
 // Has reports whether the pack has a character.
 func (p *Pack) Has(name string) bool { return p.byName[name] != nil }
+
+// usableBy reports whether a user can use the character: it is public, or
+// the user is on its list.
+func (c *Character) usableBy(user string) bool {
+	return len(c.users) == 0 || slices.Contains(c.users, user)
+}
+
+// CanUse reports whether the pack has a character that the user can use.
+func (p *Pack) CanUse(name, user string) bool {
+	c := p.byName[name]
+	return c != nil && c.usableBy(user)
+}
+
+// NamesFor returns the names of the characters that a user can use, in
+// cast order.
+func (p *Pack) NamesFor(user string) []string {
+	var out []string
+	for _, c := range p.usable(user) {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+// Private returns the number of private characters.
+func (p *Pack) Private() int { return len(p.chars) - len(p.public) }
+
+func (p *Pack) usable(user string) []*Character {
+	return slices.DeleteFunc(slices.Clone(p.chars), func(c *Character) bool { return !c.usableBy(user) })
+}
 
 // Backgrounds returns the background names.
 func (p *Pack) Backgrounds() []string {

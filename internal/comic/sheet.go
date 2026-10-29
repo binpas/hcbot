@@ -44,8 +44,10 @@ func (p *Pack) PortraitPNG(name string) ([]byte, error) {
 	return encode(dst)
 }
 
-// SheetPNG draws the head of each character with its name, in cast order.
-func (p *Pack) SheetPNG() ([]byte, error) {
+// SheetPNG draws the head of each character that a user can use, with its
+// name, in cast order.
+func (p *Pack) SheetPNG(user string) ([]byte, error) {
+	chars := p.usable(user)
 	f, err := fonts()
 	if err != nil {
 		return nil, err
@@ -53,12 +55,12 @@ func (p *Pack) SheetPNG() ([]byte, error) {
 	fc := richtext.NewFaces(f, 1)
 	defer fc.Close()
 	const sheetCols, cellW, cellH, iconPx = 8, 110, 96, 56
-	rows := (len(p.chars) + sheetCols - 1) / sheetCols
+	rows := (len(chars) + sheetCols - 1) / sheetCols
 	dst := image.NewRGBA(image.Rect(0, 0, 2*margin+sheetCols*cellW, 2*margin+rows*cellH))
 	draw.Draw(dst, dst.Bounds(), image.NewUniform(colPanel), image.Point{}, draw.Src)
 	st := stCastName
 	st.Size = 14
-	for i, c := range p.chars {
+	for i, c := range chars {
 		x := margin + (i%sheetCols)*cellW
 		y := margin + (i/sheetCols)*cellH
 		b := c.icon.Bounds()

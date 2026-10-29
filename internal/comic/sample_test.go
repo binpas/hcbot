@@ -60,7 +60,7 @@ func TestSample(t *testing.T) {
 	}
 	for name, f := range map[string]func() ([]byte, error){
 		"portrait": func() ([]byte, error) { return p.PortraitPNG("tiki") },
-		"sheet":    p.SheetPNG,
+		"sheet":    func() ([]byte, error) { return p.SheetPNG("") },
 	} {
 		data, err := f()
 		if err != nil {

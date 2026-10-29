@@ -17,7 +17,8 @@ import (
 //	characters/<name>/neutral.png     the character, facing right (required)
 //	characters/<name>/<pose>.png      other poses (see customPoses)
 //	characters/<name>/icon.png        the head for the cast list (optional)
-//	characters/<name>/character.json  {"face": [x, y]} in neutral.png (optional)
+//	characters/<name>/character.json  {"face": [x, y]} in neutral.png, and
+//	                                  {"users": [IDs]} for a private one (optional)
 //	backgrounds/<name>.png or .jpg
 //
 // A file that cannot be used is skipped, and Problems says why.
@@ -50,6 +51,9 @@ var customPoses = map[string]struct{ emotion, intensity float64 }{
 	"self":    {gestPointSelf, 0},
 	"shrug":   {gestShrug, 0},
 }
+
+// userIDRE is a Discord user ID.
+var userIDRE = regexp.MustCompile(`^[0-9]{1,20}$`)
 
 // customNameRE is a character or background name: the folder or file name.
 var customNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
@@ -110,16 +114,30 @@ func (p *Pack) loadCustomCharacter(dir, folder string) {
 		p.problem("%s: %v", where, err)
 		return
 	}
-	var face *[2]int
+	var cfg struct {
+		Face  *[2]int  `json:"face"`
+		Users []string `json:"users"`
+	}
 	if data, err := os.ReadFile(filepath.Join(dir, "character.json")); err == nil {
-		var cfg struct {
-			Face *[2]int `json:"face"`
-		}
+		// A broken file can lose a "users" list, so the character is not
+		// used: it must not become public.
 		if err := json.Unmarshal(data, &cfg); err != nil {
-			p.problem("%s/character.json: %v", where, err)
-		} else {
-			face = cfg.Face
+			p.problem("%s/character.json: %v (the character is not used)", where, err)
+			return
 		}
+	}
+	face := cfg.Face
+	var users []string
+	for _, u := range cfg.Users {
+		if !userIDRE.MatchString(u) {
+			p.problem("%s/character.json: %q is not a Discord user ID", where, u)
+			continue
+		}
+		users = append(users, u)
+	}
+	if len(cfg.Users) > 0 && len(users) == 0 {
+		p.problem("%s/character.json: no user in \"users\" is correct (the character is not used)", where)
+		return
 	}
 	poses := map[string]image.Image{}
 	var icon image.Image
@@ -170,7 +188,7 @@ func (p *Pack) loadCustomCharacter(dir, folder string) {
 			fx, fy = face[0], face[1]
 		}
 	}
-	c := &Character{Name: name, icon: icon}
+	c := &Character{Name: name, icon: icon, users: users}
 	// neutral first, then by name, so that a comic is the same after a
 	// reload.
 	stems := make([]string, 0, len(poses))

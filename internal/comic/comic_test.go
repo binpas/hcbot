@@ -228,7 +228,7 @@ func TestPortraitAndSheet(t *testing.T) {
 	if _, err := p.PortraitPNG("nobody"); !errors.Is(err, ErrUnknownCharacter) {
 		t.Errorf("unknown character: %v", err)
 	}
-	for _, f := range []func() ([]byte, error){func() ([]byte, error) { return p.PortraitPNG("sim") }, p.SheetPNG} {
+	for _, f := range []func() ([]byte, error){func() ([]byte, error) { return p.PortraitPNG("sim") }, func() ([]byte, error) { return p.SheetPNG("") }} {
 		data, err := f()
 		if err != nil || len(data) < 8 || string(data[1:4]) != "PNG" {
 			t.Errorf("png = %d bytes, %v", len(data), err)

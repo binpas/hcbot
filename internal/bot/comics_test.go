@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -545,5 +546,69 @@ func TestComicArtReload(t *testing.T) {
 	tb.expect(true, "old art stays")
 	if !tb.comics.pack.Load().Has("newguy") {
 		t.Error("the art was lost")
+	}
+}
+
+// autocompleteNames returns the /character choices that a user gets.
+func (tb *testBot) autocompleteNames(user, typed string) []string {
+	tb.t.Helper()
+	tb.api.reset()
+	tb.onInteraction(tb.s, tb.interaction(user, discordgo.InteractionApplicationCommandAutocomplete, discordgo.ApplicationCommandInteractionData{
+		Name: "character", Options: []*discordgo.ApplicationCommandInteractionDataOption{
+			{Name: "name", Type: discordgo.ApplicationCommandOptionString, Value: typed, Focused: true}},
+	}))
+	var resp struct {
+		Data struct {
+			Choices []struct {
+				Name string `json:"name"`
+			} `json:"choices"`
+		} `json:"data"`
+	}
+	if calls := tb.api.find("POST", `/interactions/.*/callback`); len(calls) == 1 {
+		_ = json.Unmarshal(calls[0].Body, &resp)
+	}
+	var out []string
+	for _, c := range resp.Data.Choices {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+func TestCharacterPrivate(t *testing.T) {
+	tb, _ := newComicBot(t)
+	dir := filepath.Join(tb.env.ComicArtDir, "custom/characters/secret")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 200, 400)))
+	for name, data := range map[string][]byte{"neutral.png": buf.Bytes(), "character.json": []byte(`{"users": ["` + tMod + `"]}`)} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tb.run(tAdmin, "comicart reload")
+	tb.expect(true, "**4** characters (**1** private)")
+
+	tb.run(tUser, "character", strOpt("name", "secret"))
+	tb.expect(true, "no character named `secret`")
+	if got := tb.autocompleteNames(tUser, "sec"); len(got) != 0 {
+		t.Errorf("choices for another user = %v", got)
+	}
+	if got := tb.autocompleteNames(tMod, "sec"); !slices.Equal(got, []string{"secret"}) {
+		t.Errorf("choices for the owner = %v", got)
+	}
+	tb.run(tMod, "character", strOpt("name", "secret"))
+	tb.expect(true, "now **secret**")
+
+	// Removed from the list: the choice stays, but comics give another one.
+	if err := os.WriteFile(filepath.Join(dir, "character.json"), []byte(`{"users": ["`+tAdmin+`"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tb.run(tAdmin, "comicart reload")
+	tb.run(tMod, "character")
+	tb.expect(true, "You have not chosen")
+	if c, _ := tb.db.ComicCharacter(tGuild, tMod); c != "secret" {
+		t.Errorf("stored = %q", c)
 	}
 }

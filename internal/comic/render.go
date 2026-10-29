@@ -166,8 +166,8 @@ func layout(n int) (castRect image.Rectangle, panels []image.Rectangle, size ima
 	return castRect, panels, size
 }
 
-// assign gives each speaker a character: the chosen one, or one picked
-// from a hash of the speaker ID. Two picked characters are never the
+// assign gives each speaker a character: the chosen one (when they can use
+// it), or a public one picked from a hash of the speaker ID. Two picked characters are never the
 // same, and a picked one is not a chosen one, while there are free
 // characters. The cast is in the order of the first message.
 func (p *Pack) assign(msgs []Message) map[string]*cast {
@@ -179,6 +179,9 @@ func (p *Pack) assign(msgs []Message) map[string]*cast {
 			continue
 		}
 		c := &cast{id: m.Speaker, name: m.Name, avatar: m.Avatar, char: p.byName[m.Character], order: len(order)}
+		if c.char != nil && !c.char.usableBy(m.Speaker) {
+			c.char = nil // a private character that is not theirs
+		}
 		people[m.Speaker] = c
 		order = append(order, c)
 		if c.char != nil {
@@ -189,14 +192,14 @@ func (p *Pack) assign(msgs []Message) map[string]*cast {
 		if c.char != nil {
 			continue
 		}
-		i := int(hash(c.id) % uint64(len(p.chars)))
-		for range len(p.chars) {
-			if !used[p.chars[i]] {
+		i := int(hash(c.id) % uint64(len(p.public)))
+		for range len(p.public) {
+			if !used[p.public[i]] {
 				break
 			}
-			i = (i + 1) % len(p.chars)
+			i = (i + 1) % len(p.public)
 		}
-		c.char = p.chars[i]
+		c.char = p.public[i]
 		used[c.char] = true
 	}
 	return people
@@ -205,7 +208,7 @@ func (p *Pack) assign(msgs []Message) map[string]*cast {
 // CharacterFor returns the character that a speaker gets when they chose
 // none and nobody else in the comic has it.
 func (p *Pack) CharacterFor(speaker string) string {
-	return p.chars[hash(speaker)%uint64(len(p.chars))].Name
+	return p.public[hash(speaker)%uint64(len(p.public))].Name
 }
 
 func hash(s string) uint64 {

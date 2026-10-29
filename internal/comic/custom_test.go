@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -137,5 +138,68 @@ func TestCustomArtOnly(t *testing.T) {
 	}
 	if b := p.byName["solo"].icon.Bounds(); b.Dx() != 40 {
 		t.Errorf("icon = %v, want icon.png", b)
+	}
+}
+
+func TestCustomPrivate(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteTestPack(dir); err != nil {
+		t.Fatal(err)
+	}
+	body := block(200, 400, color.NRGBA{1, 0, 0, 255}, false)
+	writeCustom(t, dir, "characters/zed/neutral.png", body)
+	writeFile(t, dir, "characters/zed/character.json", `{"users": ["5", "bob"]}`)
+	writeCustom(t, dir, "characters/typo/neutral.png", body)
+	writeFile(t, dir, "characters/typo/character.json", `{"users": ["5"`)
+	writeCustom(t, dir, "characters/nobody/neutral.png", body)
+	writeFile(t, dir, "characters/nobody/character.json", `{"users": ["ann"]}`)
+
+	p, err := LoadPack(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Names(); !slices.Equal(got, []string{"bob", "ann", "sim", "zed"}) || p.Private() != 1 {
+		t.Errorf("names = %v, private %d", got, p.Private())
+	}
+	problems := strings.Join(p.Problems(), "\n")
+	for _, want := range []string{`zed/character.json: "bob" is not a Discord user ID`,
+		"typo/character.json: unexpected end", `nobody/character.json: no user in "users"`} {
+		if !strings.Contains(problems, want) {
+			t.Errorf("problems have no %q:\n%s", want, problems)
+		}
+	}
+	if got := p.NamesFor("1"); slices.Contains(got, "zed") {
+		t.Errorf("names for another user = %v", got)
+	}
+	if got := p.NamesFor("5"); !slices.Contains(got, "zed") {
+		t.Errorf("names for the owner = %v", got)
+	}
+	if p.CanUse("zed", "1") || !p.CanUse("zed", "5") || !p.CanUse("ann", "1") {
+		t.Error("CanUse")
+	}
+	cast := p.assign([]Message{{Speaker: "1", Character: "zed"}, {Speaker: "5", Character: "zed"}})
+	if cast["1"].char.Name == "zed" || cast["5"].char.Name != "zed" {
+		t.Errorf("cast: 1 is %s, 5 is %s", cast["1"].char.Name, cast["5"].char.Name)
+	}
+	// Comics never give it at random, also when the public ones are used.
+	var msgs []Message
+	for i := range 20 {
+		msgs = append(msgs, Message{Speaker: strconv.Itoa(100 + i)})
+	}
+	for id, c := range p.assign(msgs) {
+		if c.char.Name == "zed" || p.CharacterFor(id) == "zed" {
+			t.Errorf("speaker %s got zed", id)
+		}
+	}
+	if _, err := p.SheetPNG("1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only private characters: no pack.
+	only := t.TempDir()
+	writeCustom(t, only, "characters/zed/neutral.png", body)
+	writeFile(t, only, "characters/zed/character.json", `{"users": ["5"]}`)
+	if _, err := LoadPack(only); err == nil || !strings.Contains(err.Error(), "private") {
+		t.Errorf("err = %v", err)
 	}
 }

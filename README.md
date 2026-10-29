@@ -691,7 +691,7 @@ Add your own characters and backgrounds in `custom/` in the art folder (for exam
 custom/characters/bob/neutral.png      required
 custom/characters/bob/happy.png        optional poses (see the table)
 custom/characters/bob/icon.png         optional
-custom/characters/bob/character.json   optional: {"face": [95, 60]}
+custom/characters/bob/character.json   optional: {"face": [95, 60], "users": ["123456789012345678"]}
 custom/backgrounds/park.png            or .jpg
 ```
 
@@ -724,6 +724,8 @@ How the art is drawn, so that it looks right:
 - **The face point** is where the balloon tail points, in `neutral.png` pixels: `{"face": [x, y]}` in `character.json`. Without it, the bot uses the middle of the top fifth of `neutral.png`. For poses of another size, the point is scaled.
 - **The icon** is shown in the cast list and in `/character`. Without `icon.png`, the bot cuts a square around the face point of `neutral.png`.
 - **A background** is stretched to the square panel, and zoomed up to 2× into the left part, at the middle height. Keep the important parts away from the right edge. The characters cover the bottom half, and the balloons the top half.
+**Private characters:** add a `"users"` list of Discord user IDs to `character.json` (in Discord, turn on Developer Mode, then right-click a user and select **Copy User ID**). Only those users can choose the character with `/character`, and only they see it in the autocomplete and in **Show all**. For other users, `/character` says that there is no character with that name. Comics never give a private character at random. Everyone who reads a comic sees the character in it. When you remove a user from the list (then `/comicart reload`), comics give that user a random character again; their choice comes back when you add them again. If `character.json` has an error, or no ID in `users` is correct, the character is not used, so that it cannot become public by mistake. At least one character must be public.
+
 - Only use art that you made or may use. The art goes only to the servers where the bot posts the comics.
 
 ---

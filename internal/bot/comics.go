@@ -871,7 +871,7 @@ func (b *Bot) cmdCharacter(c *Ctx) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	text := ""
 	switch {
-	case set && !pack.Has(name):
+	case set && !pack.CanUse(name, c.UserID()): // a private one looks missing
 		c.ReplyComplex(true, []*discordgo.MessageEmbed{errEmbed(fmt.Sprintf("There is no character named `%s`.", cutText(name, 40)))},
 			characterButtons())
 		return
@@ -889,7 +889,7 @@ func (b *Bot) cmdCharacter(c *Ctx) {
 		}
 		name = cur
 		text = fmt.Sprintf("Your character in comics is **%s**. Use `/character name:` to change it.", name)
-		if !pack.Has(name) {
+		if !pack.CanUse(name, c.UserID()) {
 			name = pack.CharacterFor(c.UserID())
 			text = fmt.Sprintf("You have not chosen a character, so comics give you one. Usually it is **%s**. Use `/character name:` to choose one.", name)
 		}
@@ -916,7 +916,7 @@ func (b *Bot) autocompleteCharacter(c *Ctx) {
 	typed, _ := c.Str("name")
 	typed = strings.ToLower(strings.TrimSpace(typed))
 	var choices []*discordgo.ApplicationCommandOptionChoice
-	for _, name := range b.comics.pack.Load().Names() {
+	for _, name := range b.comics.pack.Load().NamesFor(c.UserID()) {
 		if strings.Contains(name, typed) && len(choices) < 25 {
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: name, Value: name})
 		}
@@ -931,7 +931,7 @@ func (b *Bot) onCharacterAll(c *Ctx) {
 	if b.comics == nil {
 		return
 	}
-	data, err := b.comics.pack.Load().SheetPNG()
+	data, err := b.comics.pack.Load().SheetPNG(c.UserID())
 	if err != nil {
 		c.logErr("character: sheet", err)
 		c.Reply(true, errEmbed("I could not draw the characters."))
@@ -973,8 +973,8 @@ func (b *Bot) cmdComicArtReload(c *Ctx) {
 	}
 	b.comics.pack.Store(pack)
 	logComicProblems(pack)
-	e := makeEmbed("🎨 Comic art reloaded", fmt.Sprintf("**%d** characters and **%d** backgrounds.",
-		len(pack.Names()), len(pack.Backgrounds())), colourGreen)
+	e := makeEmbed("🎨 Comic art reloaded", fmt.Sprintf("**%d** characters (**%d** private) and **%d** backgrounds.",
+		len(pack.Names()), pack.Private(), len(pack.Backgrounds())), colourGreen)
 	if pr := pack.Problems(); len(pr) > 0 {
 		var lines []string
 		for _, p := range pr[:min(len(pr), 15)] {
