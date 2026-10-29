@@ -213,6 +213,15 @@ var schema = []string{
 		character TEXT NOT NULL,
 		PRIMARY KEY (guild_id, user_id)
 	)`,
+	// The server nicknames that the bot saw, for comic and spoken names.
+	// They expire 30 days after the bot last saw the member. Go bot only.
+	`CREATE TABLE IF NOT EXISTS member_nicks (
+		guild_id TEXT NOT NULL,
+		user_id  TEXT NOT NULL,
+		nick     TEXT NOT NULL,
+		seen_at  INTEGER NOT NULL,
+		PRIMARY KEY (guild_id, user_id)
+	)`,
 	`CREATE TABLE IF NOT EXISTS markov_blocklist (
 		phrase     TEXT PRIMARY KEY,
 		created_by INTEGER,

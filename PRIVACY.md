@@ -1,6 +1,6 @@
 # HEALTH Bot — Privacy Policy
 
-_Last updated: September 25, 2026_
+_Last updated: October 29, 2026_
 
 This policy tells you what data HEALTH Bot ("the bot") collects, why it collects the data, and how it keeps the data. The bot is operated by binpas ("the operator").
 
@@ -14,6 +14,7 @@ The bot keeps only the data that it needs for its features:
 - **Ticket records:** ticket numbers, open and close times, and notes that staff write about a ticket.
 - **Server settings:** the settings that administrators set with `/setup`, reaction-role menus, auto-reactions, trigger words, and permission templates.
 - **Comic character:** the comic character that you chose with `/character`, until you reset it.
+- **Server nicknames:** the server nickname of members that the bot sees in messages or commands, so that comics and spoken text show the correct names. The bot deletes a nickname 30 days after it last saw the member.
 
 ## 2. Message content
 
@@ -33,7 +34,7 @@ The data is kept in one database on a server that the operator controls. Only th
 
 ## 6. How long the bot keeps data
 
-The bot keeps data until a server administrator or the operator deletes it. If the bot leaves a server, the operator can delete the data for that server.
+The bot keeps data until a server administrator or the operator deletes it. Server nicknames are deleted automatically 30 days after the bot last saw the member. If the bot leaves a server, the operator can delete the data for that server.
 
 ## 7. Your choices
 

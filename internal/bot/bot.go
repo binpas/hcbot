@@ -39,7 +39,7 @@ type Bot struct {
 	confirms   map[string]func(*Ctx, []string)
 
 	msgs  *lru[cachedMessage] // audit log message cache
-	nicks *lru[string]        // member nicknames (see nicks.go)
+	nicks *nickCache          // member nicknames (see nicks.go)
 	media *mediaCache
 	snap  *snapshots
 
@@ -123,10 +123,11 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		backupDir:    "backups",
 		assetDelay:   1200 * time.Millisecond,
 		msgs:         newLRU[cachedMessage](),
-		nicks:        newLRU[string](),
+		nicks:        newNickCache(),
 		media:        newMediaCache(),
 		snap:         &snapshots{roles: map[string]discordgo.Role{}, threads: map[string]discordgo.Channel{}},
 	}
+	b.loadNicks()
 	b.registerSetup()
 	b.registerConfirm()
 	b.registerModeration()
@@ -171,6 +172,7 @@ func (b *Bot) Open() error {
 func (b *Bot) Close() error {
 	close(b.stop)
 	b.flushMarkov()
+	b.saveNicks()
 	return b.s.Close()
 }
 
@@ -197,6 +199,7 @@ func (b *Bot) startLoops() {
 		b.every(30*time.Second, b.runJailReleases)
 		b.daily(4, 0, b.runDailyBackup)
 		b.every(markovFlushEvery, b.flushMarkov)
+		b.every(nickSaveEvery, b.saveNicks)
 		b.resumeTTSJobs()
 	})
 }
