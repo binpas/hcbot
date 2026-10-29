@@ -216,7 +216,7 @@ func TestComicMention(t *testing.T) {
 	}
 }
 
-var comicIDRE = regexp.MustCompile(`comicx:(\d+):`)
+var comicIDRE = regexp.MustCompile(`comicsel:(\d+)"`)
 
 // editorBodies returns the bodies of the editor messages (the menu answer,
 // the updates, and the edits), in order.
@@ -255,12 +255,12 @@ func TestComicEditor(t *testing.T) {
 		t.Errorf("flags = %d", resp.Data.Flags)
 	}
 	ed := bodies[0]
-	for _, want := range []string{"comicx:", ":1001\"", ":1007\"", "comicbg:", "comicpre:", "comicpost:", "comicno:", `lol \\*\\*bold\\*\\* @user`, "beep boop"} {
+	for _, want := range []string{"comicsel:", `"value":"1001","description":"","default":true`, `"value":"1007"`, "comicbg:", "comicpre:", "comicpost:", "comicno:", `lol \\*\\*bold\\*\\* @user`, "beep boop"} {
 		if !strings.Contains(ed, want) {
 			t.Errorf("editor has no %s: %s", want, ed)
 		}
 	}
-	for _, skip := range []string{":1005\"", ":1006\""} {
+	for _, skip := range []string{`"value":"1005"`, `"value":"1006"`} {
 		if strings.Contains(ed, skip) {
 			t.Errorf("editor has the skipped message %s", skip)
 		}
@@ -271,16 +271,28 @@ func TestComicEditor(t *testing.T) {
 	}
 	id := m[1]
 
-	// Remove one message, then add it back.
+	// Unselect two messages in the menu (one answer, deferred first).
 	tb.api.reset()
 	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
-	tb.click(tUser, "comicx:"+id+":1004")
+	tb.click(tUser, "comicsel:"+id, "1001", "1003", "1007")
+	if rs := tb.replies(); len(rs) == 0 || rs[0].Kind != "defer-update" {
+		t.Errorf("select replies = %+v", rs)
+	}
 	ed = strings.Join(tb.editorBodies(), "")
-	if !strings.Contains(ed, `"type":7`) || !strings.Contains(ed, "~~**healthbot**: beep boop~~") || !strings.Contains(ed, "Add back") {
-		t.Errorf("after remove: %s", ed)
+	for _, want := range []string{"~~**healthbot**: beep boop~~", "~~**nopic**:", `"value":"1004","description":"","default":false`, `"value":"1003","description":"","default":true`} {
+		if !strings.Contains(ed, want) {
+			t.Errorf("after the select, no %s: %s", want, ed)
+		}
 	}
 	if g := tb.api.find("GET", `/channels/`+tChGeneral+`/messages`); len(g) != 1 || !strings.Contains(g[0].Query, "before=1008") {
 		t.Errorf("reread = %+v", g)
+	}
+	// Select one of them again.
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.click(tUser, "comicsel:"+id, "1001", "1002", "1003", "1007")
+	if ed = strings.Join(tb.editorBodies(), ""); strings.Contains(ed, "~~**nopic**") || !strings.Contains(ed, "~~**healthbot**") {
+		t.Errorf("after the second select: %s", ed)
 	}
 
 	// Background, then Preview: the kept messages, with the image.
@@ -320,7 +332,7 @@ func TestComicEditor(t *testing.T) {
 	}
 	// The editor is gone.
 	tb.api.reset()
-	tb.click(tUser, "comicx:"+id+":1001")
+	tb.click(tUser, "comicsel:"+id, "1001")
 	if ed = strings.Join(tb.editorBodies(), ""); !strings.Contains(ed, "expired") {
 		t.Errorf("after post, a click = %s", ed)
 	}

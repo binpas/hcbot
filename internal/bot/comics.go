@@ -129,7 +129,7 @@ func (b *Bot) registerComics() {
 		perm: permAdmin, handler: b.cmdComicArtReload,
 	})
 	for id, h := range map[string]func(*Ctx){
-		"comicx": b.onComicToggle, "comicbg": b.onComicBackground, "comicpre": b.onComicPreview,
+		"comicsel": b.onComicSelect, "comicbg": b.onComicBackground, "comicpre": b.onComicPreview,
 		"comicpost": b.onComicPost, "comicno": b.onComicCancel,
 		"charall": b.onCharacterAll, "charreset": b.onCharacterReset,
 	} {
@@ -604,29 +604,39 @@ func (b *Bot) cmdComicHere(c *Ctx) {
 // Cancel. preview adds the image "preview.png".
 func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Message, preview bool) []discordgo.MessageComponent {
 	parts := []discordgo.MessageComponent{discordgo.TextDisplay{Content: "### 🎞️ Comic editor\n" +
-		"Remove the messages that you do not want. **Preview** shows the comic only to you. **Post** sends it to the channel."}}
+		"Select the messages for the comic in the first menu. **Preview** shows the comic only to you. **Post** sends it to the channel."}}
 	kept := 0
+	var lines []string
+	var picks []discordgo.SelectMenuOption
 	for _, m := range msgs {
 		pic, hasPic := comicPicture(m)
-		text := escapeMarkdown(cutText(b.comicText(guildID, m, pic), 150))
+		text := cutText(b.comicText(guildID, m, pic), 150)
 		switch {
 		case hasPic && pic.spoiler:
 			text = strings.TrimSpace(text + " 🖼️ spoiler")
 		case hasPic:
 			text = strings.TrimSpace(text + " 🖼️ image")
 		}
-		line := fmt.Sprintf("**%s**: %s", escapeMarkdown(b.comicName(guildID, m.Author)), text)
-		btn := discordgo.Button{Label: "Remove", Style: discordgo.SecondaryButton, CustomID: "comicx:" + id + ":" + m.ID}
-		if slices.Contains(d.Removed, m.ID) {
+		name := b.comicName(guildID, m.Author)
+		line := fmt.Sprintf("**%s**: %s", escapeMarkdown(name), escapeMarkdown(text))
+		removed := slices.Contains(d.Removed, m.ID)
+		if removed {
 			line = "~~" + line + "~~"
-			btn.Label, btn.Style = "Add back", discordgo.SuccessButton
 		} else {
 			kept++
 		}
-		parts = append(parts, discordgo.Section{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: line}}, Accessory: btn})
+		lines = append(lines, line)
+		// A menu shows plain text, up to 100 characters.
+		picks = append(picks, discordgo.SelectMenuOption{Label: cutText(name+": "+text, 100), Value: m.ID, Default: !removed})
 	}
 	if len(msgs) == 0 {
 		parts = append(parts, discordgo.TextDisplay{Content: "-# The messages were deleted."})
+	} else {
+		none := 0
+		parts = append(parts, discordgo.TextDisplay{Content: strings.Join(lines, "\n")},
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{
+				MenuType: discordgo.StringSelectMenu, CustomID: "comicsel:" + id, Placeholder: "Messages in the comic",
+				MinValues: &none, MaxValues: len(picks), Options: picks}}})
 	}
 	options := []discordgo.SelectMenuOption{{Label: "Random background", Value: comicRandom, Default: d.Background == ""}}
 	for _, name := range b.comics.pack.Load().Backgrounds() {
@@ -660,13 +670,10 @@ func comicNotice(text string) []discordgo.MessageComponent {
 	return []discordgo.MessageComponent{discordgo.Container{Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: text}}}}
 }
 
-// updateComic replaces the editor message (the answer to a click).
+// updateComic replaces the editor message and removes its image. The
+// editor's handlers defer first (loadComic), so a slow answer cannot fail.
 func (c *Ctx) updateComic(components []discordgo.MessageComponent) {
-	c.markResponded()
-	c.logErr("comic: update", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{Components: components, Attachments: &[]*discordgo.MessageAttachment{}},
-	}))
+	c.editComic(components, nil)
 }
 
 // editComic replaces the editor message after DeferUpdate, with an
@@ -681,13 +688,14 @@ func (c *Ctx) editComic(components []discordgo.MessageComponent, files []*discor
 	c.logErr("comic: edit", err)
 }
 
-// loadComic reads the draft of an editor click. It answers and returns
-// false when the draft is gone.
+// loadComic defers the answer to an editor click, then reads its draft. It
+// answers and returns false when the draft is gone.
 func (b *Bot) loadComic(c *Ctx) (string, comicDraft, bool) {
 	var d comicDraft
 	if b.comics == nil || len(c.Args) < 1 {
 		return "", d, false
 	}
+	c.DeferUpdate()
 	n, _ := strconv.ParseInt(c.Args[0], 10, 64)
 	payload, ok, err := b.db.LoadPending(n, "comic", c.UserID())
 	if err == nil && ok {
@@ -747,17 +755,15 @@ func (b *Bot) redrawComic(c *Ctx, id string, d comicDraft) {
 	c.updateComic(b.comicEditor(c.GuildID(), id, d, msgs, false))
 }
 
-func (b *Bot) onComicToggle(c *Ctx) {
+// onComicSelect is the message menu: the messages that are not selected
+// are removed.
+func (b *Bot) onComicSelect(c *Ctx) {
 	id, d, ok := b.loadComic(c)
-	if !ok || len(c.Args) < 2 {
+	if !ok {
 		return
 	}
-	msgID := c.Args[1]
-	if i := slices.Index(d.Removed, msgID); i >= 0 {
-		d.Removed = slices.Delete(d.Removed, i, i+1)
-	} else if slices.Contains(d.IDs, msgID) {
-		d.Removed = append(d.Removed, msgID)
-	}
+	picked := c.Values()
+	d.Removed = slices.DeleteFunc(slices.Clone(d.IDs), func(id string) bool { return slices.Contains(picked, id) })
 	if b.saveComic(c, id, d) {
 		b.redrawComic(c, id, d)
 	}
@@ -792,7 +798,6 @@ func (b *Bot) onComicPreview(c *Ctx) {
 	if !ok {
 		return
 	}
-	c.DeferUpdate()
 	msgs, data, err := b.comicImage(c, d)
 	if err != nil {
 		c.editComic(append(b.comicEditor(c.GuildID(), id, d, msgs, false),
@@ -820,7 +825,6 @@ func (b *Bot) onComicPost(c *Ctx) {
 		c.updateComic(append(b.comicEditor(c.GuildID(), id, d, msgs, false), discordgo.TextDisplay{Content: "-# " + waitMessage(w)}))
 		return
 	}
-	c.DeferUpdate()
 	_, data, err := b.comicImage(c, d)
 	if err != nil {
 		c.editComic(comicNotice(comicFailure("comic: post", err)), nil)

@@ -333,7 +333,7 @@ Use only the voices of people who agree. Do not use `/say` to imitate a real per
 | Command | Access | Description |
 |---|---|---|
 | `/comic [count]` | everyone | Draws the last `count` messages of the channel (1 to `COMIC_MAX_MESSAGES`, default 4) as a comic, and posts it. `@BotName comic [count]` does the same. |
-| **Apps → Start comic here** (right-click a message) | everyone | Opens a private editor with that message and the next ones (at most 10). Remove the messages that you do not want (**Add back** undoes it), select a background, and use **Preview** to see the comic. Only you see the editor and the preview. **Post** sends the comic to the channel, with "Comic by" and your name (no ping). The editor closes after 14 minutes. |
+| **Apps → Start comic here** (right-click a message) | everyone | Opens a private editor with that message and the next ones (at most 10). Unselect the messages that you do not want in the message menu (you can change many at once), select a background, and use **Preview** to see the comic. Only you see the editor and the preview. **Post** sends the comic to the channel, with "Comic by" and your name (no ping). The editor closes after 14 minutes. |
 | `/character [name]` | everyone | Without a name, shows your character. With a name, sets it (type to see the names). **Show all** shows all characters, and **Reset** goes back to an automatic character. |
 | `/comicart reload` | admin only | Reads the comic art again, so that new [custom characters and backgrounds](#custom-comic-art) work without a restart. The reply lists the files that cannot be used, and why. If the art folder cannot be read, the old art stays. |
 
