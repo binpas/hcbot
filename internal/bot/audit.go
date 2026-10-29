@@ -88,6 +88,12 @@ func (c *lru[V]) get(key string) (V, bool) {
 	return zero, false
 }
 
+func (c *lru[V]) size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.order.Len()
+}
+
 func (c *lru[V]) pop(key string) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -144,6 +150,13 @@ func (c *mediaCache) put(id string, files []cachedFile, maxCount int, maxTotal i
 		delete(c.items, old.id)
 		c.total -= old.size
 	}
+}
+
+// bytes is the size of the cached files.
+func (c *mediaCache) bytes() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total
 }
 
 func (c *mediaCache) pop(id string) []cachedFile {

@@ -40,8 +40,11 @@ type Env struct {
 	YtdlpCookies string
 
 	// TTSURL is the text to speech worker for /say. Empty turns /say off.
-	TTSURL   string
-	TTSToken string
+	TTSURL string
+	// MetricsAddr is where the bot serves Prometheus metrics (/metrics),
+	// for example ":9101". Empty serves none.
+	MetricsAddr string
+	TTSToken    string
 
 	// ComicArtDir is the art pack for /comic (deploy/comic-art.sh). When
 	// it has no art, the comic commands are not registered.
@@ -63,6 +66,7 @@ func LoadEnv() Env {
 		GiphyKey:           strings.TrimSpace(os.Getenv("GIPHY_API_KEY")),
 		YtdlpCookies:       strings.TrimSpace(os.Getenv("YTDLP_COOKIES")),
 		TTSURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("TTS_URL")), "/"),
+		MetricsAddr:        strings.TrimSpace(os.Getenv("METRICS_ADDR")),
 		TTSToken:           strings.TrimSpace(os.Getenv("TTS_TOKEN")),
 		ComicArtDir:        envStr("COMIC_ART_DIR", "comic"),
 	}

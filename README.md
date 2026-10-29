@@ -115,6 +115,7 @@ GIPHY_API_KEY=
 YTDLP_COOKIES=
 TTS_URL=
 TTS_TOKEN=
+METRICS_ADDR=
 ```
 
 | Key | Description |
@@ -130,6 +131,7 @@ TTS_TOKEN=
 | `YTDLP_COOKIES` | A cookies file for yt-dlp, for [video downloads](#video-downloads) (for example `youtube-cookies.txt`, relative to the working folder). When it is not set, yt-dlp uses no cookies. |
 | `TTS_URL` | The address of the [text to speech worker](#text-to-speech), for example `http://host.docker.internal:8765`. When it is not set, `/say` and `/voices` are not registered. |
 | `TTS_TOKEN` | The secret token of the text to speech worker. It must be the same as `TTS_TOKEN` in the worker's `.env`. |
+| `METRICS_ADDR` | Where the bot serves [Prometheus metrics](#metrics), for example `:9101`. When it is not set, the bot serves no metrics and opens no port. |
 | `COMIC_ART_DIR` | The folder with the [comic art](#comic-art) (default `comic`, relative to the working folder). When it has no art, or Message Content is off, the comic commands are not registered. |
 
 Keep `.env` private: the token gives full control of the bot, and the GIPHY key and the TTS token are also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
@@ -645,7 +647,7 @@ The image package on GHCR is private. Give TrueNAS a login for it once: make a G
 
 To update, use **Update** on the app (it gets the new `latest`), or set a `sha-<commit>` tag in the YAML. To update a download tool, change its version and checksum in the `Dockerfile`. The `yt-dlp` workflow (`.github/workflows/yt-dlp.yml`) does this for yt-dlp each Monday: it checks the release signature with the key in `deploy/yt-dlp-signing-key.asc`, commits the new version to `main`, and builds a new image. You must still update the app to use it.
 
-The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports.
+The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports, except the [metrics](#metrics) port when `METRICS_ADDR` is set.
 
 To run `hcbot-train` in the container, use the app shell, or `docker exec -it hcbot hcbot-train ...`.
 
@@ -732,6 +734,33 @@ How the art is drawn, so that it looks right:
 - Only use art that you made or may use. The art goes only to the servers where the bot posts the comics.
 
 ---
+
+## Metrics
+
+With `METRICS_ADDR` (for example `:9101`), the bot serves [Prometheus](https://prometheus.io/) metrics at `/metrics`. Open the port only on your local network: the metrics have no user data, but they show what the bot does. The labels hold only the names of commands, features, and results, never user, server, or channel names or IDs.
+
+| Metric | What it shows |
+|---|---|
+| `hcbot_build_info{version}` | The running commit. |
+| `hcbot_gateway_connected`, `hcbot_gateway_latency_seconds`, `hcbot_gateway_events_total{event}` | The connection to Discord: connected (1 or 0), the heartbeat time, and the connects, disconnects, and resumes. |
+| `hcbot_interactions_total{kind,name,result}` | Commands, buttons, menus, forms, and autocompletes. `result` is `answered`, `no_answer`, or `panic`. |
+| `hcbot_interaction_answer_seconds{kind,name}` | The time until the first answer. Discord fails an interaction after 3 seconds. |
+| `hcbot_handler_seconds{handler}` | The time of the message and reaction handlers. |
+| `hcbot_discord_requests_total{host,route,method,status}`, `hcbot_discord_request_seconds{host,route}` | The HTTP requests to Discord's API (`api`), its file server (`cdn`), and other hosts (`other`). The routes have no IDs. A `429` status is a rate limit. |
+| `hcbot_comics_total{source,result}`, `hcbot_comic_seconds` | Comics from `/comic` (`slash`), `@Bot comic` (`mention`), and the editor (`preview`, `post`), and the draw time. |
+| `hcbot_curated_total{result}`, `hcbot_curated_files_total{result}` | Curated posts, and their copied files (`copied`, `too_large`, `failed`). |
+| `hcbot_tts_jobs_total{result}`, `hcbot_tts_job_seconds` | `/say` clips, and the time from the request to the posted clip. |
+| `hcbot_downloads_total{result}`, `hcbot_download_bytes` | `/download` requests, and the size of the posted files. |
+| `hcbot_markov_replies_total{kind}`, `hcbot_markov_rank_seconds` | Markov chat replies (`mention`, `chance`), and the time of a rank request. |
+| `hcbot_triggers_total`, `hcbot_autoreacts_total` | Triggers that answered, and autoreact emotes. |
+| `hcbot_db_bytes`, `hcbot_markov_db_bytes` | The size of the databases. |
+| `hcbot_backups_total{result}`, `hcbot_last_backup_timestamp_seconds` | Database backups. Use the time for an alert when backups stop. |
+| `hcbot_nick_cache_entries`, `hcbot_nick_lookups_total{result}`, `hcbot_message_cache_entries`, `hcbot_media_cache_bytes` | The caches. |
+| `go_*`, `process_*` | Go memory, goroutines, garbage collection, CPU, and open files. |
+
+The [text to speech worker](#text-to-speech) serves its own metrics at `/metrics` on its dashboard port (8766), with no login (they have no text): `hcbot_tts_jobs{state}` (queued and running), `hcbot_tts_clips_total{result}`, `hcbot_tts_generate_seconds` (the time to make a clip), `hcbot_tts_rank_requests_total{result}`, `hcbot_tts_rank_seconds`, `hcbot_tts_voices`, and `hcbot_tts_gpu_memory_bytes{kind}`.
+
+`deploy/monitoring/` has a Prometheus and Grafana app for a TrueNAS host on the same network (`compose.yaml`, with the steps in it), the scrape config (`prometheus.yml`), and a Grafana dashboard for the bot and the worker (`grafana/dashboards/hcbot.json`).
 
 ## Development and tests
 

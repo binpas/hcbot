@@ -32,7 +32,11 @@ services:
     # is open only on IPv4.
     extra_hosts:
       - "host.docker.internal:172.16.0.1"
-    # The bot only makes outbound connections. It has no ports.
+    # The bot only makes outbound connections. With METRICS_ADDR=:9101 in
+    # .env, it serves Prometheus metrics: publish the port on the host's
+    # LAN address only (README.md, "Metrics").
+    # ports:
+    #   - "192.168.1.10:9101:9101"
     read_only: true
     tmpfs:
       # /download keeps its files and the yt-dlp cache here.

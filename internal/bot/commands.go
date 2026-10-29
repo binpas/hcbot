@@ -143,10 +143,12 @@ func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCr
 		b.seeNick(i.GuildID, i.Member.User.ID, i.Member.Nick)
 	}
 	defer func() {
-		if r := recover(); r != nil {
+		r := recover()
+		if r != nil {
 			log.Printf("panic in interaction %s: %v\n%s", c.name(), r, debug.Stack())
 		}
 		c.logSlow()
+		c.observe(r != nil)
 	}()
 
 	switch i.Type {
@@ -270,12 +272,9 @@ const slowAnswer = 2 * time.Second
 // logSlow logs an interaction whose first answer (or, with no answer, its
 // handler) took slowAnswer or more, to find what makes the bot slow.
 func (c *Ctx) logSlow() {
-	what := c.name()
-	switch c.i.Type {
-	case discordgo.InteractionMessageComponent:
-		what = "component " + strings.SplitN(c.i.MessageComponentData().CustomID, ":", 2)[0]
-	case discordgo.InteractionModalSubmit:
-		what = "modal " + strings.SplitN(c.i.ModalSubmitData().CustomID, ":", 2)[0]
+	kind, what := c.kindName()
+	if kind == "component" || kind == "modal" {
+		what = kind + " " + what
 	}
 	switch total := time.Since(c.start); {
 	case c.responded && c.answerIn >= slowAnswer:
@@ -283,6 +282,43 @@ func (c *Ctx) logSlow() {
 	case !c.responded && total >= slowAnswer:
 		log.Printf("slow: %s: no answer after %v", what, total.Round(time.Millisecond))
 	}
+}
+
+// kindName is the kind of an interaction (command, autocomplete,
+// component, modal) and its name: the command, or the custom ID prefix.
+func (c *Ctx) kindName() (kind, name string) {
+	switch c.i.Type {
+	case discordgo.InteractionMessageComponent:
+		return "component", strings.SplitN(c.i.MessageComponentData().CustomID, ":", 2)[0]
+	case discordgo.InteractionModalSubmit:
+		return "modal", strings.SplitN(c.i.ModalSubmitData().CustomID, ":", 2)[0]
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		return "autocomplete", c.name()
+	}
+	return "command", c.name()
+}
+
+// observe counts an interaction and its answer time in the metrics.
+func (c *Ctx) observe(panicked bool) {
+	kind, name := c.kindName()
+	result := "answered"
+	switch {
+	case panicked:
+		result = "panic"
+	case !c.responded:
+		result = "no_answer"
+	}
+	c.b.m.interactions.WithLabelValues(kind, name, result).Inc()
+	if c.responded {
+		c.b.m.answerSeconds.WithLabelValues(kind, name).Observe(c.answerIn.Seconds())
+	}
+}
+
+// handlerDone logs a slow event handler and notes its time in the
+// metrics (with defer).
+func (b *Bot) handlerDone(handler string, start time.Time) {
+	logSlow(strings.ReplaceAll(handler, "_", " ")+" handler", start)
+	b.observeHandler(handler, start)
 }
 
 // logSlow logs an event handler that took slowAnswer or more.

@@ -1,0 +1,19 @@
+# Prometheus for the HEALTH bot (see compose.yaml). Change the addresses
+# to the bot's host: the bot's METRICS_ADDR port, and the text to speech
+# worker's dashboard port (its /metrics needs no login).
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: hcbot
+    static_configs:
+      - targets: ["192.168.4.3:9101"]
+        labels: {instance: hcbot}
+  - job_name: hcbot-tts
+    static_configs:
+      - targets: ["192.168.4.3:8766"]
+        labels: {instance: hcbot-tts}
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

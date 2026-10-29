@@ -533,7 +533,11 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 			log.Printf("say: status: %v", err)
 		}
 	}
-	finish := func(errMsg string) {
+	finish := func(result, errMsg string) {
+		b.m.ttsJobs.WithLabelValues(result).Inc()
+		if result == "ok" {
+			b.m.ttsSeconds.Observe(time.Since(j.Created).Seconds())
+		}
 		if errMsg != "" {
 			status(errEmbed(errMsg))
 		}
@@ -554,7 +558,7 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 		st, err := b.ttsStatus(j.WorkerID)
 		switch {
 		case errors.Is(err, errTTSGone):
-			finish("The speech worker lost the clip. Try again.")
+			finish("lost", "The speech worker lost the clip. Try again.")
 			return
 		case err != nil:
 			if !logged {
@@ -569,7 +573,7 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 			if st.Error == "unknown voice" {
 				msg = fmt.Sprintf("There is no voice named `%s`. Use `/voices` to see them.", j.Voice)
 			}
-			finish(msg)
+			finish("failed", msg)
 			return
 		case st.State == "running" && shown != 0:
 			shown = 0
@@ -582,7 +586,7 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 		select {
 		case <-time.After(b.ttsPollEvery):
 		case <-deadline.C:
-			finish("The speech queue took too long. Try again later.")
+			finish("timeout", "The speech queue took too long. Try again later.")
 			return
 		case <-b.stop:
 			return
@@ -594,27 +598,27 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 	wav, err := b.ttsAudio(ctx, j.WorkerID)
 	if err != nil {
 		log.Printf("say: %v", err)
-		finish("The speech worker is not available. Try again later.")
+		finish("worker_error", "The speech worker is not available. Try again later.")
 		return
 	}
 	ogg, err := b.toOpus(ctx, wav)
 	if err != nil {
 		log.Printf("say: encode: %v", err)
-		finish("I could not encode the clip.")
+		finish("encode_error", "I could not encode the clip.")
 		return
 	}
 	target := sayTarget{j.ChannelID, j.ReplyTo}
 	posted, sentAsVoice, err := b.postClip(target, ogg, wav, j.Voice, j.Text, j.VoiceMsg)
 	if err != nil {
 		log.Printf("say: post: %v", err)
-		finish(fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID))
+		finish("post_error", fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID))
 		return
 	}
 	if err := b.s.InteractionResponseDelete(it); err != nil {
 		log.Printf("say: delete status: %v", err)
 	}
 	b.logSay(j.GuildID, j.UserID, target, posted, j.Voice, j.Text, sentAsVoice)
-	finish("")
+	finish("ok", "")
 }
 
 // postClip posts the clip in the target channel: as a voice message when

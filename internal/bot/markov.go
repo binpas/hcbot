@@ -220,10 +220,10 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 		case mentioned:
 			mode, mod := b.cfg.Choice("MARKOV_MENTION_REPLY"), b.messageFromMod(m)
 			if (mod || mode != "mods") && b.mk.claim(m.ChannelID, b.markovCooldown(), mod || mode == "always") {
-				b.markovReply(m, words, true)
+				b.markovReply(m, words, true, "mention")
 			}
 		case percentF(b.cfg.Float("MARKOV_REPLY_CHANCE")) && b.mk.claim(m.ChannelID, b.markovCooldown(), false):
-			b.markovReply(m, words, percent(b.cfg.Int("MARKOV_RANDOM_AS_REPLY")))
+			b.markovReply(m, words, percent(b.cfg.Int("MARKOV_RANDOM_AS_REPLY")), "chance")
 		}
 	}
 	// Without Message Content, only mentions are read, so only they are
@@ -330,7 +330,7 @@ func (b *Bot) messageFromMod(m *discordgo.Message) bool {
 
 // markovReply posts a generated message, as a reply to m when asReply is
 // set. It tries to start from a word of the message, longer words first.
-func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
+func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool, kind string) {
 	seed := slices.Clone(words)
 	slices.SortStableFunc(seed, func(x, y string) int {
 		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
@@ -344,6 +344,7 @@ func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool) {
 	if out == "" {
 		return
 	}
+	b.m.markovReply.WithLabelValues(kind).Inc()
 	msg := &discordgo.MessageSend{Content: truncate(out, 2000), AllowedMentions: markovMentions}
 	if gif := b.markovGIF(out); gif != nil {
 		msg.Embeds = []*discordgo.MessageEmbed{gif}

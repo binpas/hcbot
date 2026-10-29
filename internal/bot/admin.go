@@ -64,13 +64,21 @@ func (b *Bot) backups() []string {
 }
 
 // makeBackup writes a new backup and returns its name and size.
-func (b *Bot) makeBackup() (string, int64, error) {
+func (b *Bot) makeBackup() (name string, size int64, err error) {
+	defer func() {
+		if err != nil {
+			b.m.backups.WithLabelValues("error").Inc()
+			return
+		}
+		b.m.backups.WithLabelValues("ok").Inc()
+		b.m.lastBackup.SetToCurrentTime()
+	}()
 	if err := os.MkdirAll(b.backupDir, 0o755); err != nil {
 		return "", 0, err
 	}
 	// Two backups in the same second get a _2, _3, ... suffix.
 	stamp := "hcbot_" + time.Now().UTC().Format("20060102_150405")
-	name := stamp + ".db"
+	name = stamp + ".db"
 	for n := 2; ; n++ {
 		if _, err := os.Stat(filepath.Join(b.backupDir, name)); os.IsNotExist(err) {
 			break

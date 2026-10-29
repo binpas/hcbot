@@ -38,6 +38,7 @@ password (any user name). It does not show the Markov rankings.
   GET  /api/days   the days in CLIPS_DIR, with their number of clips
   GET  /api/clips?day=YYYY-MM-DD   the saved clips of a day, with their text
   GET  /saved/<day>/<file>         one saved clip (?download=1 to save it)
+  GET  /metrics    Prometheus metrics (no login: counts and times, no text)
 
 When CLIPS_DIR is set, the worker saves each clip there for the operator,
 as <date>/<time>-<id>_<voice>_<text>.ogg (Ogg/Opus, like the bot posts)
@@ -392,6 +393,7 @@ class Queue:
                 self.failed += 1
             else:
                 job.update(state="done", audio_seconds=secs, gen_seconds=job["finished"] - job["started"])
+                GEN_TIMES.observe(job["gen_seconds"])
                 self.done += 1
                 self.audio_seconds += secs
                 self.gen_seconds += job["gen_seconds"]
@@ -432,6 +434,7 @@ class Queue:
         with self.cond:
             return {
                 "uptime": time.time() - self.started,
+                "started": self.started,
                 "done": self.done,
                 "failed": self.failed,
                 "audio_seconds": self.audio_seconds,
@@ -613,6 +616,75 @@ class Ranker:
         return scores
 
 
+GEN_BUCKETS = (5, 10, 15, 20, 30, 45, 60, 90, 120)
+RANK_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5)
+
+
+class Histogram:
+    """A Prometheus histogram, written by hand (the worker has no
+    prometheus_client)."""
+
+    def __init__(self, buckets):
+        self.buckets = buckets
+        self.counts = [0] * len(buckets)
+        self.sum = 0.0
+        self.count = 0
+        self.lock = threading.Lock()
+
+    def observe(self, v):
+        with self.lock:
+            for i, b in enumerate(self.buckets):
+                if v <= b:
+                    self.counts[i] += 1
+            self.sum += v
+            self.count += 1
+
+    def lines(self, name, help_text):
+        with self.lock:
+            out = [f"# HELP {name} {help_text}", f"# TYPE {name} histogram"]
+            for b, c in zip(self.buckets, self.counts):
+                out.append(f'{name}_bucket{{le="{b}"}} {c}')
+            out += [f'{name}_bucket{{le="+Inf"}} {self.count}', f"{name}_sum {self.sum}", f"{name}_count {self.count}"]
+            return out
+
+
+GEN_TIMES = Histogram(GEN_BUCKETS)
+RANK_TIMES = Histogram(RANK_BUCKETS)
+RANK_RESULTS = collections.Counter()
+
+
+def metrics_text(srv):
+    """The worker's metrics in the Prometheus text format."""
+    snap = srv.queue.snapshot()
+    out = []
+
+    def metric(name, kind, help_text, samples):
+        out.extend([f"# HELP {name} {help_text}", f"# TYPE {name} {kind}"])
+        for labels, v in samples:
+            out.append(f"{name}{labels} {v}")
+
+    metric("hcbot_tts_jobs", "gauge", "Clip jobs now, by state.",
+           [('{state="queued"}', len(snap["queued"])), ('{state="running"}', len(snap["running"]))])
+    metric("hcbot_tts_clips_total", "counter", "Finished clips since the start, by result.",
+           [('{result="done"}', snap["done"]), ('{result="failed"}', snap["failed"])])
+    metric("hcbot_tts_audio_seconds_total", "counter", "The length of the made clips.", [("", snap["audio_seconds"])])
+    out += GEN_TIMES.lines("hcbot_tts_generate_seconds", "The time to make a clip.")
+    with RANK_TIMES.lock:
+        ranks = list(RANK_RESULTS.items())
+    metric("hcbot_tts_rank_requests_total", "counter", "Markov rank requests, by result.",
+           [(f'{{result="{k}"}}', v) for k, v in ranks])
+    out += RANK_TIMES.lines("hcbot_tts_rank_seconds", "The time to rank the candidates.")
+    metric("hcbot_tts_voices", "gauge", "The number of voices.", [("", len(srv.voices.names()))])
+    try:
+        free, total = torch.cuda.mem_get_info()
+        metric("hcbot_tts_gpu_memory_bytes", "gauge", "GPU memory, by kind (used, total).",
+               [('{kind="used"}', total - free), ('{kind="total"}', total)])
+    except Exception:
+        pass
+    metric("hcbot_tts_start_time_seconds", "gauge", "When the worker started.", [("", snap["started"])])
+    return ("\n".join(out) + "\n").encode()
+
+
 def clean_text(text):
     """Removes speaker tags and control characters. Commas are pauses."""
     text = re.sub(r"[\[\]]", "", text)
@@ -739,12 +811,18 @@ class Handler(BaseHTTPRequestHandler):
         if not cands or len(cands) > RANK_MAX_CANDIDATES:
             self.send_json(400, {"error": f"give 1 to {RANK_MAX_CANDIDATES} candidates"})
             return
+        start = time.time()
         try:
             scores = self.server.ranker.score(context, cands)
         except Exception:
             log.exception("rank failed")
+            with RANK_TIMES.lock:
+                RANK_RESULTS["error"] += 1
             self.send_json(500, {"error": "rank failed"})
             return
+        RANK_TIMES.observe(time.time() - start)
+        with RANK_TIMES.lock:
+            RANK_RESULTS["ok"] += 1
         self.send_json(200, {"scores": scores})
 
 
@@ -797,6 +875,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_body(200, ctype, data, extra)
 
     def do_GET(self):
+        if self.path == "/metrics":  # for Prometheus: no text, so no login
+            self.send_body(200, "text/plain; version=0.0.4", metrics_text(self.server.worker))
+            return
         if not self.authorized():
             return
         path, _, query = self.path.partition("?")

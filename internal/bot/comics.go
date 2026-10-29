@@ -185,7 +185,9 @@ func (b *Bot) cmdComic(c *Ctx) {
 		return
 	}
 	c.Defer(false)
+	start := time.Now()
 	data, err := b.lastComic(c.GuildID(), c.i.ChannelID, "", n)
+	b.comicDone("slash", start, err)
 	if err != nil {
 		c.Reply(true, errEmbed(comicFailure("comic", err)))
 		return
@@ -199,6 +201,23 @@ func (b *Bot) comicCount(n int) int { return min(max(n, 1), b.comicMax()) }
 
 // errComicRead is the error when the messages of a channel cannot be read.
 var errComicRead = errors.New("read the messages")
+
+// comicDone counts a comic in the metrics, by source and result, and
+// notes the time of a comic that was drawn.
+func (b *Bot) comicDone(source string, start time.Time, err error) {
+	result := "ok"
+	switch {
+	case errors.Is(err, comic.ErrNoMessages):
+		result = "no_messages"
+	case errors.Is(err, errComicRead):
+		result = "read_error"
+	case err != nil:
+		result = "error"
+	default:
+		b.m.comicSeconds.Observe(time.Since(start).Seconds())
+	}
+	b.m.comics.WithLabelValues(source, result).Inc()
+}
 
 // comicFailure logs a comic error (but not "no messages") and returns the
 // text for the user.
@@ -247,7 +266,9 @@ func (b *Bot) comicMention(m *discordgo.Message) bool {
 		return true
 	}
 	_ = b.s.ChannelTyping(m.ChannelID)
+	start := time.Now()
 	data, err := b.lastComic(m.GuildID, m.ChannelID, m.ID, n)
+	b.comicDone("mention", start, err)
 	if err != nil {
 		reply(comicFailure("comic", err))
 		return true
@@ -839,7 +860,9 @@ func (b *Bot) onComicPreview(c *Ctx) {
 	if !ok {
 		return
 	}
+	start := time.Now()
 	msgs, data, err := b.comicImage(c, d)
+	b.comicDone("preview", start, err)
 	if err != nil {
 		c.editComic(append(b.comicEditor(c.GuildID(), id, d, msgs, false),
 			discordgo.TextDisplay{Content: "-# " + comicFailure("comic: preview", err)}), nil)
@@ -866,7 +889,9 @@ func (b *Bot) onComicPost(c *Ctx) {
 		c.updateComic(append(b.comicEditor(c.GuildID(), id, d, msgs, false), discordgo.TextDisplay{Content: "-# " + waitMessage(w)}))
 		return
 	}
+	start := time.Now()
 	_, data, err := b.comicImage(c, d)
+	b.comicDone("post", start, err)
 	if err != nil {
 		c.editComic(comicNotice(comicFailure("comic: post", err)), nil)
 		return

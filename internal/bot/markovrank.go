@@ -71,6 +71,7 @@ func (b *Bot) markovGenerate(seed []string, msgText string) (string, error) {
 func (b *Bot) markovRank(msgText string, cands []string) ([]rankedReply, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), markovRankTimeout)
 	defer cancel()
+	defer func(start time.Time) { b.m.rankSeconds.Observe(time.Since(start).Seconds()) }(time.Now())
 	resp, err := b.ttsDo(ctx, http.MethodPost, "/rank", map[string]any{"context": msgText, "candidates": cands})
 	if err != nil {
 		return nil, err

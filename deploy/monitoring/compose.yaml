@@ -1,0 +1,51 @@
+# Prometheus and Grafana for the HEALTH bot's metrics, as a TrueNAS SCALE
+# custom app (Apps > Discover Apps > Install via YAML). See README.md,
+# "Metrics".
+#
+# Change BASE to a dataset with these folders, which the apps user
+# (568:568) can write (the TrueNAS "Apps" dataset preset does this):
+#   config/       prometheus.yml and grafana/ from deploy/monitoring
+#   prometheus/   the metrics
+#   grafana/      Grafana's data
+#   secrets/grafana-admin-password   the admin password (mode 0400)
+#
+# Prometheus has no login: keep its port on the local network.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    restart: unless-stopped
+    user: "568:568"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=180d
+      - --storage.tsdb.retention.size=20GB
+    volumes:
+      - BASE/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - BASE/prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    mem_limit: 1g
+
+  grafana:
+    image: grafana/grafana-oss:12.1.1
+    container_name: grafana
+    restart: unless-stopped
+    user: "568:568"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/hcbot.json
+    volumes:
+      - BASE/grafana:/var/lib/grafana
+      - BASE/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - BASE/config/grafana/dashboards:/etc/grafana/dashboards:ro
+      - BASE/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+    mem_limit: 512m

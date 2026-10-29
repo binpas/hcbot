@@ -129,9 +129,12 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 	c.Defer(true)
 	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
 	defer cancel()
+	result := "ok"
+	defer func() { b.m.downloads.WithLabelValues(result).Inc() }()
 
 	link, err := b.checkDownloadLink(ctx, link)
 	if err != nil {
+		result = "bad_link"
 		c.Reply(true, errEmbed(err.Error()))
 		return
 	}
@@ -144,6 +147,7 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 		select {
 		case b.dlSlot <- struct{}{}:
 		case <-ctx.Done():
+			result = "queue_timeout"
 			c.Reply(true, errEmbed("The download queue took too long. Try again later."))
 			return
 		}
@@ -153,6 +157,7 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 	maxBytes := int64(limitMB)<<20 - downloadMargin
 	results, failed, err := b.fetchVideos(ctx, link, maxBytes, b.env.YtdlpCookies, b.downloadItems(ctx, link))
 	if err != nil {
+		result = "fetch_error"
 		c.Reply(true, errEmbed(err.Error()))
 		return
 	}
@@ -167,8 +172,10 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 		for j, r := range g {
 			files[j] = &discordgo.File{Name: r.name, Reader: bytes.NewReader(r.data)}
 			size += int64(len(r.data))
+			b.m.downloadSize.Observe(float64(len(r.data)))
 		}
 		if err := c.ReplyFiles(true, embed, files...); err != nil {
+			result = "upload_error"
 			c.Reply(true, errEmbed(fmt.Sprintf("Discord did not accept the files (%s). The server's upload limit can be smaller than `DOWNLOAD_MAX_MB`.",
 				humanSize(size))))
 			return

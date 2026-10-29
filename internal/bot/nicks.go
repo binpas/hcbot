@@ -77,15 +77,20 @@ func (b *Bot) cachedNick(guildID, userID string) (string, bool) {
 // does not fetch them again.
 func (b *Bot) memberNick(guildID, userID string) string {
 	if nick, ok := b.cachedNick(guildID, userID); ok {
+		b.m.nickLookups.WithLabelValues("cached").Inc()
 		return nick
 	}
 	m, err := b.s.GuildMember(guildID, userID)
 	switch {
 	case err == nil:
+		b.m.nickLookups.WithLabelValues("fetched").Inc()
 		b.seeNick(guildID, userID, m.Nick)
 		return m.Nick
 	case isDiscordError(err, discordgo.ErrCodeUnknownMember):
+		b.m.nickLookups.WithLabelValues("left").Inc()
 		b.seeNick(guildID, userID, "")
+	default:
+		b.m.nickLookups.WithLabelValues("error").Inc()
 	}
 	return ""
 }

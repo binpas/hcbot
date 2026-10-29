@@ -109,10 +109,12 @@ func (b *Bot) postCurated(channelID, guildID string, msg *discordgo.Message, hea
 		AllowedMentions: &discordgo.MessageAllowedMentions{}}
 	_, err := b.s.ChannelMessageSendComplex(channelID, send)
 	if err == nil {
+		b.m.curated.WithLabelValues("ok").Inc()
 		return
 	}
 	log.Printf("curate: post: %v", err)
 	if len(media.files) == 0 {
+		b.m.curated.WithLabelValues("error").Inc()
 		return
 	}
 	// Again without the media: Discord can refuse a file.
@@ -121,7 +123,10 @@ func (b *Bot) postCurated(channelID, guildID string, msg *discordgo.Message, hea
 	send.Embeds, send.Files = []*discordgo.MessageEmbed{main}, nil
 	if _, err := b.s.ChannelMessageSendComplex(channelID, send); err != nil {
 		log.Printf("curate: post: %v", err)
+		b.m.curated.WithLabelValues("error").Inc()
+		return
 	}
+	b.m.curated.WithLabelValues("without_files").Inc()
 }
 
 // curatedName is the author's name on the server.
@@ -208,14 +213,17 @@ func (b *Bot) curatedMedia(guildID string, msg *discordgo.Message) curatedFiles 
 	add := func(name, url string, size int64, image bool) {
 		if size > left {
 			out.notes = append(out.notes, fmt.Sprintf("📎 `%s` is too large to copy; see the original.", name))
+			b.m.curatedFiles.WithLabelValues("too_large").Inc()
 			return
 		}
 		data, err := b.download(url, left)
 		if err != nil {
 			log.Printf("curate: copy %s: %v", name, err)
 			out.notes = append(out.notes, fmt.Sprintf("📎 `%s` could not be copied; see the original.", name))
+			b.m.curatedFiles.WithLabelValues("failed").Inc()
 			return
 		}
+		b.m.curatedFiles.WithLabelValues("copied").Inc()
 		left -= int64(len(data))
 		for slices.ContainsFunc(out.files, func(f *discordgo.File) bool { return f.Name == name }) {
 			name = "1_" + name

@@ -3,6 +3,7 @@
 package bot
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -40,6 +41,7 @@ type Bot struct {
 
 	msgs  *lru[cachedMessage] // audit log message cache
 	nicks *nickCache          // member nicknames (see nicks.go)
+	m     *botMetrics         // Prometheus metrics (see metrics.go)
 	media *mediaCache
 	snap  *snapshots
 
@@ -126,6 +128,8 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		media:        newMediaCache(),
 		snap:         &snapshots{roles: map[string]discordgo.Role{}, threads: map[string]discordgo.Channel{}},
 	}
+	b.m = newBotMetrics(b)
+	b.s.Client.Transport = metricsTransport{next: cmp.Or[http.RoundTripper](b.s.Client.Transport, http.DefaultTransport), m: b.m}
 	b.loadNicks()
 	b.registerSetup()
 	b.registerConfirm()
@@ -146,6 +150,9 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
+	s.AddHandler(b.onConnect)
+	s.AddHandler(b.onDisconnect)
+	s.AddHandler(b.onResumed)
 	s.AddHandler(b.onInteraction)
 	s.AddHandler(b.onRawInteraction)
 	s.AddHandler(b.onReactionAdd)
@@ -157,6 +164,11 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 
 // Open connects to Discord and syncs slash commands.
 func (b *Bot) Open() error {
+	if b.env.MetricsAddr != "" {
+		if _, err := b.serveMetrics(b.env.MetricsAddr); err != nil {
+			return fmt.Errorf("metrics: %w", err)
+		}
+	}
 	if err := b.s.Open(); err != nil {
 		return fmt.Errorf("open session: %w", err)
 	}

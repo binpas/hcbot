@@ -21,7 +21,7 @@ var triggerMentions = &discordgo.MessageAllowedMentions{
 // onMessageCreate handles triggers, autoreacts and the Markov chat. Section 7 adds the
 // media cache here.
 func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	defer logSlow("message handler", time.Now())
+	defer b.handlerDone("message", time.Now())
 	defer recoverHandler("message handler")
 	if m.Author == nil || b.env.SetupMode {
 		return
@@ -79,6 +79,7 @@ func (b *Bot) fireTrigger(m *discordgo.Message) bool {
 		return false
 	}
 	response := values[rand.IntN(len(values))]
+	b.m.triggers.Inc()
 	_, err = b.s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
 		Content: response, Reference: m.Reference(), AllowedMentions: triggerMentions,
 	})
@@ -110,6 +111,8 @@ func (b *Bot) autoreact(m *discordgo.Message) {
 		if strings.Contains(text, r.Phrase) {
 			if err := b.s.MessageReactionAdd(m.ChannelID, m.ID, reactionEmoji(r.Emote)); err != nil {
 				log.Printf("autoreact %q: %v", r.Phrase, err)
+			} else {
+				b.m.autoreacts.Inc()
 			}
 		}
 	}
