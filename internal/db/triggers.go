@@ -50,22 +50,6 @@ func (d *DB) TriggerNames() ([]TriggerCount, error) {
 	return out, rows.Err()
 }
 
-// SetTrigger replaces a trigger's responses with one value.
-func (d *DB) SetTrigger(name, value string) error {
-	tx, err := d.sql.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM trigger_values WHERE name=?`, strings.ToLower(name)); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT INTO trigger_values (name, value) VALUES (?, ?)`, strings.ToLower(name), value); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // AddTriggerValue adds a response (a duplicate is ignored) and returns the new total.
 func (d *DB) AddTriggerValue(name, value string) (int, error) {
 	if _, err := d.sql.Exec(`INSERT OR IGNORE INTO trigger_values (name, value) VALUES (?, ?)`,

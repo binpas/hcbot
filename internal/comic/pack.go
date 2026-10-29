@@ -233,9 +233,6 @@ func (p *Pack) Names() []string {
 	return out
 }
 
-// Has reports whether the pack has a character.
-func (p *Pack) Has(name string) bool { return p.byName[name] != nil }
-
 // usableBy reports whether a user can use the character: it is public, or
 // the user is on its list.
 func (c *Character) usableBy(user string) bool {

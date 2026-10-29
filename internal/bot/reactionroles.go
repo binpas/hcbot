@@ -3,7 +3,6 @@ package bot
 import (
 	"cmp"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -115,10 +114,9 @@ func (b *Bot) publishReactionRole(guildID string, rr *db.ReactionRole, pairs []d
 				msg.Reactions = old.Reactions
 			}
 		}
-		var rest *discordgo.RESTError
 		switch {
 		case err == nil:
-		case errors.As(err, &rest) && rest.Message != nil && rest.Message.Code == discordgo.ErrCodeUnknownMessage:
+		case isDiscordError(err, discordgo.ErrCodeUnknownMessage):
 			msg = nil // deleted: post a fresh one
 		default:
 			log.Printf("reaction role %q: edit message: %v", rr.Name, err)

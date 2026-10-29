@@ -69,6 +69,9 @@ type Bot struct {
 	stop      chan struct{}
 }
 
+// Version is the git commit of the build, for the log. main sets it.
+var Version = "dev"
+
 // New builds the bot. Call Run to connect.
 func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	values, err := database.LoadConfig()
@@ -205,7 +208,7 @@ func (b *Bot) startLoops() {
 }
 
 func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Logged in as %s (ID: %s)", r.User.String(), r.User.ID)
+	log.Printf("Logged in as %s (ID: %s), version %s", r.User.String(), r.User.ID, Version)
 	status := "HEALTH"
 	if b.env.SetupMode {
 		log.Print("SETUP_MODE is on — only /setup and /permsreport will respond.")
@@ -256,6 +259,13 @@ func (b *Bot) resolveMember(guildID, userID string) *discordgo.Member {
 	return m
 }
 
+// isDiscordError reports whether err is a Discord API error with a JSON
+// error code (discordgo.ErrCode...).
+func isDiscordError(err error, code int) bool {
+	var rest *discordgo.RESTError
+	return errors.As(err, &rest) && rest.Message != nil && rest.Message.Code == code
+}
+
 // freshMember fetches a member from the API, skipping the cache. Use it
 // before writing a member's whole role list: without the Server Members
 // intent the cache never sees role changes. It returns nil when the member
@@ -266,8 +276,7 @@ func (b *Bot) freshMember(guildID, userID string) *discordgo.Member {
 		m.GuildID = guildID
 		return m
 	}
-	var rest *discordgo.RESTError
-	if errors.As(err, &rest) && rest.Message != nil && rest.Message.Code == discordgo.ErrCodeUnknownMember {
+	if isDiscordError(err, discordgo.ErrCodeUnknownMember) {
 		return nil
 	}
 	log.Printf("fetch member %s: %v", userID, err)

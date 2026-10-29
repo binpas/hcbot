@@ -154,7 +154,7 @@ func (b *Bot) sendBackup(c *Ctx, name string, prefix string) {
 	if info, err := f.Stat(); err == nil {
 		size = info.Size()
 	}
-	if err := c.ReplyFile(true, okEmbed(fmt.Sprintf(prefix, name, humanSize(size))),
+	if err := c.ReplyFiles(true, okEmbed(fmt.Sprintf(prefix, name, humanSize(size))),
 		&discordgo.File{Name: name, ContentType: "application/octet-stream", Reader: f}); err != nil {
 		c.Reply(true, errEmbed(fmt.Sprintf("`%s` is on disk, but it's too large to send through Discord.", name)))
 	}
@@ -377,7 +377,7 @@ func (b *Bot) cmdPermsReport(c *Ctx) {
 	if skipNote != "" {
 		msg += " (" + strings.ToLower(skipNote[:1]) + skipNote[1:] + ")"
 	}
-	if err := c.ReplyFile(true, okEmbed(msg), &discordgo.File{
+	if err := c.ReplyFiles(true, okEmbed(msg), &discordgo.File{
 		Name: "permissions_report_" + c.GuildID() + ".txt", ContentType: "text/plain", Reader: strings.NewReader(report),
 	}); err != nil {
 		c.Reply(true, errEmbed("The report is too large to send through Discord."))

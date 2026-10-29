@@ -646,7 +646,7 @@ func TestLive(t *testing.T) {
 			}
 		}
 
-		if err := lv.b.db.SetTrigger("livetest", "pong @everyone <@&"+lv.roles["vip"]+">"); err != nil {
+		if _, err := lv.b.db.AddTriggerValue("livetest", "pong @everyone <@&"+lv.roles["vip"]+">"); err != nil {
 			t.Fatal(err)
 		}
 

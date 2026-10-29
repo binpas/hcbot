@@ -292,14 +292,9 @@ func (c *Ctx) ReplyComplex(ephemeral bool, embeds []*discordgo.MessageEmbed, com
 	_ = c.reply(ephemeral, embeds, components, nil)
 }
 
-// ReplyFile is Reply with an attached file. It returns the error when
+// ReplyFiles is Reply with attached files. It returns the error when
 // Discord refuses the reply (for example, a file that is too large).
-func (c *Ctx) ReplyFile(ephemeral bool, embed *discordgo.MessageEmbed, file *discordgo.File) error {
-	return c.reply(ephemeral, []*discordgo.MessageEmbed{embed}, nil, []*discordgo.File{file})
-}
-
-// ReplyFiles is ReplyFile with several files.
-func (c *Ctx) ReplyFiles(ephemeral bool, embed *discordgo.MessageEmbed, files []*discordgo.File) error {
+func (c *Ctx) ReplyFiles(ephemeral bool, embed *discordgo.MessageEmbed, files ...*discordgo.File) error {
 	return c.reply(ephemeral, []*discordgo.MessageEmbed{embed}, nil, files)
 }
 
@@ -542,14 +537,6 @@ func (c *Ctx) Attachment(name string) *discordgo.MessageAttachment {
 	id, _ := o.Value.(string)
 	if res := c.i.ApplicationCommandData().Resolved; res != nil {
 		return res.Attachments[id]
-	}
-	return nil
-}
-
-// Role returns a role option, or nil.
-func (c *Ctx) Role(name string) *discordgo.Role {
-	if o := c.opt(name); o != nil {
-		return o.RoleValue(c.s, c.GuildID())
 	}
 	return nil
 }

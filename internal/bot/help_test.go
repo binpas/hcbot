@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/binpas/hcbot/internal/comic"
+	"github.com/binpas/hcbot/internal/config"
 )
 
 func TestHelpLegalLinks(t *testing.T) {
@@ -132,5 +135,39 @@ func TestHelpPages(t *testing.T) {
 	tb.run(tUser, "help")
 	if r := tb.expect(true, "/timeout"); len(r.Components) != 0 {
 		t.Errorf("non-mod help has components: %+v", r.Components)
+	}
+}
+
+// TestHelpListsEveryCommand fails when a registered command is not in
+// /help: as "/name", "Apps → name", or as an alias "`/name`" in a
+// description.
+func TestHelpListsEveryCommand(t *testing.T) {
+	dir := t.TempDir()
+	if err := comic.WriteTestPack(dir); err != nil {
+		t.Fatal(err)
+	}
+	tb := newTestBot(t, func(e *config.Env) {
+		e.MessageContent, e.ComicArtDir, e.TTSURL = true, dir, "http://tts.invalid"
+	})
+	var usages []string
+	descs := ""
+	for _, c := range append(tb.modCommandCategories(), helpCategory{entries: tb.generalCommands()}) {
+		for _, e := range c.entries {
+			usages = append(usages, e.usage)
+			descs += e.desc + "\n"
+		}
+	}
+	listed := func(name string) bool {
+		for _, u := range usages {
+			if u == "/"+name || strings.HasPrefix(u, "/"+name+" ") || u == "Apps → "+name {
+				return true
+			}
+		}
+		return strings.Contains(descs, "`/"+name+"`")
+	}
+	for name := range tb.commands {
+		if !listed(name) {
+			t.Errorf("/help does not list %q", name)
+		}
 	}
 }

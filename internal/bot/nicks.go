@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -81,12 +80,11 @@ func (b *Bot) memberNick(guildID, userID string) string {
 		return nick
 	}
 	m, err := b.s.GuildMember(guildID, userID)
-	var rest *discordgo.RESTError
 	switch {
 	case err == nil:
 		b.seeNick(guildID, userID, m.Nick)
 		return m.Nick
-	case errors.As(err, &rest) && rest.Message != nil && rest.Message.Code == discordgo.ErrCodeUnknownMember:
+	case isDiscordError(err, discordgo.ErrCodeUnknownMember):
 		b.seeNick(guildID, userID, "")
 	}
 	return ""

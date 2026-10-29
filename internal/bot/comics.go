@@ -178,34 +178,38 @@ func (b *Bot) cmdComic(c *Ctx) {
 		c.Reply(true, errEmbed(why))
 		return
 	}
-	n := min(max(int(c.Int("count", comicDefaultCount)), 1), b.comicMax())
+	n := b.comicCount(int(c.Int("count", comicDefaultCount)))
 	if d := b.comicWait(c.UserID(), true); d > 0 {
 		c.Reply(true, errEmbed(waitMessage(d)))
 		return
 	}
 	c.Defer(false)
-	msgs, err := b.lastComicMessages(c.i.ChannelID, "", n)
+	data, err := b.lastComic(c.GuildID(), c.i.ChannelID, "", n)
 	if err != nil {
-		c.logErr("comic: messages", err)
-		c.Reply(true, errEmbed("I could not read the messages of this channel."))
-		return
-	}
-	data, err := b.drawComic(c.GuildID(), msgs, "")
-	if err != nil {
-		if !errors.Is(err, comic.ErrNoMessages) {
-			c.logErr("comic: draw", err)
-		}
-		c.Reply(true, errEmbed(comicDrawError(err)))
+		c.Reply(true, errEmbed(comicFailure("comic", err)))
 		return
 	}
 	_, err = c.s.InteractionResponseEdit(c.i.Interaction, &discordgo.WebhookEdit{Files: comicFile("comic.png", data)})
 	c.logErr("comic: post", err)
 }
 
-func comicDrawError(err error) string {
-	if errors.Is(err, comic.ErrNoMessages) {
+// comicCount is a requested number of messages, in the limits.
+func (b *Bot) comicCount(n int) int { return min(max(n, 1), b.comicMax()) }
+
+// errComicRead is the error when the messages of a channel cannot be read.
+var errComicRead = errors.New("read the messages")
+
+// comicFailure logs a comic error (but not "no messages") and returns the
+// text for the user.
+func comicFailure(what string, err error) string {
+	switch {
+	case errors.Is(err, comic.ErrNoMessages):
 		return "There are no messages with text to draw."
+	case errors.Is(err, errComicRead):
+		log.Printf("%s: %v", what, err)
+		return "I could not read the messages of this channel."
 	}
+	log.Printf("%s: %v", what, err)
 	return "I could not draw the comic."
 }
 
@@ -236,41 +240,34 @@ func (b *Bot) comicMention(m *discordgo.Message) bool {
 			n = v
 		}
 	}
-	n = min(max(n, 1), b.comicMax())
+	n = b.comicCount(n)
 	if d := b.comicWait(m.Author.ID, true); d > 0 {
 		reply(waitMessage(d))
 		return true
 	}
 	_ = b.s.ChannelTyping(m.ChannelID)
-	msgs, err := b.lastComicMessages(m.ChannelID, m.ID, n)
-	if err == nil {
-		var data []byte
-		if data, err = b.drawComic(m.GuildID, msgs, ""); err == nil {
-			_, err = b.s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
-				Files: comicFile("comic.png", data), Reference: m.Reference(), AllowedMentions: &discordgo.MessageAllowedMentions{},
-			})
-			if err != nil {
-				log.Printf("comic: post: %v", err)
-			}
-			return true
-		}
+	data, err := b.lastComic(m.GuildID, m.ChannelID, m.ID, n)
+	if err != nil {
+		reply(comicFailure("comic", err))
+		return true
 	}
-	if !errors.Is(err, comic.ErrNoMessages) {
-		log.Printf("comic: %v", err)
+	if _, err := b.s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
+		Files: comicFile("comic.png", data), Reference: m.Reference(), AllowedMentions: &discordgo.MessageAllowedMentions{},
+	}); err != nil {
+		log.Printf("comic: post: %v", err)
 	}
-	reply(comicDrawError(err))
 	return true
 }
 
-// lastComicMessages returns the last n messages with text before the
-// message before (or the newest ones), oldest first.
-func (b *Bot) lastComicMessages(channelID, before string, n int) ([]*discordgo.Message, error) {
+// lastComic draws the last n messages with text of a channel, before the
+// message before (or the newest ones). It is /comic and "@Bot comic".
+func (b *Bot) lastComic(guildID, channelID, before string, n int) ([]byte, error) {
 	msgs, err := b.s.ChannelMessages(channelID, min(n*3, 100), before, "", "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errComicRead, err)
 	}
 	msgs = comicUsable(msgs)
-	return msgs[max(len(msgs)-n, 0):], nil
+	return b.drawComic(guildID, msgs[max(len(msgs)-n, 0):], "")
 }
 
 // comicUsable sorts messages oldest first, and keeps the normal messages
@@ -364,18 +361,23 @@ func (b *Bot) comicAvatars(guildID string, msgs []*discordgo.Message) map[string
 		}
 		urls[m.Author.ID] = url
 	}
+	return fetchAll(urls, b.comicAvatar)
+}
+
+// fetchAll gets the picture of each URL at the same time, by key. A
+// picture that fails (nil) is missing.
+func fetchAll(urls map[string]string, fetch func(url string) image.Image) map[string]image.Image {
 	out := map[string]image.Image{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for id, url := range urls {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			img := b.comicAvatar(url)
-			mu.Lock()
-			out[id] = img
-			mu.Unlock()
-		}()
+	for key, url := range urls {
+		wg.Go(func() {
+			if img := fetch(url); img != nil {
+				mu.Lock()
+				out[key] = img
+				mu.Unlock()
+			}
+		})
 	}
 	wg.Wait()
 	return out
@@ -470,27 +472,19 @@ func (b *Bot) comicText(guildID string, m *discordgo.Message, pic comicPic) stri
 // spoilers), at the same time, by message ID. A picture that fails is
 // missing.
 func (b *Bot) comicPictures(msgs []*discordgo.Message) map[string]image.Image {
-	out := map[string]image.Image{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	urls := map[string]string{}
 	for _, m := range msgs {
-		pic, ok := comicPicture(m)
-		if !ok || pic.spoiler {
-			continue
+		if pic, ok := comicPicture(m); ok && !pic.spoiler {
+			urls[m.ID] = pic.url
 		}
-		wg.Go(func() {
-			img, err := b.fetchPicture(pic.url)
-			if err != nil {
-				log.Printf("comic: picture: %v", err)
-				return
-			}
-			mu.Lock()
-			out[m.ID] = img
-			mu.Unlock()
-		})
 	}
-	wg.Wait()
-	return out
+	return fetchAll(urls, func(url string) image.Image {
+		img, err := b.fetchPicture(url)
+		if err != nil {
+			log.Printf("comic: picture: %v", err)
+		}
+		return img
+	})
 }
 
 // fetchPicture gets and decodes a picture (PNG, JPEG, GIF, or WebP). It
@@ -732,7 +726,7 @@ func (b *Bot) draftMessages(d comicDraft) ([]*discordgo.Message, error) {
 	}
 	msgs, err := b.s.ChannelMessages(d.Channel, 100, strconv.FormatUint(last+1, 10), "", "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errComicRead, err)
 	}
 	msgs = slices.DeleteFunc(comicUsable(msgs), func(m *discordgo.Message) bool { return !slices.Contains(d.IDs, m.ID) })
 	return msgs, nil
@@ -801,11 +795,8 @@ func (b *Bot) onComicPreview(c *Ctx) {
 	c.DeferUpdate()
 	msgs, data, err := b.comicImage(c, d)
 	if err != nil {
-		if !errors.Is(err, comic.ErrNoMessages) {
-			c.logErr("comic: preview", err)
-		}
 		c.editComic(append(b.comicEditor(c.GuildID(), id, d, msgs, false),
-			discordgo.TextDisplay{Content: "-# " + comicDrawError(err)}), nil)
+			discordgo.TextDisplay{Content: "-# " + comicFailure("comic: preview", err)}), nil)
 		return
 	}
 	c.editComic(b.comicEditor(c.GuildID(), id, d, msgs, true), comicFile("preview.png", data))
@@ -832,10 +823,7 @@ func (b *Bot) onComicPost(c *Ctx) {
 	c.DeferUpdate()
 	_, data, err := b.comicImage(c, d)
 	if err != nil {
-		if !errors.Is(err, comic.ErrNoMessages) {
-			c.logErr("comic: draw", err)
-		}
-		c.editComic(comicNotice(comicDrawError(err)), nil)
+		c.editComic(comicNotice(comicFailure("comic: post", err)), nil)
 		return
 	}
 	_, err = b.s.ChannelMessageSendComplex(d.Channel, &discordgo.MessageSend{

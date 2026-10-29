@@ -203,12 +203,12 @@ func (c *Client) data(ctx context.Context, id string) (*raw, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("X answered %s", resp.Status)
+		return nil, fmt.Errorf("X answered %s", resp.Status) //nolint:staticcheck // X is a name
 	}
 	var r raw
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&r); err != nil {
@@ -406,7 +406,7 @@ func (c *Client) image(ctx context.Context, u string) image.Image {
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}

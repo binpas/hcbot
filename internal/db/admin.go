@@ -94,7 +94,7 @@ func RenameFile(from, to string) (bool, error) {
 	// The side files first: a main file without its WAL loses data.
 	for _, suffix := range []string{"-wal", "-shm", "-journal", ""} {
 		err := os.Rename(from+suffix, to+suffix)
-		if err != nil && !(suffix != "" && errors.Is(err, fs.ErrNotExist)) {
+		if err != nil && (suffix == "" || !errors.Is(err, fs.ErrNotExist)) {
 			return false, err
 		}
 	}

@@ -37,7 +37,7 @@ func TestNoteAddListEditDelete(t *testing.T) {
 	tb.expect(true, "must be a moderator")
 
 	tb.run(tMod, "note add", userOpt("user", tTarget), strOpt("text", "Was rude in #general."))
-	r := tb.expect(true, "Note #1 added", "Was rude in #general.", "Added by <@"+tMod+">")
+	tb.expect(true, "Note #1 added", "Was rude in #general.", "Added by <@"+tMod+">")
 	if !contains(tb.sent(tChModLog), "Note Added") {
 		t.Error("add not logged")
 	}
@@ -51,7 +51,7 @@ func TestNoteAddListEditDelete(t *testing.T) {
 	tb.expect(true, "Note #2 added")
 
 	tb.run(tMod, "note list", userOpt("user", tTarget))
-	r = tb.expect(true, "1 note(s)", "Was rude", "#1 ·")
+	r := tb.expect(true, "1 note(s)", "Was rude", "#1 ·")
 	if strings.Contains(r.text(), "left the server") {
 		t.Error("list shows another user's note")
 	}

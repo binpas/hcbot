@@ -31,7 +31,7 @@ func (b *Bot) cmdConfigExport(c *Ctx) {
 		c.logErr("encode settings", err)
 		return
 	}
-	_ = c.ReplyFile(true, okEmbed(fmt.Sprintf("Exported **%d** saved setting(s).", len(values))),
+	_ = c.ReplyFiles(true, okEmbed(fmt.Sprintf("Exported **%d** saved setting(s).", len(values))),
 		&discordgo.File{Name: "config-export.json", ContentType: "application/json", Reader: &buf})
 }
 

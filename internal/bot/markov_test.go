@@ -64,7 +64,7 @@ func TestMarkovMentionOnly(t *testing.T) {
 	}
 
 	// A trigger wins over the Markov chat.
-	if err := tb.db.SetTrigger("hello", "hi!"); err != nil {
+	if _, err := tb.db.AddTriggerValue("hello", "hi!"); err != nil {
 		t.Fatal(err)
 	}
 	tb.say(tUser, tChGeneral, "hello", true)

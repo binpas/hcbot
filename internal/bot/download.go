@@ -168,7 +168,7 @@ func (b *Bot) downloadVideo(c *Ctx, link string) {
 			files[j] = &discordgo.File{Name: r.name, Reader: bytes.NewReader(r.data)}
 			size += int64(len(r.data))
 		}
-		if err := c.ReplyFiles(true, embed, files); err != nil {
+		if err := c.ReplyFiles(true, embed, files...); err != nil {
 			c.Reply(true, errEmbed(fmt.Sprintf("Discord did not accept the files (%s). The server's upload limit can be smaller than `DOWNLOAD_MAX_MB`.",
 				humanSize(size))))
 			return
@@ -273,20 +273,20 @@ func (b *Bot) checkDownloadLink(ctx context.Context, raw string) (string, error)
 	raw = strings.TrimSuffix(strings.TrimPrefix(raw, "<"), ">")
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
-		return "", errors.New("That is not a web link. Give a link that starts with `https://`.")
+		return "", errors.New("That is not a web link. Give a link that starts with `https://`.") //nolint:staticcheck // shown to the user
 	}
 	ips := []net.IP{net.ParseIP(u.Hostname())}
 	if ips[0] == nil {
 		addrs, err := b.lookupIP(ctx, u.Hostname())
 		if err != nil || len(addrs) == 0 {
-			return "", fmt.Errorf("I cannot find the site `%s`.", u.Hostname())
+			return "", fmt.Errorf("I cannot find the site `%s`.", u.Hostname()) //nolint:staticcheck // shown to the user
 		}
 		ips = addrs
 	}
 	for _, ip := range ips {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() ||
 			ip.IsLinkLocalMulticast() || ip.IsMulticast() || cgnat.Contains(ip) {
-			return "", errors.New("I do not download from local or private addresses.")
+			return "", errors.New("I do not download from local or private addresses.") //nolint:staticcheck // shown to the user
 		}
 	}
 	return raw, nil
@@ -365,9 +365,9 @@ func parseYtdlp(stdout []byte) (started []int, done []ytdlpItem) {
 func (b *Bot) fetchVideos(ctx context.Context, link string, maxBytes int64, cookies, items string) ([]*videoResult, []int, error) {
 	dir, err := os.MkdirTemp("", "hcbot-dl-")
 	if err != nil {
-		return nil, nil, fmt.Errorf("I cannot make a temporary folder: %v", err)
+		return nil, nil, fmt.Errorf("I cannot make a temporary folder: %v", err) //nolint:staticcheck // shown to the user
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	type state struct {
 		got  int // the height of the last file that was too large
@@ -396,7 +396,7 @@ func (b *Bot) fetchVideos(ctx context.Context, link string, maxBytes int64, cook
 		out := filepath.Join(dir, strconv.Itoa(step))
 		stdout, stderr, err := b.runTool(ctx, "yt-dlp", downloadArgs(link, out, h, maxBytes, cookies, spec))
 		if ctx.Err() != nil {
-			return nil, nil, errors.New("The download took too long.")
+			return nil, nil, errors.New("The download took too long.") //nolint:staticcheck // shown to the user
 		}
 		started, done := parseYtdlp(stdout)
 		if step == 0 {
@@ -404,7 +404,7 @@ func (b *Bot) fetchVideos(ctx context.Context, link string, maxBytes int64, cook
 				if err != nil {
 					return nil, nil, fmt.Errorf("yt-dlp could not download the video: %s", ytdlpError(stderr, err))
 				}
-				return nil, nil, errors.New("I found no video at this link. Live streams are not supported.")
+				return nil, nil, errors.New("I found no video at this link. Live streams are not supported.") //nolint:staticcheck // shown to the user
 			}
 			for _, idx := range started {
 				if states[idx] == nil && len(order) < maxDownloadItems {
@@ -430,7 +430,7 @@ func (b *Bot) fetchVideos(ctx context.Context, link string, maxBytes int64, cook
 			}
 			data, err := os.ReadFile(it.Filepath)
 			if err != nil {
-				return nil, nil, fmt.Errorf("I cannot read the video file: %v", err)
+				return nil, nil, fmt.Errorf("I cannot read the video file: %v", err) //nolint:staticcheck // shown to the user
 			}
 			title := cmp.Or(strings.TrimSpace(truncate(it.Title, 200)), "Video")
 			res := &videoResult{index: it.Index, title: title, name: fileName(title) + filepath.Ext(it.Filepath),
@@ -449,7 +449,7 @@ func (b *Bot) fetchVideos(ctx context.Context, link string, maxBytes int64, cook
 		}
 	}
 	if len(results) == 0 {
-		return nil, nil, fmt.Errorf("All qualities of this video are larger than the upload limit (%s).",
+		return nil, nil, fmt.Errorf("All qualities of this video are larger than the upload limit (%s).", //nolint:staticcheck // shown to the user
 			humanSize(maxBytes+downloadMargin))
 	}
 	slices.SortFunc(results, func(a, b *videoResult) int { return a.index - b.index })

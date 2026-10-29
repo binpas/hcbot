@@ -137,7 +137,7 @@ func (b *Bot) tweetshot(c *Ctx, id string, public bool) {
 	if !public {
 		embed.Description = fmt.Sprintf("[Open the post on X](https://x.com/%s/status/%s)", p.Handle, id)
 	}
-	if err := c.ReplyFile(!public, embed, &discordgo.File{Name: name, ContentType: "image/png", Reader: bytes.NewReader(data)}); err != nil {
+	if err := c.ReplyFiles(!public, embed, &discordgo.File{Name: name, ContentType: "image/png", Reader: bytes.NewReader(data)}); err != nil {
 		c.Reply(true, errEmbed("Discord did not accept the image."))
 	}
 }

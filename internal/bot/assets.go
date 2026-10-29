@@ -3,6 +3,7 @@ package bot
 import (
 	"archive/zip"
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -167,7 +168,7 @@ func (b *Bot) cmdAssetsExport(c *Ctx) {
 	if skipped > 0 {
 		summary += fmt.Sprintf("\n**%d** sticker(s) skipped — Lottie/GIF stickers can't be re-uploaded through the bot API, only PNG/APNG ones.", skipped)
 	}
-	if err := c.ReplyFile(true, okEmbed(summary), &discordgo.File{Name: "assets-export.zip", ContentType: "application/zip",
+	if err := c.ReplyFiles(true, okEmbed(summary), &discordgo.File{Name: "assets-export.zip", ContentType: "application/zip",
 		Reader: bytes.NewReader(data)}); err != nil {
 		c.Reply(true, errEmbed("Export built, but the zip file is too large to send through Discord."))
 	}
@@ -276,70 +277,105 @@ type assetConflict struct {
 }
 
 func (b *Bot) cmdAssetsImport(c *Ctx) {
+	zr, emojis, stickers, problems, ok := b.readAssetZip(c)
+	if !ok {
+		return
+	}
+	g, err := b.s.State.Guild(c.GuildID())
+	if err != nil {
+		c.Reply(true, errEmbed("I couldn't read this server's emojis."))
+		return
+	}
+	plan := b.planAssetImport(g, emojis, stickers)
+	if plan.noRoom != "" {
+		c.Reply(true, errEmbed(plan.noRoom))
+		return
+	}
+	if total := len(plan.newEmojis) + len(plan.newStickers); total > assetLargeImport {
+		c.Reply(true, makeEmbed("⏳ Importing…", fmt.Sprintf("Adding **%d** new item(s). Discord limits how fast these "+
+			"can be created, so this will take a bit — I'll post a summary here when it's done.", total), colourBlurple))
+	}
+	addedEmojis, addedStickers, failures := b.createAssets(c.GuildID(), zr, plan, "/assets import by "+c.Member().User.String())
+	conflicts := plan.conflicts(zr, c.GuildID())
+	c.Reply(true, okEmbed(assetImportSummary(addedEmojis, addedStickers, problems, failures, len(conflicts))))
+	if len(conflicts) > 0 {
+		b.sendConflictReviews(c, g.Name, conflicts)
+	}
+}
+
+// readAssetZip downloads and reads the zip of /assets import. It replies
+// and returns false when the file cannot be used.
+func (b *Bot) readAssetZip(c *Ctx) (zr *zip.Reader, emojis, stickers []assetEntry, problems int, ok bool) {
 	file := c.Attachment("file")
 	if file == nil {
 		c.Reply(true, errEmbed("Couldn't read that attachment."))
-		return
+		return nil, nil, nil, 0, false
 	}
 	limitMB := max(b.cfg.Int("ASSETS_IMPORT_MAX_MB"), 1)
 	limit := int64(limitMB) << 20
 	if int64(file.Size) > limit {
 		c.Reply(true, errEmbed(fmt.Sprintf("That file is larger than **%d MB** (`ASSETS_IMPORT_MAX_MB` in `/setup`).", limitMB)))
-		return
+		return nil, nil, nil, 0, false
 	}
 	c.Defer(true)
 	raw, err := b.download(file.URL, limit)
 	if err != nil {
 		c.logErr("download attachment", err)
 		c.Reply(true, errEmbed("Couldn't read that attachment."))
-		return
+		return nil, nil, nil, 0, false
 	}
-	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	zr, err = zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		c.Reply(true, errEmbed("That doesn't look like a valid zip file."))
-		return
+		return nil, nil, nil, 0, false
 	}
-	emojis, stickers, problems, ok := parseAssetManifest(zr)
+	emojis, stickers, problems, ok = parseAssetManifest(zr)
 	if !ok {
 		c.Reply(true, errEmbed("Couldn't find a valid `manifest.json` in that zip — is it one `/assets export` made?"))
-		return
+		return nil, nil, nil, 0, false
 	}
 	if len(emojis) == 0 && len(stickers) == 0 {
 		c.Reply(true, errEmbed("No valid emoji or sticker entries found in that file."))
-		return
+		return nil, nil, nil, 0, false
 	}
+	return zr, emojis, stickers, problems, true
+}
 
-	g, err := b.s.State.Guild(c.GuildID())
-	if err != nil {
-		c.Reply(true, errEmbed("I couldn't read this server's emojis."))
-		return
-	}
+// assetPlan is what an import does: the new items, and the ones whose
+// name is taken (they get a Replace/Keep review).
+type assetPlan struct {
+	existingEmojis                map[string]*discordgo.Emoji
+	existingStickers              map[string]*discordgo.Sticker
+	newEmojis, conflictEmojis     []assetEntry
+	newStickers, conflictStickers []assetEntry
+	noRoom                        string // the error when the server has too few free slots
+}
+
+func (b *Bot) planAssetImport(g *discordgo.Guild, emojis, stickers []assetEntry) assetPlan {
+	p := assetPlan{existingEmojis: map[string]*discordgo.Emoji{}, existingStickers: map[string]*discordgo.Sticker{}}
 	b.s.State.RLock()
-	existingEmojis := map[string]*discordgo.Emoji{}
 	static, animated := 0, 0
 	for _, e := range g.Emojis {
-		existingEmojis[e.Name] = e
+		p.existingEmojis[e.Name] = e
 		if e.Animated {
 			animated++
 		} else {
 			static++
 		}
 	}
-	existingStickers := map[string]*discordgo.Sticker{}
 	for _, s := range g.Stickers {
-		existingStickers[s.Name] = s
+		p.existingStickers[s.Name] = s
 	}
 	tier := g.PremiumTier
 	b.s.State.RUnlock()
 
-	var newEmojis, conflictEmojis, newStickers, conflictStickers []assetEntry
 	newStatic, newAnimated := 0, 0
 	for _, e := range emojis {
-		if _, taken := existingEmojis[e.Name]; taken {
-			conflictEmojis = append(conflictEmojis, e)
+		if _, taken := p.existingEmojis[e.Name]; taken {
+			p.conflictEmojis = append(p.conflictEmojis, e)
 			continue
 		}
-		newEmojis = append(newEmojis, e)
+		p.newEmojis = append(p.newEmojis, e)
 		if e.Animated {
 			newAnimated++
 		} else {
@@ -347,16 +383,16 @@ func (b *Bot) cmdAssetsImport(c *Ctx) {
 		}
 	}
 	for _, s := range stickers {
-		if _, taken := existingStickers[s.Name]; taken {
-			conflictStickers = append(conflictStickers, s)
+		if _, taken := p.existingStickers[s.Name]; taken {
+			p.conflictStickers = append(p.conflictStickers, s)
 		} else {
-			newStickers = append(newStickers, s)
+			p.newStickers = append(p.newStickers, s)
 		}
 	}
 
 	freeStatic := tierSlots(emojiSlots, tier) - static
 	freeAnimated := tierSlots(emojiSlots, tier) - animated
-	freeStickers := tierSlots(stickerSlots, tier) - len(existingStickers)
+	freeStickers := tierSlots(stickerSlots, tier) - len(p.existingStickers)
 	var shortfalls []string
 	if newStatic > freeStatic {
 		shortfalls = append(shortfalls, fmt.Sprintf("%d more static emoji slot(s)", newStatic-freeStatic))
@@ -364,51 +400,73 @@ func (b *Bot) cmdAssetsImport(c *Ctx) {
 	if newAnimated > freeAnimated {
 		shortfalls = append(shortfalls, fmt.Sprintf("%d more animated emoji slot(s)", newAnimated-freeAnimated))
 	}
-	if len(newStickers) > freeStickers {
-		shortfalls = append(shortfalls, fmt.Sprintf("%d more sticker slot(s)", len(newStickers)-freeStickers))
+	if len(p.newStickers) > freeStickers {
+		shortfalls = append(shortfalls, fmt.Sprintf("%d more sticker slot(s)", len(p.newStickers)-freeStickers))
 	}
 	if len(shortfalls) > 0 {
-		c.Reply(true, errEmbed(fmt.Sprintf("Not enough room in this server — need %s.\n"+
+		p.noRoom = fmt.Sprintf("Not enough room in this server — need %s.\n"+
 			"Free static emoji slots: **%d**. Free animated emoji slots: **%d**. Free sticker slots: **%d**.\n"+
 			"Free up space or trim the zip file, then try again. No changes were made.",
-			strings.Join(shortfalls, " and "), max(freeStatic, 0), max(freeAnimated, 0), max(freeStickers, 0))))
-		return
+			strings.Join(shortfalls, " and "), max(freeStatic, 0), max(freeAnimated, 0), max(freeStickers, 0))
 	}
+	return p
+}
 
-	if total := len(newEmojis) + len(newStickers); total > assetLargeImport {
-		c.Reply(true, makeEmbed("⏳ Importing…", fmt.Sprintf("Adding **%d** new item(s). Discord limits how fast these "+
-			"can be created, so this will take a bit — I'll post a summary here when it's done.", total), colourBlurple))
-	}
-
-	reason := "/assets import by " + c.Member().User.String()
-	addedEmojis, addedStickers := 0, 0
-	var failures []string
-	for _, e := range newEmojis {
+// createAssets makes the new emojis and stickers of a plan, with a pause
+// after each for Discord's rate limit.
+func (b *Bot) createAssets(guildID string, zr *zip.Reader, p assetPlan, reason string) (emojis, stickers int, failures []string) {
+	for _, e := range p.newEmojis {
 		data, err := readZipFile(zr, e.Filename)
 		if err == nil {
-			err = b.createEmoji(c.GuildID(), e.Name, e.Filename, data, reason)
+			err = b.createEmoji(guildID, e.Name, e.Filename, data, reason)
 		}
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("`%s` — %v", e.Name, err))
 		} else {
-			addedEmojis++
+			emojis++
 		}
 		time.Sleep(b.assetDelay)
 	}
-	for _, s := range newStickers {
+	for _, s := range p.newStickers {
 		data, err := readZipFile(zr, s.Filename)
 		if err == nil {
-			err = b.createSticker(c.GuildID(), s.Name, s.Description, cmpOrDefault(s.Emoji, "❔"), s.Filename, data, reason)
+			err = b.createSticker(guildID, s.Name, s.Description, cmp.Or(s.Emoji, "❔"), s.Filename, data, reason)
 		}
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("`%s` — %v", s.Name, err))
 		} else {
-			addedStickers++
+			stickers++
 		}
 		time.Sleep(b.assetDelay)
 	}
+	return emojis, stickers, failures
+}
 
-	parts := []string{fmt.Sprintf("Added **%d** emoji(s) and **%d** sticker(s).", addedEmojis, addedStickers)}
+// conflicts are the Replace/Keep reviews of the items whose name is taken.
+func (p assetPlan) conflicts(zr *zip.Reader, guildID string) []assetConflict {
+	var out []assetConflict
+	for _, e := range p.conflictEmojis {
+		data, err := readZipFile(zr, e.Filename)
+		if err != nil {
+			continue
+		}
+		out = append(out, assetConflict{Kind: "emoji", Name: e.Name, Filename: e.Filename, Image: data,
+			ExistingURL: emojiURL(p.existingEmojis[e.Name]), GuildID: guildID})
+	}
+	for _, s := range p.conflictStickers {
+		data, err := readZipFile(zr, s.Filename)
+		if err != nil {
+			continue
+		}
+		out = append(out, assetConflict{Kind: "sticker", Name: s.Name, Filename: s.Filename, Image: data,
+			ExistingURL: stickerURL(p.existingStickers[s.Name].ID), GuildID: guildID,
+			Description: s.Description, EmojiTag: cmp.Or(s.Emoji, "❔")})
+	}
+	return out
+}
+
+func assetImportSummary(emojis, stickers, problems int, failures []string, conflicts int) string {
+	parts := []string{fmt.Sprintf("Added **%d** emoji(s) and **%d** sticker(s).", emojis, stickers)}
 	if problems > 0 {
 		word := "entries"
 		if problems == 1 {
@@ -423,40 +481,11 @@ func (b *Bot) cmdAssetsImport(c *Ctx) {
 		}
 		parts = append(parts, fmt.Sprintf("**%d** item(s) failed to import:\n%s", len(failures), lines))
 	}
-
-	var conflicts []assetConflict
-	for _, e := range conflictEmojis {
-		data, err := readZipFile(zr, e.Filename)
-		if err != nil {
-			continue
-		}
-		conflicts = append(conflicts, assetConflict{Kind: "emoji", Name: e.Name, Filename: e.Filename, Image: data,
-			ExistingURL: emojiURL(existingEmojis[e.Name]), GuildID: c.GuildID()})
-	}
-	for _, s := range conflictStickers {
-		data, err := readZipFile(zr, s.Filename)
-		if err != nil {
-			continue
-		}
-		conflicts = append(conflicts, assetConflict{Kind: "sticker", Name: s.Name, Filename: s.Filename, Image: data,
-			ExistingURL: stickerURL(existingStickers[s.Name].ID), GuildID: c.GuildID(),
-			Description: s.Description, EmojiTag: cmpOrDefault(s.Emoji, "❔")})
-	}
-	if len(conflicts) > 0 {
+	if conflicts > 0 {
 		parts = append(parts, fmt.Sprintf("**%d** item(s) share a name with something that already exists — "+
-			"check your DMs to decide what to do with each.", len(conflicts)))
+			"check your DMs to decide what to do with each.", conflicts))
 	}
-	c.Reply(true, okEmbed(strings.Join(parts, "\n\n")))
-	if len(conflicts) > 0 {
-		b.sendConflictReviews(c, g.Name, conflicts)
-	}
-}
-
-func cmpOrDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
+	return strings.Join(parts, "\n\n")
 }
 
 // conflictMessage builds one Replace/Keep review; the image of the new
@@ -564,7 +593,7 @@ func (b *Bot) replaceAsset(p assetConflict) error {
 			return err
 		}
 	}
-	return b.createSticker(p.GuildID, p.Name, p.Description, cmpOrDefault(p.EmojiTag, "❔"), p.Filename, p.Image, reason)
+	return b.createSticker(p.GuildID, p.Name, p.Description, cmp.Or(p.EmojiTag, "❔"), p.Filename, p.Image, reason)
 }
 
 // deleteSticker deletes a guild sticker (discordgo has no function for it).

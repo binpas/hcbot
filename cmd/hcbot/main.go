@@ -56,6 +56,7 @@ func main() {
 		}
 	}()
 
+	bot.Version = version
 	b, err := bot.New(env, database, chain)
 	if err != nil {
 		log.Fatalf("create bot: %v", err)

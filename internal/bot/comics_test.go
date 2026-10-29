@@ -34,7 +34,7 @@ func newComicBot(t *testing.T) (*testBot, *[]string) {
 	tb := newTestBot(t, func(e *config.Env) { e.MessageContent, e.ComicArtDir = true, dir })
 	var mu sync.Mutex
 	var fetched []string
-	pic := testPNG(t)
+	pic := smallPNG(t)
 	tb.fetchImage = func(_ context.Context, url string) ([]byte, error) {
 		mu.Lock()
 		fetched = append(fetched, url)
@@ -47,7 +47,7 @@ func newComicBot(t *testing.T) (*testBot, *[]string) {
 	return tb, &fetched
 }
 
-func testPNG(t *testing.T) []byte {
+func smallPNG(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
@@ -545,7 +545,7 @@ func TestComicArtReload(t *testing.T) {
 	}
 	tb.run(tAdmin, "comicart reload")
 	tb.expect(true, "old art stays")
-	if !tb.comics.pack.Load().Has("newguy") {
+	if !tb.comics.pack.Load().CanUse("newguy", tUser) {
 		t.Error("the art was lost")
 	}
 }

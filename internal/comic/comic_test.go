@@ -37,7 +37,7 @@ func TestLoadPack(t *testing.T) {
 	if got := p.Backgrounds(); !slices.Equal(got, []string{"plain"}) {
 		t.Errorf("backgrounds = %v", got)
 	}
-	if !p.Has("ann") || p.Has("gone") {
+	if p.byName["ann"] == nil || p.byName["gone"] != nil {
 		t.Error("Has is wrong")
 	}
 	if _, err := LoadPack(t.TempDir()); err == nil {
@@ -132,7 +132,7 @@ func TestAssign(t *testing.T) {
 	if again := p.assign(msgs); again["u3"].char != people["u3"].char {
 		t.Error("the pick is not stable")
 	}
-	if got := p.CharacterFor("u3"); !p.Has(got) {
+	if got := p.CharacterFor("u3"); p.byName[got] == nil {
 		t.Errorf("CharacterFor = %q", got)
 	}
 }

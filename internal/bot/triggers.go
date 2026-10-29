@@ -460,7 +460,7 @@ func (b *Bot) cmdTriggerExport(c *Ctx) {
 		c.logErr("encode export", err)
 		return
 	}
-	_ = c.ReplyFile(true, okEmbed(fmt.Sprintf("Exported **%d** trigger(s) with **%d** total response(s).", len(data), total)),
+	_ = c.ReplyFiles(true, okEmbed(fmt.Sprintf("Exported **%d** trigger(s) with **%d** total response(s).", len(data), total)),
 		&discordgo.File{Name: "triggers-export.json", ContentType: "application/json", Reader: &buf})
 }
 

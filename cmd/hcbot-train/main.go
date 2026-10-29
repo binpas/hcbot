@@ -25,7 +25,7 @@ func main() {
 	chainPath := flag.String("db", "markov.db", "the Markov database to train")
 	mainPath := flag.String("maindb", "hcbot.db", "the bot's main database, for the blocklist")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags] file...\n\n"+
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags] file...\n\n"+
 			"Each file is plain text (one message per line) or a DiscordChatExporter .json export.\n\n", os.Args[0])
 		flag.PrintDefaults()
 	}
