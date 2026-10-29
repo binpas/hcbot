@@ -66,3 +66,30 @@ func TestMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkovLearnMetrics(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.config(map[string]string{"MARKOV_LEARN_CHANNELS": tChGeneral})
+	tb.run(tMod, "markov blockadd", strOpt("text", "cats"))
+	tb.say(tUser, tChGeneral, "the quick brown fox", false)
+	tb.say(tUser, tChGeneral, "jumps over the dog", false)
+	tb.say(tUser, tChGeneral, "i like cats", false)
+	tb.say(tUser, tChGeneral, "https://example.com", false)
+	if got := testutil.ToFloat64(tb.m.markovSeen.WithLabelValues("queued")); got != 2 {
+		t.Errorf("queued = %v", got)
+	}
+	if b, n := testutil.ToFloat64(tb.m.markovSeen.WithLabelValues("blocked")), testutil.ToFloat64(tb.m.markovSeen.WithLabelValues("no_words")); b != 1 || n != 1 {
+		t.Errorf("blocked = %v, no_words = %v", b, n)
+	}
+	tb.flushMarkov()
+	if m, w := testutil.ToFloat64(tb.m.markovLearn.WithLabelValues("messages")), testutil.ToFloat64(tb.m.markovLearn.WithLabelValues("words")); m != 2 || w != 8 {
+		t.Errorf("learned messages = %v, words = %v", m, w)
+	}
+	tb.updateMarkovStats()
+	if w := testutil.ToFloat64(tb.m.markovWords); w != 7 {
+		t.Errorf("chain words = %v, want 7", w)
+	}
+	if s := testutil.ToFloat64(tb.m.markovSteps); s == 0 {
+		t.Error("no chain steps")
+	}
+}

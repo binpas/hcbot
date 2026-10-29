@@ -232,20 +232,22 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 		return
 	}
 	var skipped string
+	result := "queued"
 	switch match := b.mk.block.Load().Match(words); {
 	case len(words) == 0:
-		skipped = "no words (only mentions, links, or attachments)"
+		skipped, result = "no words (only mentions, links, or attachments)", "no_words"
 	case match != "":
-		skipped = "blocked by ||`" + match + "`||"
+		skipped, result = "blocked by ||`"+match+"`||", "blocked"
 	default:
 		b.mk.mu.Lock()
 		if len(b.mk.pending) < markovMaxPending {
 			b.mk.pending = append(b.mk.pending, words)
 		} else {
-			skipped = "the learn queue is full (writes to markov.db fail; examine the bot's log)"
+			skipped, result = "the learn queue is full (writes to markov.db fail; examine the bot's log)", "queue_full"
 		}
 		b.mk.mu.Unlock()
 	}
+	b.m.markovSeen.WithLabelValues(result).Inc()
 	b.markovLog(m, len(words), skipped)
 }
 
@@ -377,6 +379,7 @@ func (b *Bot) flushMarkov() {
 		return
 	}
 	if err := b.chain.Learn(batch); err != nil {
+		b.m.markovLearn.WithLabelValues("errors").Inc()
 		log.Printf("markov learn: %v", err)
 		b.mk.mu.Lock()
 		b.mk.pending = append(batch, b.mk.pending...)
@@ -384,7 +387,32 @@ func (b *Bot) flushMarkov() {
 			b.mk.pending = b.mk.pending[:markovMaxPending]
 		}
 		b.mk.mu.Unlock()
+		return
 	}
+	words := 0
+	for _, msg := range batch {
+		words += len(msg)
+	}
+	b.m.markovLearn.WithLabelValues("messages").Add(float64(len(batch)))
+	b.m.markovLearn.WithLabelValues("words").Add(float64(words))
+}
+
+// markovStatsEvery is how often the metrics count the chain.
+const markovStatsEvery = 5 * time.Minute
+
+// updateMarkovStats counts the words and steps of the chain for the
+// metrics.
+func (b *Bot) updateMarkovStats() {
+	if b.chain == nil {
+		return
+	}
+	st, err := b.chain.Stats()
+	if err != nil {
+		log.Printf("markov stats: %v", err)
+		return
+	}
+	b.m.markovWords.Set(float64(st.Words))
+	b.m.markovSteps.Set(float64(st.Transitions))
 }
 
 func (b *Bot) cmdMarkovStatus(c *Ctx) {

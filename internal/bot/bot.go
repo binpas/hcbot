@@ -210,6 +210,7 @@ func (b *Bot) startLoops() {
 		b.every(30*time.Second, b.runJailReleases)
 		b.daily(4, 0, b.runDailyBackup)
 		b.every(markovFlushEvery, b.flushMarkov)
+		b.every(markovStatsEvery, b.updateMarkovStats)
 		b.every(nickSaveEvery, b.saveNicks)
 		b.resumeTTSJobs()
 	})

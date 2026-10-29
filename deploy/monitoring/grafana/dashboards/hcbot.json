@@ -1038,7 +1038,7 @@
   },
   {
    "type": "row",
-   "title": "Speech worker (GPU)",
+   "title": "Markov learning",
    "id": 31,
    "collapsed": false,
    "gridPos": {
@@ -1051,8 +1051,364 @@
   },
   {
    "type": "stat",
-   "title": "Queue",
+   "title": "Chain words",
    "id": 32,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_markov_chain_words",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Chain steps",
+   "id": 33,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_markov_chain_transitions",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Learned today",
+   "id": 34,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "increase(hcbot_markov_learned_total{what=\"messages\"}[1d])",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "description": "Messages learned in the last 24 hours (since the bot started, if that is later).",
+   "gridPos": {
+    "x": 8,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Words learned today",
+   "id": 35,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "increase(hcbot_markov_learned_total{what=\"words\"}[1d])",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Waiting to be written",
+   "id": 36,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_markov_pending_messages",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Write errors today",
+   "id": 37,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "increase(hcbot_markov_learned_total{what=\"errors\"}[1d])",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 81,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Chain size",
+   "id": 38,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_markov_chain_words",
+     "legendFormat": "words",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "hcbot_markov_chain_transitions",
+     "legendFormat": "steps",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 0,
+    "y": 85,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Learned per hour",
+   "id": 39,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (what) (increase(hcbot_markov_learned_total{what!=\"errors\"}[1h]))",
+     "legendFormat": "{{what}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 8,
+    "y": 85,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Messages in learn channels",
+   "id": 40,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (result) (increase(hcbot_markov_messages_total[$__rate_interval]))",
+     "legendFormat": "{{result}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 16,
+    "y": 85,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "row",
+   "title": "Speech worker (GPU)",
+   "id": 41,
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 93,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Queue",
+   "id": 42,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1084,7 +1440,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1092,7 +1448,7 @@
   {
    "type": "stat",
    "title": "Voices",
-   "id": 33,
+   "id": 43,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1124,7 +1480,7 @@
    },
    "gridPos": {
     "x": 4,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1132,7 +1488,7 @@
   {
    "type": "stat",
    "title": "GPU memory",
-   "id": 34,
+   "id": 44,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1166,7 +1522,7 @@
    },
    "gridPos": {
     "x": 8,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1174,7 +1530,7 @@
   {
    "type": "stat",
    "title": "Clips since start",
-   "id": 35,
+   "id": 45,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1206,7 +1562,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1214,7 +1570,7 @@
   {
    "type": "stat",
    "title": "Failed since start",
-   "id": 36,
+   "id": 46,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1246,7 +1602,7 @@
    },
    "gridPos": {
     "x": 16,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1254,7 +1610,7 @@
   {
    "type": "stat",
    "title": "Worker uptime",
-   "id": 37,
+   "id": 47,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1288,7 +1644,7 @@
    },
    "gridPos": {
     "x": 20,
-    "y": 81,
+    "y": 94,
     "w": 4,
     "h": 4
    }
@@ -1296,7 +1652,7 @@
   {
    "type": "timeseries",
    "title": "Jobs",
-   "id": 38,
+   "id": 48,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1319,7 +1675,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 85,
+    "y": 98,
     "w": 8,
     "h": 8
    }
@@ -1327,7 +1683,7 @@
   {
    "type": "timeseries",
    "title": "Clip make time p50 / p95",
-   "id": 39,
+   "id": 49,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1361,7 +1717,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 85,
+    "y": 98,
     "w": 8,
     "h": 8
    }
@@ -1369,7 +1725,7 @@
   {
    "type": "timeseries",
    "title": "GPU memory",
-   "id": 40,
+   "id": 50,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1394,7 +1750,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 85,
+    "y": 98,
     "w": 8,
     "h": 8
    }
@@ -1402,11 +1758,11 @@
   {
    "type": "row",
    "title": "Data and process",
-   "id": 41,
+   "id": 51,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 93,
+    "y": 106,
     "w": 24,
     "h": 1
    },
@@ -1415,7 +1771,7 @@
   {
    "type": "timeseries",
    "title": "Database size",
-   "id": 42,
+   "id": 52,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1449,7 +1805,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 94,
+    "y": 107,
     "w": 8,
     "h": 8
    }
@@ -1457,7 +1813,7 @@
   {
    "type": "timeseries",
    "title": "Caches",
-   "id": 43,
+   "id": 53,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1489,7 +1845,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 94,
+    "y": 107,
     "w": 8,
     "h": 8
    }
@@ -1497,7 +1853,7 @@
   {
    "type": "timeseries",
    "title": "Name lookups",
-   "id": 44,
+   "id": 54,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1520,7 +1876,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 94,
+    "y": 107,
     "w": 8,
     "h": 8
    }
@@ -1528,7 +1884,7 @@
   {
    "type": "timeseries",
    "title": "Media cache",
-   "id": 45,
+   "id": 55,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1553,7 +1909,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 102,
+    "y": 115,
     "w": 8,
     "h": 8
    }
@@ -1561,7 +1917,7 @@
   {
    "type": "timeseries",
    "title": "Goroutines",
-   "id": 46,
+   "id": 56,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1584,7 +1940,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 102,
+    "y": 115,
     "w": 8,
     "h": 8
    }
@@ -1592,7 +1948,7 @@
   {
    "type": "timeseries",
    "title": "CPU",
-   "id": 47,
+   "id": 57,
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -1615,7 +1971,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 102,
+    "y": 115,
     "w": 8,
     "h": 8
    }

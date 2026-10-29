@@ -43,6 +43,10 @@ type botMetrics struct {
 	downloads    *prometheus.CounterVec // result
 	downloadSize prometheus.Observer
 	markovReply  *prometheus.CounterVec // kind
+	markovSeen   *prometheus.CounterVec // result: queued, no_words, blocked, queue_full
+	markovLearn  *prometheus.CounterVec // what: messages, words, errors
+	markovWords  prometheus.Gauge
+	markovSteps  prometheus.Gauge
 	rankSeconds  prometheus.Observer
 	triggers     prometheus.Counter
 	autoreacts   prometheus.Counter
@@ -106,6 +110,17 @@ func newBotMetrics(b *Bot) *botMetrics {
 	m.downloadSize = hist("download_bytes", "The size of the files that /download posted.",
 		prometheus.ExponentialBuckets(256<<10, 2, 10)).WithLabelValues()
 	m.markovReply = counter("markov_replies_total", "Markov chat replies, by kind (mention, chance).", "kind")
+	m.markovSeen = counter("markov_messages_total", "Messages in the learn channels, by result (queued, no_words, blocked, queue_full).", "result")
+	m.markovLearn = counter("markov_learned_total", "What the chain learned: messages and words written to markov.db, and failed writes (errors).", "what")
+	m.markovWords = prometheus.NewGauge(prometheus.GaugeOpts{Name: "hcbot_markov_chain_words", Help: "Different words in the chain."})
+	m.markovSteps = prometheus.NewGauge(prometheus.GaugeOpts{Name: "hcbot_markov_chain_transitions", Help: "Word steps (transitions) in the chain."})
+	f(m.markovWords)
+	f(m.markovSteps)
+	gaugeFunc("markov_pending_messages", "Messages waiting to be written to markov.db.", func() float64 {
+		b.mk.mu.Lock()
+		defer b.mk.mu.Unlock()
+		return float64(len(b.mk.pending))
+	})
 	m.rankSeconds = hist("markov_rank_seconds", "The time of a rank request to the worker.", fast).WithLabelValues()
 	m.triggers = counter("triggers_total", "Triggers that answered.").WithLabelValues()
 	m.autoreacts = counter("autoreacts_total", "Autoreact emotes that the bot added.").WithLabelValues()

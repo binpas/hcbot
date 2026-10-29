@@ -752,6 +752,7 @@ With `METRICS_ADDR` (for example `:9101`), the bot serves [Prometheus](https://p
 | `hcbot_tts_jobs_total{result}`, `hcbot_tts_job_seconds` | `/say` clips, and the time from the request to the posted clip. |
 | `hcbot_downloads_total{result}`, `hcbot_download_bytes` | `/download` requests, and the size of the posted files. |
 | `hcbot_markov_replies_total{kind}`, `hcbot_markov_rank_seconds` | Markov chat replies (`mention`, `chance`), and the time of a rank request. |
+| `hcbot_markov_messages_total{result}`, `hcbot_markov_learned_total{what}`, `hcbot_markov_pending_messages`, `hcbot_markov_chain_words`, `hcbot_markov_chain_transitions` | Markov learning: the messages in the learn channels (`queued`, `no_words`, `blocked`, `queue_full`), the messages and words written to `markov.db` (and `errors`), the messages that wait to be written, and the size of the chain (counted each 5 minutes). |
 | `hcbot_triggers_total`, `hcbot_autoreacts_total` | Triggers that answered, and autoreact emotes. |
 | `hcbot_db_bytes`, `hcbot_markov_db_bytes` | The size of the databases. |
 | `hcbot_backups_total{result}`, `hcbot_last_backup_timestamp_seconds` | Database backups. Use the time for an alert when backups stop. |
