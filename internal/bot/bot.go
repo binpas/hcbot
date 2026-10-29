@@ -51,18 +51,15 @@ type Bot struct {
 
 	runTool  toolRunner                                               // a fake in tests
 	lookupIP func(ctx context.Context, host string) ([]net.IP, error) // a fake in tests
-	dlSlot   chan struct{}
+	dlSlot   chan struct{}                                            // one video download at a time
 	ttsHTTP  *http.Client
 	tts      ttsState
 	comics   *comicState       // nil when comics are off
-	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)                                            // one video download at a time
+	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)
 
 	// fetchImage gets a picture for a comic (a fake in tests).
 	fetchImage func(ctx context.Context, url string) ([]byte, error)
 
-	// forwardRetry is how long forwardOrLink waits before it checks a
-	// forward again (short in tests).
-	forwardRetry time.Duration
 	ttsPollEvery time.Duration // ttsPoll (short in tests)
 
 	loopsOnce sync.Once
@@ -113,7 +110,6 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		modals:       map[string]func(*Ctx){},
 		confirms:     map[string]func(*Ctx, []string){},
 		stop:         make(chan struct{}),
-		forwardRetry: 2 * time.Second,
 		ttsPollEvery: ttsPoll,
 		giphyURL:     giphySearchURL,
 		giphyHTTP:    &http.Client{Timeout: giphyTimeout},

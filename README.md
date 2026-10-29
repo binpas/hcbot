@@ -20,7 +20,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Autoreacts:** the bot reacts with an emote when a word or phrase is said. *(Needs the [Message Content option](#message-content-features).)*
 - **Reaction roles** built with a wizard.
 - **Markov chat:** the bot learns how people talk in chosen channels and replies with its own mix of their words. It has a blocklist and tools to remove words. Its data is in a separate database file.
-- **Curation (starboard):** messages with enough reactions are forwarded to a curated channel. *(Needs the [Message Content option](#message-content-features).)*
+- **Curation (starboard):** messages with enough reactions are copied to a curated channel, with their pictures and files. *(Needs the [Message Content option](#message-content-features).)*
 - **Audit logging:** messages, channels, threads, roles, voice, bans and invites.
 - **Admin tools:** database backups (also daily), emoji/sticker export and import, a channel permissions report, permission templates, and channel archiving.
 - **In-Discord configuration** with `/setup`. You do not need to edit `.env` for most settings.
@@ -221,7 +221,7 @@ The bot then also requests the Message Content intent, so you must also turn on 
 Two important facts, from tests with the real Discord API:
 
 1. **Discord decides access to message text from the portal switch**, not from the intent that the code requests. When the switch is on, Discord sends the text of every message to the bot, also when `ENABLE_MESSAGE_CONTENT_FEATURES` is off. The bot stores and shows message text only when the option is on.
-2. **A forward needs access to the message text.** Discord refuses to forward a message whose text the bot cannot read (error 160014), except a message that mentions the bot. This is why curation needs the option: it forwards each curated message.
+2. **A forward needs access to the message text.** Discord refuses to forward a message whose text the bot cannot read (error 160014), except a message that mentions the bot. Curation copies the text of each curated message, so it also needs the option.
 
 ---
 
@@ -483,7 +483,10 @@ The import refuses a file with a value that is not correct (for example, text in
 
 ## Automatic behavior
 
-- **Curation** (only with `ENABLE_MESSAGE_CONTENT_FEATURES`): when a message gets `CURATED_THRESHOLD` × `CURATED_EMOTE`, the bot posts an info card (author, count, channel) in `CURATED`, then forwards the message. If the forward fails, the bot tries once more after 2 seconds, then posts a link to the message. Each message is curated only once.
+- **Curation** (only with `ENABLE_MESSAGE_CONTENT_FEATURES`): when a message gets `CURATED_THRESHOLD` × `CURATED_EMOTE`, the bot posts a copy in `CURATED`: the count and the channel above one embed with the author, the text, a **Jump to message** link, and the time. Each message is curated only once.
+  - **Media:** the bot uploads the files, stickers, and embed images again (Discord's links to them expire), up to the server's upload limit. Up to 4 images show in the embed as a gallery. Spoiler images and other files (for example, videos) are attached under it. A file that is too large or cannot be read is named in the embed, with "see the original". If Discord refuses the files, the bot posts the embed without them.
+  - **Embeds:** the text of embeds from bots (author, title, description, fields, footer) is copied into the embed, as a quote. Link previews (YouTube, X, GIFs, websites) are not copied: their links go in the text above the embed, so that Discord shows its own previews, which can play.
+  - A reply shows "Replying to" and the name. The copy pings nobody. If the author edits or deletes the original, the copy does not change.
 - **Invites:** new invites are logged in `MOD_LOG`. React ❌ on the log entry to delete the invite. This also works after a restart.
 - **Bans and unbans** from any source are logged in `MOD_LOG`.
 - **Timers:** tempban unbans, MOTD removals and jail releases are checked every 30 seconds and survive a restart.

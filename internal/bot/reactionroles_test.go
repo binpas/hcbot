@@ -3,6 +3,7 @@ package bot
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -234,7 +235,8 @@ func TestCuration(t *testing.T) {
 	tb.config(map[string]string{"CURATED": tChSupport, "CURATED_THRESHOLD": "2"})
 	message := func(id string, stars int) {
 		tb.api.on("GET", "/channels/"+tChGeneral+"/messages/"+id, 200, fmt.Sprintf(
-			`{"id":%q,"channel_id":%q,"author":{"id":"202","username":"user","global_name":"User Name","avatar":"abc"},
+			`{"id":%q,"channel_id":%q,"content":"the best message","timestamp":"2026-10-29T12:00:00Z",
+			  "author":{"id":"900","username":"user","global_name":"User Name","avatar":"abc"},
 			  "reactions":[{"count":%d,"emoji":{"name":"⭐"}}]}`, id, tChGeneral, stars))
 	}
 
@@ -246,30 +248,27 @@ func TestCuration(t *testing.T) {
 	tb.react(tUser, tChGeneral, "9001", "👍") // another emote
 	tb.expectCall(0, "POST", "/channels/"+tChSupport+"/messages")
 	tb.react(tUser, tChGeneral, "9001", "⭐")
-	posts := tb.expectCall(2, "POST", "/channels/"+tChSupport+"/messages")
-	if len(posts) == 2 {
-		var card struct {
+	posts := tb.expectCall(1, "POST", "/channels/"+tChSupport+"/messages")
+	if len(posts) == 1 {
+		var post struct {
 			Content string `json:"content"`
 			Embeds  []struct {
-				Title       string `json:"title"`
+				Title     string `json:"title"`
+				URL       string `json:"url"`
+				Timestamp string `json:"timestamp"`
+				Author    struct {
+					Name string `json:"name"`
+				} `json:"author"`
 				Description string `json:"description"`
 			} `json:"embeds"`
+			Ref *struct{} `json:"message_reference"`
 		}
-		_ = json.Unmarshal(posts[0].Body, &card)
-		if card.Content != "⭐ **2** | "+channelMention(tChGeneral) || len(card.Embeds) != 1 || card.Embeds[0].Title != "User Name" {
-			t.Errorf("info card = %s", posts[0].Body)
-		}
-		var fwd struct {
-			Content string `json:"content"`
-			Ref     struct {
-				Type      int    `json:"type"`
-				MessageID string `json:"message_id"`
-				ChannelID string `json:"channel_id"`
-			} `json:"message_reference"`
-		}
-		_ = json.Unmarshal(posts[1].Body, &fwd)
-		if fwd.Ref.Type != 1 || fwd.Ref.MessageID != "9001" || fwd.Ref.ChannelID != tChGeneral || fwd.Content != "" {
-			t.Errorf("forward = %s", posts[1].Body)
+		_ = json.Unmarshal(posts[0].Body, &post)
+		e := post.Embeds
+		if post.Content != "⭐ **2** | "+channelMention(tChGeneral) || len(e) != 1 || post.Ref != nil ||
+			e[0].Author.Name != "User Name" || e[0].Description != "the best message" || e[0].Title != "Jump to message" ||
+			e[0].URL != "https://discord.com/channels/"+tGuild+"/"+tChGeneral+"/9001" || e[0].Timestamp == "" {
+			t.Errorf("post = %s", posts[0].Body)
 		}
 	}
 
@@ -290,7 +289,7 @@ func TestCuration(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	tb.expectCall(2, "POST", "/channels/"+tChSupport+"/messages")
+	tb.expectCall(1, "POST", "/channels/"+tChSupport+"/messages")
 
 	// Nothing in the curated channel itself, and nothing (not even a
 	// claim) when CURATED is not set.
@@ -305,50 +304,103 @@ func TestCuration(t *testing.T) {
 	}
 }
 
-func TestCurationForwardRetryAndLink(t *testing.T) {
-	setup := func(t *testing.T) *testBot {
-		tb := newTestBot(t, withMessageContent)
-		tb.config(map[string]string{"CURATED": tChSupport, "CURATED_THRESHOLD": "1"})
-		tb.api.on("GET", "/channels/"+tChGeneral+"/messages/9001", 200, `{"id":"9001","channel_id":"500",
-			"author":{"id":"202","username":"user"},"reactions":[{"count":1,"emoji":{"name":"⭐"}}]}`)
-		return tb
+func TestCurationMedia(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.config(map[string]string{"CURATED": tChSupport, "CURATED_THRESHOLD": "1"})
+	tb.api.on("GET", "/channels/"+tChGeneral+"/messages/9001", 200, `{"id":"9001","channel_id":"`+tChGeneral+`",
+		"content":"look https://youtu.be/x ||secret||","author":{"id":"900","username":"user"},
+		"referenced_message":{"id":"8000","author":{"id":"901","username":"other"}},
+		"attachments":[
+			{"id":"1","filename":"a.png","url":"https://cdn.discordapp.com/attachments/1/1/a.png","size":10,"content_type":"image/png"},
+			{"id":"2","filename":"b.jpg","url":"https://cdn.discordapp.com/attachments/1/2/b.jpg","size":10},
+			{"id":"3","filename":"SPOILER_c.png","url":"https://cdn.discordapp.com/attachments/1/3/SPOILER_c.png","size":10,"content_type":"image/png"},
+			{"id":"4","filename":"clip.mp4","url":"https://cdn.discordapp.com/attachments/1/4/clip.mp4","size":10,"content_type":"video/mp4"},
+			{"id":"5","filename":"huge.mp4","url":"https://cdn.discordapp.com/attachments/1/5/huge.mp4","size":999999999},
+			{"id":"6","filename":"gone.png","url":"https://cdn.discordapp.com/attachments/1/6/gone.png","size":10}],
+		"sticker_items":[{"id":"77","name":"wave","format_type":1}],
+		"embeds":[
+			{"type":"video","url":"https://youtu.be/x","title":"A video"},
+			{"type":"rich","title":"Bot card","url":"https://example.com","description":"line one\nline two",
+			 "fields":[{"name":"Score","value":"12"}],"footer":{"text":"by a bot"}}],
+		"reactions":[{"count":1,"emoji":{"name":"⭐"}}]}`)
+	for _, f := range []string{"1/a.png", "2/b.jpg", "3/SPOILER_c.png", "4/clip.mp4"} {
+		tb.api.on("GET", "/attachments/1/"+f, 200, "data-"+f)
 	}
-	forward := `"type":1`
-	link := "https://discord.com/channels/" + tGuild + "/" + tChGeneral + "/9001"
+	tb.api.on("GET", "/attachments/1/6/gone.png", 404, `{}`)
+	tb.api.on("GET", "/stickers/77.png", 200, "sticker")
+	tb.react(tUser, tChGeneral, "9001", "⭐")
 
-	t.Run("refused once", func(t *testing.T) {
-		tb := setup(t)
-		tb.api.onBody("POST", "/channels/"+tChSupport+"/messages", forward, 1, 403,
-			`{"message":"You cannot forward a message whose content you cannot read","code":160014}`)
-		tb.react(tUser, tChGeneral, "9001", "⭐")
-		if n := len(tb.api.find("POST", "/channels/"+tChSupport+"/messages")); n != 3 {
-			t.Errorf("posts = %d, want card + 2 forward tries", n)
+	posts := tb.expectCall(1, "POST", "/channels/"+tChSupport+"/messages")
+	if len(posts) != 1 {
+		return
+	}
+	var post struct {
+		Content string `json:"content"`
+		Embeds  []struct {
+			URL         string `json:"url"`
+			Description string `json:"description"`
+			Image       struct {
+				URL string `json:"url"`
+			} `json:"image"`
+		} `json:"embeds"`
+	}
+	if err := json.Unmarshal(posts[0].Body, &post); err != nil {
+		t.Fatal(err)
+	}
+	// The link preview is a link in the text; the bot embed is quoted.
+	if !strings.HasSuffix(post.Content, "\nhttps://youtu.be/x") {
+		t.Errorf("content = %q", post.Content)
+	}
+	desc := post.Embeds[0].Description
+	for _, want := range []string{"-# ↩️ Replying to **other**", "look https://youtu.be/x ||secret||",
+		"> **[Bot card](https://example.com)**\n> line one\n> line two\n> **Score**: 12\n> -# by a bot",
+		"`huge.mp4` is too large", "`gone.png` could not be copied"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description has no %q:\n%s", want, desc)
 		}
-		if contains(tb.sent(tChSupport), link) {
-			t.Error("fallback link posted although the second forward worked")
+	}
+	if strings.Contains(desc, "A video") {
+		t.Error("the link preview is copied")
+	}
+	// Images: a gallery of a.png, b.jpg and the sticker; the spoiler and
+	// the video are only files.
+	var images []string
+	for _, e := range post.Embeds {
+		images = append(images, e.Image.URL)
+		if e.URL != post.Embeds[0].URL {
+			t.Errorf("gallery embed URL = %q", e.URL)
 		}
-	})
+	}
+	if want := []string{"attachment://a.png", "attachment://b.jpg", "attachment://sticker_77.png"}; !slices.Equal(images, want) {
+		t.Errorf("images = %v, want %v", images, want)
+	}
+	for name, want := range map[string]string{"a.png": "data-1/a.png", "SPOILER_c.png": "data-3/SPOILER_c.png", "clip.mp4": "data-4/clip.mp4", "sticker_77.png": "sticker"} {
+		if got := string(posts[0].Files[name]); got != want {
+			t.Errorf("file %s = %q, want %q", name, got, want)
+		}
+	}
+	if len(posts[0].Files) != 5 {
+		t.Errorf("files = %d, want 5", len(posts[0].Files))
+	}
+	if !strings.Contains(string(posts[0].Body), `"allowed_mentions":{`) {
+		t.Error("the post can ping")
+	}
+}
 
-	t.Run("late to show", func(t *testing.T) {
-		tb := setup(t)
-		// The first check misses the forward; the second finds it.
-		tb.api.onBody("GET", "/channels/"+tChSupport+"/messages/8000", "", 1, 404, `{"message":"Unknown Message","code":10008}`)
-		tb.react(tUser, tChGeneral, "9001", "⭐")
-		if n := len(tb.api.find("POST", "/channels/"+tChSupport+"/messages")); n != 2 {
-			t.Errorf("posts = %d, want card + 1 forward (it showed up on the second check)", n)
-		}
-	})
-
-	t.Run("never shows", func(t *testing.T) {
-		tb := setup(t)
-		tb.api.onBody("POST", "/channels/"+tChSupport+"/messages", forward, 0, 403,
-			`{"message":"You cannot forward a message whose content you cannot read","code":160014}`)
-		tb.react(tUser, tChGeneral, "9001", "⭐")
-		sent := tb.sent(tChSupport)
-		if len(sent) != 4 || !strings.Contains(sent[3], link) {
-			t.Errorf("posts = %q, want card + 2 forward tries + a link", sent)
-		}
-	})
+func TestCurationFileRefused(t *testing.T) {
+	tb := newTestBot(t, withMessageContent)
+	tb.config(map[string]string{"CURATED": tChSupport, "CURATED_THRESHOLD": "1"})
+	tb.api.on("GET", "/channels/"+tChGeneral+"/messages/9001", 200, `{"id":"9001","channel_id":"`+tChGeneral+`",
+		"content":"hi","author":{"id":"900","username":"user"},
+		"attachments":[{"id":"1","filename":"a.png","url":"https://cdn.discordapp.com/attachments/1/1/a.png","size":10}],
+		"reactions":[{"count":1,"emoji":{"name":"⭐"}}]}`)
+	tb.api.on("GET", "/attachments/1/1/a.png", 200, "png")
+	tb.api.onBody("POST", "/channels/"+tChSupport+"/messages", "attachment://", 1, 413, `{"message":"Request entity too large","code":40005}`)
+	tb.react(tUser, tChGeneral, "9001", "⭐")
+	posts := tb.api.find("POST", "/channels/"+tChSupport+"/messages")
+	if len(posts) != 2 || len(posts[1].Files) != 0 || !strings.Contains(string(posts[1].Body), "could not be copied") {
+		t.Errorf("posts = %v", tb.callList())
+	}
 }
 
 func TestCurationWithoutMessageContent(t *testing.T) {

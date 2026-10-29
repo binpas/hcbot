@@ -285,7 +285,6 @@ func newTestBot(t *testing.T, opts ...func(*config.Env)) *testBot {
 	}
 	api := &fakeAPI{}
 	var tb *testBot
-	b.forwardRetry = 0
 	b.assetDelay = 0
 	b.backupDir = filepath.Join(t.TempDir(), "backups")
 	b.s.Client = &http.Client{Transport: api}

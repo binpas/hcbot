@@ -304,16 +304,20 @@ func lookupIP(ctx context.Context, host string) ([]net.IP, error) {
 // uploadLimitMB is DOWNLOAD_MAX_MB, but not more than the server's boost
 // level permits.
 func (b *Bot) uploadLimitMB(guildID string) int {
-	tierMB := 10
+	return min(max(b.cfg.Int("DOWNLOAD_MAX_MB"), 1), b.serverUploadMB(guildID))
+}
+
+// serverUploadMB is the upload limit of a server's boost level.
+func (b *Bot) serverUploadMB(guildID string) int {
 	if g, err := b.s.State.Guild(guildID); err == nil {
 		switch g.PremiumTier {
 		case discordgo.PremiumTier2:
-			tierMB = 50
+			return 50
 		case discordgo.PremiumTier3:
-			tierMB = 100
+			return 100
 		}
 	}
-	return min(max(b.cfg.Int("DOWNLOAD_MAX_MB"), 1), tierMB)
+	return 10
 }
 
 type videoResult struct {

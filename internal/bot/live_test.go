@@ -818,9 +818,9 @@ func TestLive(t *testing.T) {
 		lv.b.curate(r)
 		lv.b.curate(r) // a second event does nothing
 
-		// The live bot runs without ENABLE_MESSAGE_CONTENT_FEATURES (and the
-		// test app has the intent switch off), so curation is off: nothing
-		// is posted. The check below shows why: Discord refuses the forward.
+		// The live bot runs without ENABLE_MESSAGE_CONTENT_FEATURES, so
+		// curation is off: nothing is posted (it cannot copy text that it
+		// cannot read).
 		posted, err := lv.b.s.ChannelMessages(curated, 10, "", "", "")
 		if err != nil {
 			t.Fatal(err)
@@ -830,15 +830,6 @@ func TestLive(t *testing.T) {
 		}
 		if done, _ := lv.b.db.IsCurated(msg.ID); done {
 			t.Error("message claimed as curated")
-		}
-		_, err = lv.b.s.ChannelMessageSendComplex(curated, &discordgo.MessageSend{Reference: &discordgo.MessageReference{
-			Type: discordgo.MessageReferenceTypeForward, MessageID: msg.ID, ChannelID: chat, GuildID: g}})
-		if app, aerr := lv.b.s.Application("@me"); aerr == nil && app.Flags&(1<<19) == 0 {
-			if errCode(err) != 160014 {
-				t.Errorf("forward with the switch off: err = %v, want Discord error 160014", err)
-			}
-		} else {
-			t.Logf("the Message Content switch is on; forward err = %v", err)
 		}
 	})
 
