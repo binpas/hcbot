@@ -8,11 +8,15 @@ import (
 )
 
 // Modal components that discordgo v0.29 does not have: a Label holds one
-// input (a text input or a string select), with a title and a description.
+// input (a text input, a string select, or a checkbox group), with a title
+// and a description.
 // discordgo cannot read a modal submit with Labels, so onRawInteraction
 // reads it from the raw gateway event.
 
-const labelComponent discordgo.ComponentType = 18
+const (
+	labelComponent         discordgo.ComponentType = 18
+	checkboxGroupComponent discordgo.ComponentType = 22
+)
 
 // modalLabel is a Label (type 18) around one modal input.
 type modalLabel struct {
@@ -72,6 +76,36 @@ func (s modalSelect) MarshalJSON() ([]byte, error) {
 		Max      int                          `json:"max_values"`
 		Required bool                         `json:"required"`
 	}{s.Type(), s.CustomID, s.Options, 1, 1, true})
+}
+
+// modalCheckboxes is a checkbox group (1 to 10 options) in a Label; any
+// number of them can be checked. Its submit has the checked values.
+type modalCheckboxes struct {
+	CustomID string
+	Options  []discordgo.SelectMenuOption // Label, Value, Description, Default
+}
+
+func (g modalCheckboxes) Type() discordgo.ComponentType { return checkboxGroupComponent }
+
+func (g modalCheckboxes) MarshalJSON() ([]byte, error) {
+	type option struct {
+		Value       string `json:"value"`
+		Label       string `json:"label"`
+		Description string `json:"description,omitempty"`
+		Default     bool   `json:"default,omitempty"`
+	}
+	opts := make([]option, len(g.Options))
+	for i, o := range g.Options {
+		opts[i] = option{o.Value, o.Label, o.Description, o.Default}
+	}
+	return json.Marshal(struct {
+		Type     discordgo.ComponentType `json:"type"`
+		CustomID string                  `json:"custom_id"`
+		Options  []option                `json:"options"`
+		Min      int                     `json:"min_values"`
+		Max      int                     `json:"max_values"`
+		Required bool                    `json:"required"`
+	}{g.Type(), g.CustomID, opts, 0, len(opts), false})
 }
 
 // rawComponent is a submitted modal component, at any depth.

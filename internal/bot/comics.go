@@ -129,12 +129,13 @@ func (b *Bot) registerComics() {
 		perm: permAdmin, handler: b.cmdComicArtReload,
 	})
 	for id, h := range map[string]func(*Ctx){
-		"comicsel": b.onComicSelect, "comicbg": b.onComicBackground, "comicpre": b.onComicPreview,
+		"comicpick": b.onComicPick, "comicbg": b.onComicBackground, "comicpre": b.onComicPreview,
 		"comicpost": b.onComicPost, "comicno": b.onComicCancel,
 		"charall": b.onCharacterAll, "charreset": b.onCharacterReset,
 	} {
 		b.addComponent(id, h)
 	}
+	b.addModal("comicmsgs", b.onComicMessages)
 }
 
 // comicMax is COMIC_MAX_MESSAGES, from 2 to comicHardMax.
@@ -604,10 +605,9 @@ func (b *Bot) cmdComicHere(c *Ctx) {
 // Cancel. preview adds the image "preview.png".
 func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Message, preview bool) []discordgo.MessageComponent {
 	parts := []discordgo.MessageComponent{discordgo.TextDisplay{Content: "### 🎞️ Comic editor\n" +
-		"Select the messages for the comic in the first menu. **Preview** shows the comic only to you. **Post** sends it to the channel."}}
+		"**Choose messages** shows a checkbox for each message. **Preview** shows the comic only to you. **Post** sends it to the channel."}}
 	kept := 0
 	var lines []string
-	var picks []discordgo.SelectMenuOption
 	for _, m := range msgs {
 		pic, hasPic := comicPicture(m)
 		text := cutText(b.comicText(guildID, m, pic), 150)
@@ -626,17 +626,11 @@ func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Me
 			kept++
 		}
 		lines = append(lines, line)
-		// A menu shows plain text, up to 100 characters.
-		picks = append(picks, discordgo.SelectMenuOption{Label: cutText(name+": "+text, 100), Value: m.ID, Default: !removed})
 	}
 	if len(msgs) == 0 {
 		parts = append(parts, discordgo.TextDisplay{Content: "-# The messages were deleted."})
 	} else {
-		none := 0
-		parts = append(parts, discordgo.TextDisplay{Content: strings.Join(lines, "\n")},
-			discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{
-				MenuType: discordgo.StringSelectMenu, CustomID: "comicsel:" + id, Placeholder: "Messages in the comic",
-				MinValues: &none, MaxValues: len(picks), Options: picks}}})
+		parts = append(parts, discordgo.TextDisplay{Content: strings.Join(lines, "\n")})
 	}
 	options := []discordgo.SelectMenuOption{{Label: "Random background", Value: comicRandom, Default: d.Background == ""}}
 	for _, name := range b.comics.pack.Load().Backgrounds() {
@@ -649,6 +643,7 @@ func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Me
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{
 			MenuType: discordgo.StringSelectMenu, CustomID: "comicbg:" + id, Options: options}}},
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{Label: "Choose messages", Style: discordgo.SecondaryButton, CustomID: "comicpick:" + id, Disabled: len(msgs) == 0},
 			discordgo.Button{Label: "Preview", Style: discordgo.SecondaryButton, CustomID: "comicpre:" + id, Disabled: kept == 0},
 			discordgo.Button{Label: "Post", Style: discordgo.PrimaryButton, CustomID: "comicpost:" + id, Disabled: kept == 0},
 			discordgo.Button{Label: "Cancel", Style: discordgo.DangerButton, CustomID: "comicno:" + id},
@@ -696,7 +691,19 @@ func (b *Bot) loadComic(c *Ctx) (string, comicDraft, bool) {
 		return "", d, false
 	}
 	c.DeferUpdate()
-	n, _ := strconv.ParseInt(c.Args[0], 10, 64)
+	d, ok := b.readComic(c, c.Args[0])
+	if !ok {
+		c.updateComic(comicNotice("This comic editor has expired. Use **" + comicMenu + "** again."))
+		return "", d, false
+	}
+	return c.Args[0], d, true
+}
+
+// readComic reads the draft of an editor, when it is the user's and is
+// not expired.
+func (b *Bot) readComic(c *Ctx, id string) (comicDraft, bool) {
+	var d comicDraft
+	n, _ := strconv.ParseInt(id, 10, 64)
 	payload, ok, err := b.db.LoadPending(n, "comic", c.UserID())
 	if err == nil && ok {
 		err = json.Unmarshal([]byte(payload), &d)
@@ -704,11 +711,7 @@ func (b *Bot) loadComic(c *Ctx) (string, comicDraft, bool) {
 	if err != nil {
 		c.logErr("comic: load", err)
 	}
-	if err != nil || !ok {
-		c.updateComic(comicNotice("This comic editor has expired. Use **" + comicMenu + "** again."))
-		return "", d, false
-	}
-	return c.Args[0], d, true
+	return d, err == nil && ok
 }
 
 func (b *Bot) saveComic(c *Ctx, id string, d comicDraft) bool {
@@ -755,15 +758,53 @@ func (b *Bot) redrawComic(c *Ctx, id string, d comicDraft) {
 	c.updateComic(b.comicEditor(c.GuildID(), id, d, msgs, false))
 }
 
-// onComicSelect is the message menu: the messages that are not selected
+// onComicPick opens the "Choose messages" form: a checkbox for each
+// message, checked when it is in the comic. A form must be the first
+// answer, so this click is not deferred.
+func (b *Bot) onComicPick(c *Ctx) {
+	if b.comics == nil || len(c.Args) < 1 {
+		return
+	}
+	id := c.Args[0]
+	d, ok := b.readComic(c, id)
+	if !ok {
+		c.Reply(true, errEmbed("This comic editor has expired. Use **"+comicMenu+"** again."))
+		return
+	}
+	msgs, err := b.draftMessages(d)
+	if err != nil || len(msgs) == 0 {
+		c.logErr("comic: messages", err)
+		c.Reply(true, errEmbed("I could not read the messages. Try again."))
+		return
+	}
+	var boxes []discordgo.SelectMenuOption
+	for _, m := range msgs[:min(len(msgs), 10)] { // a Discord limit
+		pic, hasPic := comicPicture(m)
+		text := b.comicText(c.GuildID(), m, pic)
+		if hasPic {
+			text = strings.TrimSpace(text + " 🖼️")
+		}
+		// A checkbox shows plain text, up to 100 characters.
+		boxes = append(boxes, discordgo.SelectMenuOption{Label: cutText(b.comicName(c.GuildID(), m.Author)+": "+text, 100),
+			Value: m.ID, Default: !slices.Contains(d.Removed, m.ID)})
+	}
+	c.Modal("comicmsgs:"+id, "Choose messages", modalLabel{Label: "Messages in the comic",
+		Description: "Uncheck the messages that you do not want.", Component: modalCheckboxes{CustomID: "msgs", Options: boxes}})
+}
+
+// onComicMessages is the "Choose messages" form: the unchecked messages
 // are removed.
-func (b *Bot) onComicSelect(c *Ctx) {
+func (b *Bot) onComicMessages(c *Ctx) {
 	id, d, ok := b.loadComic(c)
 	if !ok {
 		return
 	}
-	picked := c.Values()
-	d.Removed = slices.DeleteFunc(slices.Clone(d.IDs), func(id string) bool { return slices.Contains(picked, id) })
+	checked, sent := c.fields["msgs"]
+	if !sent {
+		b.redrawComic(c, id, d)
+		return
+	}
+	d.Removed = slices.DeleteFunc(slices.Clone(d.IDs), func(id string) bool { return slices.Contains(checked, id) })
 	if b.saveComic(c, id, d) {
 		b.redrawComic(c, id, d)
 	}

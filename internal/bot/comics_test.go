@@ -216,7 +216,22 @@ func TestComicMention(t *testing.T) {
 	}
 }
 
-var comicIDRE = regexp.MustCompile(`comicsel:(\d+)"`)
+var comicIDRE = regexp.MustCompile(`comicpick:(\d+)"`)
+
+// submitCheckboxes sends a modal with one checkbox group, the way Discord
+// does (in a Label), as a raw gateway event.
+func (tb *testBot) submitCheckboxes(userID, customID, groupID string, checked ...string) {
+	tb.t.Helper()
+	tb.seq++
+	member, _ := json.Marshal(tb.invoker(userID))
+	raw, _ := json.Marshal(map[string]any{
+		"id": fmt.Sprint(10000 + tb.seq), "application_id": tBot, "type": 5, "token": fmt.Sprintf("tok%d", tb.seq),
+		"guild_id": tGuild, "channel_id": tChGeneral, "member": json.RawMessage(member),
+		"data": map[string]any{"custom_id": customID, "components": []any{map[string]any{"type": 18,
+			"component": map[string]any{"type": 22, "custom_id": groupID, "values": append([]string{}, checked...)}}}},
+	})
+	tb.onRawInteraction(tb.s, &discordgo.Event{Type: "INTERACTION_CREATE", RawData: raw})
+}
 
 // editorBodies returns the bodies of the editor messages (the menu answer,
 // the updates, and the edits), in order.
@@ -255,15 +270,13 @@ func TestComicEditor(t *testing.T) {
 		t.Errorf("flags = %d", resp.Data.Flags)
 	}
 	ed := bodies[0]
-	for _, want := range []string{"comicsel:", `"value":"1001","description":"","default":true`, `"value":"1007"`, "comicbg:", "comicpre:", "comicpost:", "comicno:", `lol \\*\\*bold\\*\\* @user`, "beep boop"} {
+	for _, want := range []string{"comicpick:", "**user**: hello there", "**user**: ok then", "comicbg:", "comicpre:", "comicpost:", "comicno:", `lol \\*\\*bold\\*\\* @user`, "beep boop"} {
 		if !strings.Contains(ed, want) {
 			t.Errorf("editor has no %s: %s", want, ed)
 		}
 	}
-	for _, skip := range []string{`"value":"1005"`, `"value":"1006"`} {
-		if strings.Contains(ed, skip) {
-			t.Errorf("editor has the skipped message %s", skip)
-		}
+	if strings.Contains(ed, "join") {
+		t.Errorf("editor has the join message: %s", ed)
 	}
 	m := comicIDRE.FindStringSubmatch(ed)
 	if m == nil {
@@ -271,28 +284,49 @@ func TestComicEditor(t *testing.T) {
 	}
 	id := m[1]
 
-	// Unselect two messages in the menu (one answer, deferred first).
+	// Choose messages: a form with a checkbox for each message.
 	tb.api.reset()
 	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
-	tb.click(tUser, "comicsel:"+id, "1001", "1003", "1007")
+	tb.click(tUser, "comicpick:"+id)
+	form := strings.Join(tb.editorBodies(), "")
+	for _, want := range []string{`"type":9`, `"custom_id":"comicmsgs:` + id + `"`, `"type":18`, `"type":22`, `"min_values":0`, `"required":false`,
+		`{"value":"1001","label":"user: hello there","default":true}`, `"label":"nopic: lol **bold** @user"`, `"value":"1007"`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("form has no %s: %s", want, form)
+		}
+	}
+	if strings.Contains(form, `"value":"1005"`) || strings.Contains(form, `"value":"1006"`) {
+		t.Errorf("form has a skipped message: %s", form)
+	}
+
+	// Uncheck two messages: one answer, deferred first.
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.submitCheckboxes(tUser, "comicmsgs:"+id, "msgs", "1001", "1003", "1007")
 	if rs := tb.replies(); len(rs) == 0 || rs[0].Kind != "defer-update" {
-		t.Errorf("select replies = %+v", rs)
+		t.Errorf("form replies = %+v", rs)
 	}
 	ed = strings.Join(tb.editorBodies(), "")
-	for _, want := range []string{"~~**healthbot**: beep boop~~", "~~**nopic**:", `"value":"1004","description":"","default":false`, `"value":"1003","description":"","default":true`} {
+	for _, want := range []string{"~~**healthbot**: beep boop~~", "~~**nopic**:", "**user**: I think so"} {
 		if !strings.Contains(ed, want) {
-			t.Errorf("after the select, no %s: %s", want, ed)
+			t.Errorf("after the form, no %s: %s", want, ed)
 		}
 	}
 	if g := tb.api.find("GET", `/channels/`+tChGeneral+`/messages`); len(g) != 1 || !strings.Contains(g[0].Query, "before=1008") {
 		t.Errorf("reread = %+v", g)
 	}
-	// Select one of them again.
+	// The form shows the choice; check one again.
 	tb.api.reset()
 	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
-	tb.click(tUser, "comicsel:"+id, "1001", "1002", "1003", "1007")
+	tb.click(tUser, "comicpick:"+id)
+	if form = strings.Join(tb.editorBodies(), ""); !strings.Contains(form, `{"value":"1004","label":"healthbot: beep boop"}`) {
+		t.Errorf("form after the choice: %s", form)
+	}
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.submitCheckboxes(tUser, "comicmsgs:"+id, "msgs", "1001", "1002", "1003", "1007")
 	if ed = strings.Join(tb.editorBodies(), ""); strings.Contains(ed, "~~**nopic**") || !strings.Contains(ed, "~~**healthbot**") {
-		t.Errorf("after the second select: %s", ed)
+		t.Errorf("after the second form: %s", ed)
 	}
 
 	// Background, then Preview: the kept messages, with the image.
@@ -318,6 +352,11 @@ func TestComicEditor(t *testing.T) {
 	if ed = strings.Join(tb.editorBodies(), ""); !strings.Contains(ed, "expired") {
 		t.Errorf("other member = %s", ed)
 	}
+	tb.api.reset()
+	tb.click(tMod, "comicpick:"+id)
+	if ed = strings.Join(tb.editorBodies(), ""); !strings.Contains(ed, "expired") || strings.Contains(ed, `"type":9`) {
+		t.Errorf("other member, Choose messages = %s", ed)
+	}
 
 	// Post: the comic goes to the channel, and the editor says so.
 	tb.api.reset()
@@ -332,7 +371,7 @@ func TestComicEditor(t *testing.T) {
 	}
 	// The editor is gone.
 	tb.api.reset()
-	tb.click(tUser, "comicsel:"+id, "1001")
+	tb.submitCheckboxes(tUser, "comicmsgs:"+id, "msgs", "1001")
 	if ed = strings.Join(tb.editorBodies(), ""); !strings.Contains(ed, "expired") {
 		t.Errorf("after post, a click = %s", ed)
 	}
@@ -649,5 +688,20 @@ func TestComicNickCache(t *testing.T) {
 	data, _ := json.Marshal(tb.comicEditor(tGuild, "1", comicDraft{}, msgs[:1], false))
 	if !strings.Contains(string(data), "**Zap**") || len(tb.api.find("GET", `/members/`)) != 0 {
 		t.Errorf("editor = %s, calls %v", data, tb.callList())
+	}
+}
+
+func TestComicEditorNoneChecked(t *testing.T) {
+	tb, _ := newComicBot(t)
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(1002))
+	start := &discordgo.Message{ID: "1001", Content: "hello there", Author: &discordgo.User{ID: tUser, Username: "user"}}
+	tb.runMessageMenu(tUser, comicMenu, start)
+	id := comicIDRE.FindStringSubmatch(strings.Join(tb.editorBodies(), ""))[1]
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(1001, 1002))
+	tb.submitCheckboxes(tUser, "comicmsgs:"+id, "msgs")
+	ed := strings.Join(tb.editorBodies(), "")
+	if !strings.Contains(ed, "~~**user**: hello there~~") || !strings.Contains(ed, `"label":"Preview","style":2,"disabled":true`) {
+		t.Errorf("editor with no messages = %s", ed)
 	}
 }
