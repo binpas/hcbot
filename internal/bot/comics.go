@@ -313,8 +313,8 @@ func cmpSnowflake(a, b string) int {
 	return strings.Compare(a, b)
 }
 
-// drawComic makes the comic of msgs (oldest first): the text, the names,
-// the profile pictures, and the chosen characters.
+// drawComic makes the comic of msgs (oldest first): the text, the user
+// names (in the cast), the profile pictures, and the chosen characters.
 func (b *Bot) drawComic(guildID string, msgs []*discordgo.Message, background string) ([]byte, error) {
 	if len(msgs) == 0 {
 		return nil, comic.ErrNoMessages
@@ -341,7 +341,7 @@ func (b *Bot) drawComic(guildID string, msgs []*discordgo.Message, background st
 		pic, hasPic := comicPicture(m)
 		cm := comic.Message{
 			Speaker:   m.Author.ID,
-			Name:      b.comicName(guildID, m.Author),
+			Name:      m.Author.Username,
 			Avatar:    avatars[m.Author.ID],
 			Character: chosen[m.Author.ID],
 			Text:      cutText(b.comicText(guildID, m, pic), comicTextMax),
