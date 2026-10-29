@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -137,7 +138,7 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 // handleInteraction runs an interaction. fields holds the values of a modal
 // submit that onRawInteraction read itself; it is nil otherwise.
 func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, fields map[string][]string) {
-	c := &Ctx{b: b, s: s, i: i, fields: fields}
+	c := &Ctx{b: b, s: s, i: i, fields: fields, start: time.Now()}
 	if i.Member != nil && i.Member.User != nil {
 		b.seeNick(i.GuildID, i.Member.User.ID, i.Member.Nick)
 	}
@@ -145,6 +146,7 @@ func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCr
 		if r := recover(); r != nil {
 			log.Printf("panic in interaction %s: %v\n%s", c.name(), r, debug.Stack())
 		}
+		c.logSlow()
 	}()
 
 	switch i.Type {
@@ -248,7 +250,46 @@ type Ctx struct {
 	Args []string
 
 	responded bool
-	deferred  bool // deferred and not yet replied to
+	deferred  bool      // deferred and not yet replied to
+	start     time.Time // when the interaction came
+	answerIn  time.Duration
+}
+
+// markResponded notes that the interaction has its first answer, and when.
+func (c *Ctx) markResponded() {
+	if !c.responded {
+		c.responded = true
+		c.answerIn = time.Since(c.start)
+	}
+}
+
+// slowAnswer is when the log notes a slow handler. Discord fails an
+// interaction that has no answer after 3 seconds.
+const slowAnswer = 2 * time.Second
+
+// logSlow logs an interaction whose first answer (or, with no answer, its
+// handler) took slowAnswer or more, to find what makes the bot slow.
+func (c *Ctx) logSlow() {
+	what := c.name()
+	switch c.i.Type {
+	case discordgo.InteractionMessageComponent:
+		what = "component " + strings.SplitN(c.i.MessageComponentData().CustomID, ":", 2)[0]
+	case discordgo.InteractionModalSubmit:
+		what = "modal " + strings.SplitN(c.i.ModalSubmitData().CustomID, ":", 2)[0]
+	}
+	switch total := time.Since(c.start); {
+	case c.responded && c.answerIn >= slowAnswer:
+		log.Printf("slow: %s: first answer after %v (all: %v)", what, c.answerIn.Round(time.Millisecond), total.Round(time.Millisecond))
+	case !c.responded && total >= slowAnswer:
+		log.Printf("slow: %s: no answer after %v", what, total.Round(time.Millisecond))
+	}
+}
+
+// logSlow logs an event handler that took slowAnswer or more.
+func logSlow(what string, start time.Time) {
+	if d := time.Since(start); d >= slowAnswer {
+		log.Printf("slow: %s took %v", what, d.Round(time.Millisecond))
+	}
 }
 
 func (c *Ctx) name() string {
@@ -314,7 +355,7 @@ func (c *Ctx) reply(ephemeral bool, embeds []*discordgo.MessageEmbed, components
 		return err
 	}
 	if !c.responded {
-		c.responded = true
+		c.markResponded()
 		err := c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{Embeds: embeds, Components: components, Flags: flags, Files: files},
@@ -336,7 +377,7 @@ func (c *Ctx) Defer(ephemeral bool) {
 	if ephemeral {
 		flags = discordgo.MessageFlagsEphemeral
 	}
-	c.responded = true
+	c.markResponded()
 	c.deferred = true
 	c.logErr("defer", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
@@ -347,7 +388,7 @@ func (c *Ctx) Defer(ephemeral bool) {
 // DeferUpdate acknowledges a component click without changing its message
 // yet. A later Reply edits that message.
 func (c *Ctx) DeferUpdate() {
-	c.responded = true
+	c.markResponded()
 	c.deferred = true
 	c.logErr("defer update", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
@@ -390,7 +431,7 @@ func (c *Ctx) ResponseURL() string {
 
 // Update edits the message a component (or a modal opened from one) is on.
 func (c *Ctx) Update(embeds []*discordgo.MessageEmbed, components []discordgo.MessageComponent) {
-	c.responded = true
+	c.markResponded()
 	c.logErr("update", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{Embeds: embeds, Components: components},
@@ -399,7 +440,7 @@ func (c *Ctx) Update(embeds []*discordgo.MessageEmbed, components []discordgo.Me
 
 // Modal opens a modal in response to the interaction.
 func (c *Ctx) Modal(customID, title string, components ...discordgo.MessageComponent) {
-	c.responded = true
+	c.markResponded()
 	c.logErr("modal", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{CustomID: customID, Title: title, Components: components},

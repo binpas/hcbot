@@ -3,6 +3,7 @@ package bot
 import (
 	"log"
 	"runtime/debug"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -16,6 +17,7 @@ func recoverHandler(what string) {
 // onReactionAdd is the one handler for added reactions, in the Python
 // bot's order: reaction roles, tickets, invite deletion, then curation.
 func (b *Bot) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+	defer logSlow("reaction add handler", time.Now())
 	defer recoverHandler("reaction add handler")
 	if b.env.SetupMode || r.GuildID == "" || r.UserID == s.State.User.ID {
 		return
@@ -45,6 +47,7 @@ func (b *Bot) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAd
 
 // onReactionRemove removes reaction roles.
 func (b *Bot) onReactionRemove(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
+	defer logSlow("reaction remove handler", time.Now())
 	defer recoverHandler("reaction remove handler")
 	if b.env.SetupMode || r.GuildID == "" || r.UserID == s.State.User.ID {
 		return

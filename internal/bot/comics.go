@@ -595,7 +595,7 @@ func (b *Bot) cmdComicHere(c *Ctx) {
 			Components: b.comicEditor(c.GuildID(), id, d, msgs, false),
 		},
 	})
-	c.responded = true
+	c.markResponded()
 	c.logErr("comic: editor", err)
 }
 
@@ -662,7 +662,7 @@ func comicNotice(text string) []discordgo.MessageComponent {
 
 // updateComic replaces the editor message (the answer to a click).
 func (c *Ctx) updateComic(components []discordgo.MessageComponent) {
-	c.responded = true
+	c.markResponded()
 	c.logErr("comic: update", c.s.InteractionRespond(c.i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{Components: components, Attachments: &[]*discordgo.MessageAttachment{}},

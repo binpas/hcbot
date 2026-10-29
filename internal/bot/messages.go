@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -20,6 +21,7 @@ var triggerMentions = &discordgo.MessageAllowedMentions{
 // onMessageCreate handles triggers, autoreacts and the Markov chat. Section 7 adds the
 // media cache here.
 func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	defer logSlow("message handler", time.Now())
 	defer recoverHandler("message handler")
 	if m.Author == nil || b.env.SetupMode {
 		return
