@@ -36,6 +36,9 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 	if b.comicMention(m.Message) {
 		return // "@Bot comic": no trigger, autoreacts or Markov chat
 	}
+	if b.remindMention(m.Message) {
+		return // "@Bot remind": the same
+	}
 	if b.fireTrigger(m.Message) {
 		return // a trigger fired: no autoreacts or Markov chat
 	}

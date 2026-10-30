@@ -21,6 +21,8 @@ var generalCommands = []helpEntry{
 	{"/timeout [minutes]", "Mute yourself for a break. Defaults to 10 minutes, max 1440."},
 	{"@BotName <trigger>", "Posts the stored response for a trigger created by a mod."},
 	{"@BotName <text>", "Chat with the bot in its Markov chat channels."},
+	{"@BotName remind me to <thing> in <time>", "Set a reminder. The time can be `2h`, `3d`, `on friday`, `on nov 5 at 3pm`, or `at 5pm` (Pacific time)."},
+	{"/reminders", "Show your reminders, and delete them."},
 	{"/help", "Show the commands available to you."},
 }
 

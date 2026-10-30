@@ -1,6 +1,6 @@
 # HEALTH Bot — Privacy Policy
 
-_Last updated: October 29, 2026_
+_Last updated: October 30, 2026_
 
 This policy tells you what data HEALTH Bot ("the bot") collects, why it collects the data, and how it keeps the data. The bot is operated by binpas ("the operator").
 
@@ -15,10 +15,11 @@ The bot keeps only the data that it needs for its features:
 - **Server settings:** the settings that administrators set with `/setup`, reaction-role menus, auto-reactions, trigger words, and permission templates.
 - **Comic character:** the comic character that you chose with `/character`, until you reset it.
 - **Server nicknames:** the server nickname of members that the bot sees in messages or commands, so that comics and spoken text show the correct names. The bot deletes a nickname 30 days after it last saw the member.
+- **Reminders:** when you use `@Bot remind`, the bot stores the reminder text, your user ID, the user ID of the person to remind, the channel and message IDs, and the reminder time. The bot deletes this data when it sends the reminder, or when you delete the reminder with `/reminders`.
 
 ## 2. Message content
 
-The bot reads the text of a message only when the server owner turns on message content features, or when the message mentions the bot. The bot uses the text only to reply to or act on that message. The bot does not keep message text in its database.
+The bot reads the text of a message only when the server owner turns on message content features, or when the message mentions the bot. The bot uses the text only to reply to or act on that message. The bot does not keep message text in its database, except the text of a reminder that you set with `@Bot remind` (see section 1).
 
 ## 3. Why the bot uses this data
 
@@ -34,7 +35,7 @@ The data is kept in one database on a server that the operator controls. Only th
 
 ## 6. How long the bot keeps data
 
-The bot keeps data until a server administrator or the operator deletes it. Server nicknames are deleted automatically 30 days after the bot last saw the member. If the bot leaves a server, the operator can delete the data for that server.
+The bot keeps data until a server administrator or the operator deletes it. Server nicknames are deleted automatically 30 days after the bot last saw the member. Reminders are deleted when the bot sends them. If the bot leaves a server, the operator can delete the data for that server.
 
 ## 7. Your choices
 

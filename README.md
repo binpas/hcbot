@@ -256,9 +256,30 @@ All commands are slash commands. `<angle brackets>` are required, `[square brack
 | `/timeout [minutes]` | Mute yourself for a break (default 10, max 1440). |
 | `@BotName <trigger>` | Posts a trigger's response. The mention must be the first thing in the message. |
 | `@BotName <text>` | In a `MARKOV_REPLY_CHANNELS` channel, the [Markov chat](#markov-chat) replies. |
+| `@BotName remind me to <thing> in <time>` | Sets a [reminder](#reminders). |
+| `/reminders [all]` | Shows your reminders (the ones you set and the ones you will get), with a menu to delete them. `all` shows all reminders on the server (mod only). |
 | `/help` | Shows the commands you can use. |
 
 Trigger responses show `@everyone`, `@here` and role mentions but **do not ping** them. User mentions and the reply ping still work.
+
+### Reminders
+
+`@BotName remind (me|@user) (to|about|that) <thing> (in|on|at) <time>`
+
+| Time | Example | When |
+|---|---|---|
+| A length of time | `in 2h`, `in 1h30m`, `in 90 minutes`, `in 3d`, `in 2 weeks` | From now. Units: `s`, `m`, `h`, `d`, `w`, `mo`, `y`, and their words. |
+| A day | `on friday`, `on tomorrow`, `on nov 5`, `on 5 nov`, `on 11/5` (month/day), `on 2026-11-05` | At the same time of day as the message that set the reminder. |
+| A day and a time | `on friday at 3pm`, `on nov 5 at 15:30`, `at 9am on dec 1` | |
+| A time | `at 5pm`, `at noon` | Today, or tomorrow if the time has passed. |
+
+- Days and times are **Pacific time** (`America/Los_Angeles`). The bot replies with the time it understood, in Pacific time, and as a Discord time that shows in your own time zone.
+- A weekday, or a date with no year, is the next one. A date with a year that has passed is refused.
+- The bot uses the first `in`, `on`, or `at` that starts a time, so the thing can have these words too: `remind me to log in on friday` reminds you to "log in".
+- The time must be at least 1 minute and no more than 1 year from now. The thing can have up to 1000 characters. Each member can set up to 25 reminders.
+- Only mods can set a reminder for another member (`remind @user ...`).
+- When the time comes, the bot replies to the message that set the reminder, in the same channel, and pings only the member who gets it. If the message was deleted, the reminder is sent without the reply link. If the bot was offline at that time, it sends the reminder late and says so.
+- The member who set a reminder, the member who gets it, and mods can delete it with `/reminders`.
 
 ### Moderation
 
@@ -491,7 +512,7 @@ The import refuses a file with a value that is not correct (for example, text in
   - A reply shows "Replying to" and the name. The copy pings nobody. If the author edits or deletes the original, the copy does not change.
 - **Invites:** new invites are logged in `MOD_LOG`. React ❌ on the log entry to delete the invite. This also works after a restart.
 - **Bans and unbans** from any source are logged in `MOD_LOG`.
-- **Timers:** tempban unbans, MOTD removals and jail releases are checked every 30 seconds and survive a restart.
+- **Timers:** tempban unbans, MOTD removals, jail releases and reminders are checked every 30 seconds and survive a restart. If a reminder cannot be sent because Discord has a problem, the bot tries again for up to 24 hours.
 
 ## Markov chat
 
@@ -754,6 +775,7 @@ With `METRICS_ADDR` (for example `:9101`), the bot serves [Prometheus](https://p
 | `hcbot_markov_replies_total{kind}`, `hcbot_markov_rank_seconds` | Markov chat replies (`mention`, `chance`), and the time of a rank request. |
 | `hcbot_markov_messages_total{result}`, `hcbot_markov_learned_total{what}`, `hcbot_markov_pending_messages`, `hcbot_markov_chain_words`, `hcbot_markov_chain_transitions` | Markov learning: the messages in the learn channels (`queued`, `no_words`, `blocked`, `queue_full`), the messages and words written to `markov.db` (and `errors`), the messages that wait to be written, and the size of the chain (counted each 5 minutes). |
 | `hcbot_triggers_total`, `hcbot_autoreacts_total` | Triggers that answered, and autoreact emotes. |
+| `hcbot_reminders_total{result}` | Reminders: `set`, `limit` (refused at the limit), `sent`, `failed`, and `deleted` with `/reminders`. |
 | `hcbot_db_bytes`, `hcbot_markov_db_bytes` | The size of the databases. |
 | `hcbot_backups_total{result}`, `hcbot_last_backup_timestamp_seconds` | Database backups. Use the time for an alert when backups stop. |
 | `hcbot_nick_cache_entries`, `hcbot_nick_lookups_total{result}`, `hcbot_message_cache_entries`, `hcbot_media_cache_bytes` | The caches. |
@@ -802,6 +824,7 @@ make check
 | `markov_blocklist` | Words and phrases the Markov chat never learns or says |
 | `tts_jobs` | `/say` clips that wait for the worker, with the text and the interaction token, until the clip is posted |
 | `comic_characters` | The comic character that each member chose with `/character` |
+| `reminders` | Reminders until they are sent: the text, the member who set it, the member who gets it, the channel and message, and the time |
 
 `markov.db` (SQLite) in the working folder, or at `MARKOV_DB_PATH`:
 

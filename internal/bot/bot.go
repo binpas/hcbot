@@ -147,6 +147,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerTweetshot()
 	b.registerTTS()
 	b.registerComics()
+	b.registerReminders()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
@@ -208,6 +209,7 @@ func (b *Bot) startLoops() {
 	b.loopsOnce.Do(func() {
 		b.every(30*time.Second, b.runScheduledActions)
 		b.every(30*time.Second, b.runJailReleases)
+		b.every(30*time.Second, b.runReminders)
 		b.daily(4, 0, b.runDailyBackup)
 		b.every(markovFlushEvery, b.flushMarkov)
 		b.every(markovStatsEvery, b.updateMarkovStats)

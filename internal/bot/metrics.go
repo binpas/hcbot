@@ -49,6 +49,7 @@ type botMetrics struct {
 	markovSteps  prometheus.Gauge
 	rankSeconds  prometheus.Observer
 	triggers     prometheus.Counter
+	reminders    *prometheus.CounterVec // result: set, limit, sent, failed, deleted
 	autoreacts   prometheus.Counter
 	backups      *prometheus.CounterVec // result
 	lastBackup   prometheus.Gauge
@@ -124,6 +125,7 @@ func newBotMetrics(b *Bot) *botMetrics {
 	m.rankSeconds = hist("markov_rank_seconds", "The time of a rank request to the worker.", fast).WithLabelValues()
 	m.triggers = counter("triggers_total", "Triggers that answered.").WithLabelValues()
 	m.autoreacts = counter("autoreacts_total", "Autoreact emotes that the bot added.").WithLabelValues()
+	m.reminders = counter("reminders_total", "Reminders set, refused at the limit, sent, failed, and deleted.", "result")
 
 	// Data and caches.
 	fileSize := func(path string) func() float64 {

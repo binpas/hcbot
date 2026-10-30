@@ -497,6 +497,10 @@ func intOpt(name string, v int) *discordgo.ApplicationCommandInteractionDataOpti
 	return &discordgo.ApplicationCommandInteractionDataOption{Name: name, Type: discordgo.ApplicationCommandOptionInteger, Value: float64(v)}
 }
 
+func boolOpt(name string, v bool) *discordgo.ApplicationCommandInteractionDataOption {
+	return &discordgo.ApplicationCommandInteractionDataOption{Name: name, Type: discordgo.ApplicationCommandOptionBoolean, Value: v}
+}
+
 func userOpt(name, id string) *discordgo.ApplicationCommandInteractionDataOption {
 	return &discordgo.ApplicationCommandInteractionDataOption{Name: name, Type: discordgo.ApplicationCommandOptionUser, Value: id}
 }

@@ -227,6 +227,20 @@ var schema = []string{
 		created_by INTEGER,
 		created_at TEXT DEFAULT (datetime('now'))
 	)`,
+	// "@Bot remind" reminders, until they are sent. remind_at is Unix
+	// seconds.
+	`CREATE TABLE IF NOT EXISTS reminders (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		guild_id   TEXT    NOT NULL,
+		channel_id TEXT    NOT NULL,
+		message_id TEXT    NOT NULL,
+		author_id  TEXT    NOT NULL,
+		target_id  TEXT    NOT NULL,
+		text       TEXT    NOT NULL,
+		remind_at  INTEGER NOT NULL,
+		created_at TEXT    DEFAULT (datetime('now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS reminders_at ON reminders (remind_at)`,
 }
 
 // Columns added after a table was first created. Each ALTER fails harmlessly
