@@ -531,6 +531,26 @@ func (c *Ctx) ModalValue(customID string) string {
 	return ""
 }
 
+// ModalTexts returns the text of each text input of a modal, by custom ID.
+func (c *Ctx) ModalTexts() map[string]string {
+	out := map[string]string{}
+	for id, v := range c.fields {
+		if len(v) > 0 {
+			out[id] = v[0]
+		}
+	}
+	for _, row := range c.i.ModalSubmitData().Components {
+		if ar, ok := row.(*discordgo.ActionsRow); ok {
+			for _, comp := range ar.Components {
+				if ti, ok := comp.(*discordgo.TextInput); ok {
+					out[ti.CustomID] = ti.Value
+				}
+			}
+		}
+	}
+	return out
+}
+
 func (c *Ctx) opt(name string) *discordgo.ApplicationCommandInteractionDataOption {
 	for _, o := range c.opts {
 		if o.Name == name {

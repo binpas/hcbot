@@ -241,6 +241,31 @@ var schema = []string{
 		created_at TEXT    DEFAULT (datetime('now'))
 	)`,
 	`CREATE INDEX IF NOT EXISTS reminders_at ON reminders (remind_at)`,
+	// Tours (/tour): a forum thread for each show. The bot keeps the
+	// tours after their last show.
+	`CREATE TABLE IF NOT EXISTS tours (
+		id             INTEGER PRIMARY KEY AUTOINCREMENT,
+		guild_id       TEXT NOT NULL,
+		name           TEXT NOT NULL COLLATE NOCASE,
+		forum_id       TEXT NOT NULL DEFAULT '',
+		title_template TEXT NOT NULL,
+		post_template  TEXT NOT NULL,
+		created_at     TEXT DEFAULT (datetime('now')),
+		UNIQUE (guild_id, name)
+	)`,
+	// One show of a tour. date is YYYY-MM-DD and is the key in an upload.
+	// fields is a JSON object of the other columns. posted_title and
+	// posted_post are what the bot posted last, to find changed shows.
+	`CREATE TABLE IF NOT EXISTS tour_shows (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		tour_id      INTEGER NOT NULL REFERENCES tours (id),
+		date         TEXT    NOT NULL,
+		fields       TEXT    NOT NULL,
+		thread_id    TEXT    NOT NULL DEFAULT '',
+		posted_title TEXT    NOT NULL DEFAULT '',
+		posted_post  TEXT    NOT NULL DEFAULT '',
+		UNIQUE (tour_id, date)
+	)`,
 }
 
 // Columns added after a table was first created. Each ALTER fails harmlessly

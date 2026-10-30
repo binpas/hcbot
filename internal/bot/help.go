@@ -153,6 +153,13 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"Apps → " + speakMenu, "Right-click a message to speak its text, as a reply to it."},
 			{"/voices", "List the voices for `/say`. Admins can reload the list."},
 		}},
+		{"Tours", []helpEntry{
+			{"/tour upload <file>", "Read a CSV or JSON file of tour shows. New dates are added; changed dates are updated."},
+			{"/tour setup", "Choose a tour's forum (or make one), and edit its thread title and post templates."},
+			{"/tour post", "Preview, then make a forum thread for each new show and update the changed ones."},
+			{"/tour edit", "Change a tour's name or its shows."},
+			{"/tour help", "The file format and the template tokens, with a sample file."},
+		}},
 		{"Reaction Roles", []helpEntry{
 			{"/reactionrole create", "Start the reaction-role creation wizard."},
 			{"/reactionrole list", "List all reaction roles and whether they have been posted."},

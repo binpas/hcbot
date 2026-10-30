@@ -377,6 +377,24 @@ The bot gets the post from X's embed data service (the service behind posts embe
 
 X does not show deleted, protected and age-limited posts in embeds, so the bot cannot make an image of them. The font has Latin, Greek and Cyrillic letters. Other scripts (for example Chinese, Japanese, Korean and Arabic) show as boxes, and right-to-left text is not correct. The embed data service is not an official API, so X can change it.
 
+### Tours
+
+A forum thread for each show of a tour. Members can reply in the threads; only mods and the bot can make new threads. All replies are ephemeral.
+
+| Command | Who | Description |
+|---|---|---|
+| `/tour upload <file>` | mod only | Reads a CSV or JSON file of shows, and shows what will change. After **Confirm**, the bot adds the new dates and updates the changed ones. Shows that are not in the file do not change. |
+| `/tour setup` | mod only | Choose a tour, then its forum (or **New forum…**), and edit the thread title and post templates. It shows a preview of the next show. |
+| `/tour post` | mod only | Shows the new and the changed threads, and a preview. After **Confirm**, the bot makes the new threads (from the last show to the first, so the next show is at the top) and edits the changed ones (their title and the bot's post). |
+| `/tour edit` | mod only | Rename the tour, or edit its shows in forms of 5 shows. Empty a show's box to remove it from the tour. The changes go to Discord with `/tour post`. |
+| `/tour help` | mod only | The file format and the tokens, with a sample CSV file. |
+
+- **The file:** CSV with a header row, or a JSON array of objects. `tour` and `date` (`YYYY-MM-DD`) are necessary. One file can have more than one tour. The tour and the date find a show. No more than 500 shows in a file and 100 in a tour.
+- **Tokens:** every column is a token (`{venue}`, `{link}`, …; a space in a column name is `_`). The bot also makes `{tour}`, `{date}` (`MM/DD` when `region` is a US state or empty, else `DD/MM`), `{date_us}`, `{date_eu}`, `{date_iso}`, `{weekday}`, `{month}`, and `{date_local}` (a Discord timestamp: each reader sees their own date format; posts only). An uppercase token gives uppercase text: `{CITY}` is `PORTLAND`.
+- **Defaults:** title `{TOUR} - {date} - {CITY} - {REGION}`, post `{link}`.
+- **Forum permissions:** the bot checks the forum and shows a warning when members can make threads (**Create Posts**) or cannot reply (**Send Messages in Posts**). It does not change the permissions of a forum that exists. A forum that the bot makes denies Create Posts to @everyone, allows Send Messages in Posts, and allows Create Posts to `MOD_ROLE`.
+- **Old tours:** when the last show of a tour has passed (Pacific time), the tour does not show in the menus. The bot keeps the data, and never deletes threads.
+
 ### Jail
 
 | Command | Access | Description |
@@ -824,6 +842,7 @@ make check
 | `markov_blocklist` | Words and phrases the Markov chat never learns or says |
 | `tts_jobs` | `/say` clips that wait for the worker, with the text and the interaction token, until the clip is posted |
 | `comic_characters` | The comic character that each member chose with `/character` |
+| `tours`, `tour_shows` | Tours (name, forum, templates) and their shows (the columns of the uploaded file, and the bot's thread) |
 | `reminders` | Reminders until they are sent: the text, the member who set it, the member who gets it, the channel and message, and the time |
 
 `markov.db` (SQLite) in the working folder, or at `MARKOV_DB_PATH`:

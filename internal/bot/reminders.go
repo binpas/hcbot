@@ -116,7 +116,7 @@ func (b *Bot) remindMention(m *discordgo.Message) bool {
 		who = userMention(target)
 	}
 	reply(fmt.Sprintf("⏰ OK. I will remind %s on **%s** (Pacific time), %s.\n-# Use `/reminders` to see or delete your reminders.",
-		who, at.In(reminderZone).Format(reminderTimeFormat), discordTime(at, "R")))
+		who, at.In(reminderZone).Format(reminderTimeFormat), discordTimestamp(at.Unix(), "R")))
 	return true
 }
 
@@ -125,10 +125,6 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-func discordTime(t time.Time, style string) string {
-	return fmt.Sprintf("<t:%d:%s>", t.Unix(), style)
 }
 
 // runReminders sends the reminders that are due. A reminder that fails
@@ -174,7 +170,7 @@ func (b *Bot) sendReminder(r db.Reminder, now time.Time) error {
 	}
 	text := fmt.Sprintf("⏰ %s, %s: %s", userMention(r.TargetID), from, r.Text)
 	if now.Sub(r.At) > reminderLateAfter {
-		text += fmt.Sprintf("\n-# This is late. I was offline at %s.", discordTime(r.At, "f"))
+		text += fmt.Sprintf("\n-# This is late. I was offline at %s.", discordTimestamp(r.At.Unix(), "f"))
 	}
 	no := false
 	_, err := b.s.ChannelMessageSendComplex(r.ChannelID, &discordgo.MessageSend{
@@ -230,7 +226,7 @@ func (b *Bot) reminderList(guildID, userID string, all bool) (*discordgo.Message
 		case all:
 			people = " · for " + userMention(r.TargetID)
 		}
-		fmt.Fprintf(&sb, "**#%d** · %s (%s)%s\n> %s\n", r.ID, discordTime(r.At, "f"), discordTime(r.At, "R"), people,
+		fmt.Fprintf(&sb, "**#%d** · %s (%s)%s\n> %s\n", r.ID, discordTimestamp(r.At.Unix(), "f"), discordTimestamp(r.At.Unix(), "R"), people,
 			truncateEllipsis(strings.Join(strings.Fields(r.Text), " "), 80))
 		options = append(options, discordgo.SelectMenuOption{
 			Label:       fmt.Sprintf("#%d · %s", r.ID, r.At.In(reminderZone).Format("Mon Jan 2, 3:04 PM MST")),

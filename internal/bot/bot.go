@@ -65,6 +65,7 @@ type Bot struct {
 	ttsPollEvery time.Duration // ttsPoll (short in tests)
 
 	loopsOnce sync.Once
+	tourBusy  sync.Map // tour IDs that /tour post is posting now
 	stop      chan struct{}
 }
 
@@ -148,6 +149,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerTTS()
 	b.registerComics()
 	b.registerReminders()
+	b.registerTours()
 	b.registerHelp()
 
 	s.AddHandler(b.onReady)
