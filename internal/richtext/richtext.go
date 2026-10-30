@@ -1,6 +1,8 @@
 // Package richtext lays out and draws text with color emoji (Twemoji): it
 // measures words, wraps them into lines, cuts a line with "…", and draws
-// the lines. The caller gives the fonts.
+// the lines. The caller gives the main fonts. A character that the main
+// font does not have comes from the first fallback font that has it
+// (Noto Sans, Math, Symbols, Symbols 2, and CJK).
 package richtext
 
 import (
@@ -19,12 +21,44 @@ import (
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/text/unicode/norm"
 )
 
 //go:embed assets/twemoji-72x72.zip
 var emojiZip []byte
+
+// Noto Sans (SIL Open Font License). Tweetshot uses it as its main font.
+var (
+	//go:embed assets/NotoSans-Regular.ttf
+	NotoSansRegular []byte
+	//go:embed assets/NotoSans-Bold.ttf
+	NotoSansBold []byte
+)
+
+// The fallback fonts (SIL Open Font License), in order. The CJK font is a
+// subset of Noto Sans CJK JP with only the CJK, kana, and Hangul blocks.
+var (
+	//go:embed assets/NotoSansMath-Regular.ttf
+	mathTTF []byte
+	//go:embed assets/NotoSansSymbols-Regular.ttf
+	symbolsTTF []byte
+	//go:embed assets/NotoSansSymbols2-Regular.ttf
+	symbols2TTF []byte
+	//go:embed assets/NotoSansCJKjp-Regular-subset.otf
+	cjkOTF []byte
+)
+
+var fallbacks = sync.OnceValue(func() []*opentype.Font {
+	var out []*opentype.Font
+	for _, b := range [][]byte{NotoSansRegular, mathTTF, symbolsTTF, symbols2TTF, cjkOTF} {
+		if f, err := opentype.Parse(b); err == nil {
+			out = append(out, f)
+		}
+	}
+	return out
+})
 
 // Fonts is a regular and a bold font.
 type Fonts [2]*opentype.Font
@@ -57,36 +91,69 @@ type Style struct {
 type Faces struct {
 	scale float64
 	fonts Fonts
+	fall  []*opentype.Font
 	cache map[faceKey]font.Face
+	buf   sfnt.Buffer
 }
 
 type faceKey struct {
 	size float64
 	bold bool
+	font int // 0: the main font; n: fallback n-1
 }
 
 // NewFaces makes the faces for one render. scale is device pixels for
 // each logical pixel.
 func NewFaces(fonts Fonts, scale float64) *Faces {
-	return &Faces{scale: scale, fonts: fonts, cache: map[faceKey]font.Face{}}
+	return &Faces{scale: scale, fonts: fonts, fall: fallbacks(), cache: map[faceKey]font.Face{}}
 }
 
-// Face returns the font face for a style.
-func (fc *Faces) Face(st Style) font.Face {
-	k := faceKey{st.Size, st.Bold}
+// Face returns the main font face for a style.
+func (fc *Faces) Face(st Style) font.Face { return fc.face(st, 0) }
+
+// face returns the face of font n (0: the main font; n: fallback n-1). A
+// fallback font has no bold; Draw thickens it.
+func (fc *Faces) face(st Style, n int) font.Face {
+	k := faceKey{st.Size, st.Bold && n == 0, n}
 	if f, ok := fc.cache[k]; ok {
 		return f
 	}
-	i := 0
-	if st.Bold {
-		i = 1
+	src := fc.fonts[0]
+	switch {
+	case n > 0:
+		src = fc.fall[n-1]
+	case st.Bold:
+		src = fc.fonts[1]
 	}
-	f, err := opentype.NewFace(fc.fonts[i], &opentype.FaceOptions{Size: st.Size * fc.scale, DPI: 72, Hinting: font.HintingNone})
+	f, err := opentype.NewFace(src, &opentype.FaceOptions{Size: st.Size * fc.scale, DPI: 72, Hinting: font.HintingNone})
 	if err != nil {
 		panic(err) // only for a bad size, which the code never gives
 	}
 	fc.cache[k] = f
 	return f
+}
+
+// fontFor returns the font for a character: 0 (the main font) if it has
+// the character or no font has it, else the first fallback that has it.
+func (fc *Faces) fontFor(r rune, bold bool) int {
+	main := fc.fonts[0]
+	if bold {
+		main = fc.fonts[1]
+	}
+	if fc.has(main, r) || unicode.IsControl(r) {
+		return 0
+	}
+	for i, f := range fc.fall {
+		if fc.has(f, r) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+func (fc *Faces) has(f *opentype.Font, r rune) bool {
+	g, err := f.GlyphIndex(&fc.buf, r)
+	return err == nil && g != 0
 }
 
 // Close frees the faces.
@@ -197,6 +264,7 @@ type Item struct {
 	Emoji string // the emoji key; Text is then the emoji's runes
 	Style Style
 	W     fixed.Int26_6 // the width in device pixels
+	font  int           // 0: the main font; n: fallback n-1
 }
 
 // Word is the items between two spaces. It does not break, unless it is
@@ -224,17 +292,29 @@ func (fc *Faces) Words(parts []Span) []Word {
 		}
 		cur = Word{}
 	}
+	addRun := func(s string, st Style, f int) {
+		if n := len(cur.Items); n > 0 && cur.Items[n-1].Emoji == "" && cur.Items[n-1].Style == st && cur.Items[n-1].font == f {
+			cur.Items[n-1].Text += s
+			cur.Items[n-1].W = font.MeasureString(fc.face(st, f), cur.Items[n-1].Text)
+		} else {
+			cur.Items = append(cur.Items, Item{Text: s, Style: st, W: font.MeasureString(fc.face(st, f), s), font: f})
+		}
+	}
+	// addText adds text in runs of one font each.
 	addText := func(s string, st Style) {
 		if s == "" {
 			return
 		}
-		w := font.MeasureString(fc.Face(st), s)
-		if n := len(cur.Items); n > 0 && cur.Items[n-1].Emoji == "" && cur.Items[n-1].Style == st {
-			cur.Items[n-1].Text += s
-			cur.Items[n-1].W = font.MeasureString(fc.Face(st), cur.Items[n-1].Text)
-		} else {
-			cur.Items = append(cur.Items, Item{Text: s, Style: st, W: w})
+		start, f := 0, -1
+		for i, r := range s {
+			if g := fc.fontFor(r, st.Bold); g != f {
+				if i > start {
+					addRun(s[start:i], st, f)
+				}
+				start, f = i, g
+			}
 		}
+		addRun(s[start:], st, f)
 		cur.W = SumWidth(cur.Items)
 	}
 	for _, p := range parts {
@@ -370,10 +450,10 @@ func (fc *Faces) splitWord(items []Item, limit fixed.Int26_6) [][]Item {
 			add(it)
 			continue
 		}
-		face := fc.Face(it.Style)
+		face := fc.face(it.Style, it.font)
 		for _, r := range it.Text {
 			s := string(r)
-			add(Item{Text: s, Style: it.Style, W: font.MeasureString(face, s)})
+			add(Item{Text: s, Style: it.Style, W: font.MeasureString(face, s), font: it.font})
 		}
 	}
 	if len(cur) > 0 {
@@ -426,10 +506,14 @@ func (fc *Faces) Draw(dst draw.Image, items []Item, x, y int) int {
 			dot += it.W
 			continue
 		}
-		d := font.Drawer{Dst: dst, Src: image.NewUniform(it.Style.Color), Face: fc.Face(it.Style), Dot: fixed.Point26_6{X: dot, Y: fixed.I(y)}}
+		d := font.Drawer{Dst: dst, Src: image.NewUniform(it.Style.Color), Face: fc.face(it.Style, it.font), Dot: fixed.Point26_6{X: dot, Y: fixed.I(y)}}
 		d.DrawString(it.Text)
-		if it.Style.Thicken > 0 {
-			d.Dot = fixed.Point26_6{X: dot + fixed.Int26_6(it.Style.Thicken*fc.scale*64), Y: fixed.I(y)}
+		thicken := it.Style.Thicken
+		if it.Style.Bold && it.font > 0 {
+			thicken = max(thicken, it.Style.Size/20) // a fallback font has no bold
+		}
+		if thicken > 0 {
+			d.Dot = fixed.Point26_6{X: dot + fixed.Int26_6(thicken*fc.scale*64), Y: fixed.I(y)}
 			d.DrawString(it.Text)
 		}
 		dot += it.W

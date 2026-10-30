@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -89,5 +90,59 @@ func TestThicken(t *testing.T) {
 	st.Thicken = 0.8
 	if thick := ink(st); thick <= plain {
 		t.Errorf("thickened ink %d is not more than %d", thick, plain)
+	}
+}
+
+// TestFallback checks that each character of an odd name comes from a font
+// that has it, and that the fallback text draws.
+func TestFallback(t *testing.T) {
+	f, err := ParseFonts(NotoSansRegular, NotoSansBold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fallbacks()) != 5 {
+		t.Fatalf("fallbacks = %d, want 5", len(fallbacks()))
+	}
+	fc := NewFaces(f, 2)
+	defer fc.Close()
+	for _, bold := range []bool{false, true} {
+		st := Style{Size: 17, Bold: bold, Color: color.Black}
+		const name = "Joe 𝓙𝓸𝓮 𝐉𝐨𝐞 ᴊᴏᴇ ★♡☾✿⚡ 漢字 かな 한글"
+		for _, w := range fc.Words([]Span{{name, st}}) {
+			for _, it := range w.Items {
+				if it.Emoji != "" {
+					continue
+				}
+				for _, r := range it.Text {
+					var src *opentype.Font
+					switch {
+					case it.font > 0:
+						src = fc.fall[it.font-1]
+					case bold:
+						src = f[1]
+					default:
+						src = f[0]
+					}
+					if !fc.has(src, r) {
+						t.Errorf("bold=%v: no glyph for %q (font %d)", bold, r, it.font)
+					}
+				}
+			}
+		}
+		dst := image.NewRGBA(image.Rect(0, 0, 200, 60))
+		items := fc.Ellipsize([]Span{{"漢字𝓙★", st}}, 400)
+		if items[0].font == 0 {
+			t.Errorf("bold=%v: 漢 uses the main font", bold)
+		}
+		fc.Draw(dst, items, 2, 40)
+		var on int
+		for _, p := range dst.Pix {
+			if p != 0 {
+				on++
+			}
+		}
+		if on < 200 {
+			t.Errorf("bold=%v: the fallback text did not draw (%d)", bold, on)
+		}
 	}
 }

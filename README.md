@@ -818,5 +818,7 @@ make check
 
 - [Liberation Sans](https://github.com/liberationfonts/liberation-fonts) 2.1.5, copyright Red Hat, Inc. and Google Corporation, under the SIL Open Font License 1.1 (`internal/comic/assets/LICENSE-LiberationSans.txt`), for the comics.
 
-- [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) by the Noto Project Authors, under the SIL Open Font License 1.1 (`internal/tweetshot/assets/OFL-NotoSans.txt`).
+- [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) by the Noto Project Authors, under the SIL Open Font License 1.1 (`internal/richtext/assets/OFL-NotoSans.txt`). It is the main font of `/tweetshot`, and the first fallback font of the comics.
+- Fallback fonts, for characters that the main font does not have: [Noto Sans Math](https://github.com/notofonts/math) (copyright Google LLC), [Noto Sans Symbols and Symbols 2](https://github.com/notofonts/symbols) (copyright the Noto Project Authors), under the SIL Open Font License 1.1 (`internal/richtext/assets/OFL-NotoSansMathSymbols.txt`).
+- [Noto Sans CJK](https://github.com/notofonts/noto-cjk) JP, copyright Adobe, under the SIL Open Font License 1.1 (`internal/richtext/assets/OFL-NotoSansCJK.txt`), for Chinese, Japanese, and Korean characters. The bot uses a subset with only the CJK, kana, and Hangul blocks, made with `pyftsubset` from fontTools.
 - [Twemoji](https://github.com/jdecked/twemoji) emoji graphics, copyright 2019 Twitter, Inc and other contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (`internal/richtext/assets/LICENSE-Twemoji-graphics.txt`). The graphics are not changed; the bot makes them smaller when it draws them.
