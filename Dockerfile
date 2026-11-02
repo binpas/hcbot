@@ -22,8 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 # Stage 2: get the /download tools (yt-dlp and deno). The checksums
 # make sure that each file is the expected one.
 FROM debian:trixie-slim AS tools
-ARG YTDLP_VERSION=2026.10.21
-ARG YTDLP_SHA256=dcddc44b6151ccd855a9a3c8fcdb00e897bb872ec9f4908b1b708b16eaaaa114
+ARG YTDLP_VERSION=2026.10.26
+ARG YTDLP_SHA256=f34053415136e55073dd64ba5326d161ecc23ce0e98c081d8752867b37809450
 ARG DENO_VERSION=v2.9.8
 ARG DENO_SHA256=e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609
 RUN apt-get update \
