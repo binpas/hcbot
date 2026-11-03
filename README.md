@@ -831,7 +831,10 @@ With `METRICS_ADDR` (for example `:9101`), the bot serves [Prometheus](https://p
 | `hcbot_markov_messages_total{result}`, `hcbot_markov_learned_total{what}`, `hcbot_markov_pending_messages`, `hcbot_markov_chain_words`, `hcbot_markov_chain_transitions` | Markov learning: the messages in the learn channels (`queued`, `no_words`, `blocked`, `queue_full`), the messages and words written to `markov.db` (and `errors`), the messages that wait to be written, and the size of the chain (counted each 5 minutes). |
 | `hcbot_triggers_total`, `hcbot_autoreacts_total` | Triggers that answered, and autoreact emotes. |
 | `hcbot_reminders_total{result}` | Reminders: `set`, `limit` (refused at the limit), `sent`, `failed`, and `deleted` with `/reminders`. |
-| `hcbot_db_bytes`, `hcbot_markov_db_bytes` | The size of the databases. |
+| `hcbot_persona_replies_total{kind}` | Persona chat posts: `name` (a message used the persona's name), `chance`, and `failed`. |
+| `hcbot_persona_messages_total{result}`, `hcbot_persona_learned_total{what}`, `hcbot_persona_pending_messages`, `hcbot_persona_chain_words`, `hcbot_persona_chain_transitions` | Persona learning: the persona member's messages (`queued`, `skipped_category`, `no_words`, `blocked`, `queue_full`), the messages and words written to `persona.db` (and `errors`), the messages that wait to be written, and the size of the chain (counted each 5 minutes). |
+| `hcbot_persona_backfill_running`, `hcbot_persona_backfill_messages_total{result}`, `hcbot_persona_backfill_runs_total{result}` | `/persona backfill`: 1 while it runs, the messages it `found`, `learned`, and `skipped`, and the runs that ended: `done` (got to the end), `stopped` (`/persona off` or a shutdown), or `error`. |
+| `hcbot_db_bytes`, `hcbot_markov_db_bytes`, `hcbot_persona_db_bytes` | The size of the databases. |
 | `hcbot_backups_total{result}`, `hcbot_last_backup_timestamp_seconds` | Database backups. Use the time for an alert when backups stop. |
 | `hcbot_nick_cache_entries`, `hcbot_nick_lookups_total{result}`, `hcbot_message_cache_entries`, `hcbot_media_cache_bytes` | The caches. |
 | `go_*`, `process_*` | Go memory, goroutines, garbage collection, CPU, and open files. |

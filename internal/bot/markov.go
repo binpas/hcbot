@@ -416,6 +416,21 @@ func (b *Bot) updateMarkovStats() {
 	b.m.markovSteps.Set(float64(st.Transitions))
 }
 
+// updatePersonaStats counts the words and steps of the persona chain for
+// the metrics.
+func (b *Bot) updatePersonaStats() {
+	if b.persona == nil {
+		return
+	}
+	st, err := b.persona.Stats()
+	if err != nil {
+		log.Printf("persona stats: %v", err)
+		return
+	}
+	b.m.personaWords.Set(float64(st.Words))
+	b.m.personaSteps.Set(float64(st.Transitions))
+}
+
 func (b *Bot) cmdMarkovStatus(c *Ctx) {
 	b.flushMarkov()
 	st, err := b.chain.Stats()

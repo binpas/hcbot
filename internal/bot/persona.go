@@ -157,30 +157,46 @@ func (b *Bot) personaMessage(m *discordgo.Message) bool {
 	}
 	botID := b.s.State.User.ID
 	words := markov.Tokenize(markovNames(m, botID))
-	if m.Author.ID == user && !b.personaSkipped(m.ChannelID, nil) && len(words) > 0 && !b.markovBlocks(words) {
-		b.pr.mu.Lock()
-		if len(b.pr.pending) < personaMaxPending {
-			b.pr.pending = append(b.pr.pending, markov.Item{ID: m.ID, Words: words})
+	if m.Author.ID == user {
+		result := "queued"
+		switch {
+		case b.personaSkipped(m.ChannelID, nil):
+			result = "skipped_category"
+		case len(words) == 0:
+			result = "no_words"
+		case b.markovBlocks(words):
+			result = "blocked"
+		default:
+			b.pr.mu.Lock()
+			if len(b.pr.pending) < personaMaxPending {
+				b.pr.pending = append(b.pr.pending, markov.Item{ID: m.ID, Words: words})
+			} else {
+				result = "queue_full"
+			}
+			b.pr.mu.Unlock()
 		}
-		b.pr.mu.Unlock()
+		b.m.personaSeen.WithLabelValues(result).Inc()
 	}
 	if !b.markovChannel("PERSONA_REPLY_CHANNELS", m.ChannelID) {
 		return false
 	}
 	cooldown := time.Duration(max(0, b.cfg.Int("PERSONA_COOLDOWN"))) * time.Second
+	kind := "name"
 	switch {
 	case b.personaCalled(m.Content):
 		b.pr.cool.claim(m.ChannelID, cooldown, true)
 	case m.Author.ID != user && percentF(b.cfg.Float("PERSONA_CHANCE")) && b.pr.cool.claim(m.ChannelID, cooldown, false):
+		kind = "chance"
 	default:
 		return false
 	}
-	b.personaReply(m, words)
+	b.personaReply(m, words, kind)
 	return true
 }
 
-// personaReply posts a persona message as a reply to m.
-func (b *Bot) personaReply(m *discordgo.Message, words []string) {
+// personaReply posts a persona message as a reply to m. kind (name,
+// chance) is for the metrics.
+func (b *Bot) personaReply(m *discordgo.Message, words []string, kind string) {
 	b.flushPersona() // the chain is small: it can use the newest words
 	name := strings.ToLower(b.personaName())
 	seed := slices.DeleteFunc(slices.Clone(words), func(w string) bool { return w == name })
@@ -202,9 +218,12 @@ func (b *Bot) personaReply(m *discordgo.Message, words []string) {
 		// The message may be gone; answer without the reply link.
 		msg.Reference = nil
 		if _, err = b.s.ChannelMessageSendComplex(m.ChannelID, msg); err != nil {
+			b.m.personaReply.WithLabelValues("failed").Inc()
 			log.Printf("persona reply: %v", err)
+			return
 		}
 	}
+	b.m.personaReply.WithLabelValues(kind).Inc()
 }
 
 // personaPost builds a persona message: an embed with a red border, and
@@ -252,7 +271,9 @@ func (b *Bot) flushPersona() {
 	if len(batch) == 0 {
 		return
 	}
-	if _, err := b.persona.LearnOnce(batch); err != nil {
+	n, err := b.persona.LearnOnce(batch)
+	if err != nil {
+		b.m.personaLearn.WithLabelValues("errors").Inc()
 		log.Printf("persona learn: %v", err)
 		b.pr.mu.Lock()
 		b.pr.pending = append(batch, b.pr.pending...)
@@ -260,7 +281,14 @@ func (b *Bot) flushPersona() {
 			b.pr.pending = b.pr.pending[:personaMaxPending]
 		}
 		b.pr.mu.Unlock()
+		return
 	}
+	words := 0
+	for _, it := range batch {
+		words += len(it.Words)
+	}
+	b.m.personaLearn.WithLabelValues("messages").Add(float64(n))
+	b.m.personaLearn.WithLabelValues("words").Add(float64(words))
 }
 
 func (b *Bot) setPersonaEnabled(c *Ctx, on bool) {
@@ -409,6 +437,14 @@ func (b *Bot) onPersonaBackfillConfirm(c *Ctx, _ []string) {
 			report(makeEmbed("🎭 Persona backfill", "Running… "+r.String(), colourBlurple))
 		})
 		e := makeEmbed("🎭 Persona backfill done", res.String(), colourGreen)
+		result := "done"
+		switch {
+		case errors.Is(err, errBackfillStopped):
+			result = "stopped"
+		case err != nil:
+			result = "error"
+		}
+		b.m.backfillRuns.WithLabelValues(result).Inc()
 		if err != nil {
 			log.Printf("persona backfill: %v", err)
 			e = makeEmbed("🎭 Persona backfill stopped", res.String()+"\n\n"+err.Error()+
@@ -496,6 +532,7 @@ func (b *Bot) personaBackfill(guildID, user string, progress func(backfillResult
 		}
 		var items []markov.Item
 		oldest := uint64(0)
+		b.m.backfillMsgs.WithLabelValues("found").Add(float64(len(msgs)))
 		for _, m := range msgs {
 			res.found++
 			if id, err := strconv.ParseUint(m.ID, 10, 64); err == nil && (oldest == 0 || id < oldest) {
@@ -505,6 +542,7 @@ func (b *Bot) personaBackfill(guildID, user string, progress func(backfillResult
 			words := markov.Tokenize(markovNames(m, botID))
 			if b.personaSkipped(m.ChannelID, parents) || len(words) == 0 || b.markovBlocks(words) {
 				res.skipped++
+				b.m.backfillMsgs.WithLabelValues("skipped").Inc()
 				continue
 			}
 			items = append(items, markov.Item{ID: m.ID, Words: words})
@@ -514,6 +552,7 @@ func (b *Bot) personaBackfill(guildID, user string, progress func(backfillResult
 			return res, err
 		}
 		res.learned += n
+		b.m.backfillMsgs.WithLabelValues("learned").Add(float64(n))
 		if oldest == 0 {
 			return res, errors.New("the search gave messages with no valid IDs")
 		}

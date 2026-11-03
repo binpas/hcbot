@@ -1521,12 +1521,535 @@
   },
   {
    "type": "row",
+   "title": "Persona chat",
+   "id": 58,
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 93,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Chain words",
+   "id": 59,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_persona_chain_words",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Chain steps",
+   "id": 60,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_persona_chain_transitions",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Learned today",
+   "id": 61,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "increase(hcbot_persona_learned_total{what=\"messages\"}[1d])",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Replies today",
+   "id": 62,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(increase(hcbot_persona_replies_total{kind!=\"failed\"}[1d]))",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Write errors today",
+   "id": 63,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "increase(hcbot_persona_learned_total{what=\"errors\"}[1d])",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Backfill",
+   "id": 64,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_persona_backfill_running",
+     "legendFormat": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "Not running",
+         "color": "text"
+        },
+        "1": {
+         "text": "Running",
+         "color": "green"
+        }
+       }
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 94,
+    "w": 4,
+    "h": 4
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Chain size",
+   "id": 65,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "hcbot_persona_chain_words",
+     "legendFormat": "words",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "hcbot_persona_chain_transitions",
+     "legendFormat": "steps",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 0,
+    "y": 98,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Persona replies",
+   "id": 66,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (kind) (increase(hcbot_persona_replies_total[$__rate_interval]))",
+     "legendFormat": "{{kind}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 8,
+    "y": 98,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Messages of the member",
+   "id": 67,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (result) (increase(hcbot_persona_messages_total[$__rate_interval]))",
+     "legendFormat": "{{result}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "hcbot_persona_pending_messages",
+     "legendFormat": "waiting to be written",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 16,
+    "y": 98,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Learned per hour",
+   "id": 68,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (what) (increase(hcbot_persona_learned_total{what!=\"errors\"}[1h]))",
+     "legendFormat": "{{what}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 0,
+    "y": 106,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Backfill messages",
+   "id": 69,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (result) (increase(hcbot_persona_backfill_messages_total[$__rate_interval]))",
+     "legendFormat": "{{result}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "hcbot_persona_backfill_running",
+     "legendFormat": "running",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 8,
+    "y": 106,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Backfill runs (done: got to the end)",
+   "id": 70,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (result) (increase(hcbot_persona_backfill_runs_total[$__rate_interval]))",
+     "legendFormat": "{{result}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {},
+   "gridPos": {
+    "x": 16,
+    "y": 106,
+    "w": 8,
+    "h": 8
+   }
+  },
+  {
+   "type": "row",
    "title": "Speech worker (GPU)",
    "id": 41,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 93,
+    "y": 114,
     "w": 24,
     "h": 1
    },
@@ -1588,7 +2111,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1633,7 +2156,7 @@
    },
    "gridPos": {
     "x": 4,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1695,7 +2218,7 @@
    },
    "gridPos": {
     "x": 8,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1740,7 +2263,7 @@
    },
    "gridPos": {
     "x": 12,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1801,7 +2324,7 @@
    },
    "gridPos": {
     "x": 16,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1847,7 +2370,7 @@
    },
    "gridPos": {
     "x": 20,
-    "y": 94,
+    "y": 115,
     "w": 4,
     "h": 4
    }
@@ -1878,7 +2401,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 98,
+    "y": 119,
     "w": 8,
     "h": 8
    }
@@ -1920,7 +2443,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 98,
+    "y": 119,
     "w": 8,
     "h": 8
    }
@@ -1953,7 +2476,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 98,
+    "y": 119,
     "w": 8,
     "h": 8
    }
@@ -1965,7 +2488,7 @@
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 106,
+    "y": 127,
     "w": 24,
     "h": 1
    },
@@ -1997,6 +2520,15 @@
       "type": "prometheus",
       "uid": "prometheus"
      }
+    },
+    {
+     "refId": "C",
+     "expr": "hcbot_persona_db_bytes",
+     "legendFormat": "persona.db",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
     }
    ],
    "fieldConfig": {
@@ -2008,7 +2540,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 107,
+    "y": 128,
     "w": 8,
     "h": 8
    }
@@ -2048,7 +2580,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 107,
+    "y": 128,
     "w": 8,
     "h": 8
    }
@@ -2079,7 +2611,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 107,
+    "y": 128,
     "w": 8,
     "h": 8
    }
@@ -2112,7 +2644,7 @@
    "options": {},
    "gridPos": {
     "x": 0,
-    "y": 115,
+    "y": 136,
     "w": 8,
     "h": 8
    }
@@ -2143,7 +2675,7 @@
    "options": {},
    "gridPos": {
     "x": 8,
-    "y": 115,
+    "y": 136,
     "w": 8,
     "h": 8
    }
@@ -2174,7 +2706,7 @@
    "options": {},
    "gridPos": {
     "x": 16,
-    "y": 115,
+    "y": 136,
     "w": 8,
     "h": 8
    }

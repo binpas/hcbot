@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func personaBot(t *testing.T) *testBot {
@@ -179,6 +181,14 @@ func TestPersonaBackfill(t *testing.T) {
 		t.Fatal("the backfill did not end")
 	}
 	tb.expect(false, "done", "Found **4**", "learned **2**", "skipped **1**")
+	for result, want := range map[string]float64{"found": 4, "learned": 2, "skipped": 1} {
+		if got := testutil.ToFloat64(tb.m.backfillMsgs.WithLabelValues(result)); got != want {
+			t.Errorf("backfill %s = %v, want %v", result, got, want)
+		}
+	}
+	if got := testutil.ToFloat64(tb.m.backfillRuns.WithLabelValues("done")); got != 1 {
+		t.Errorf("backfill runs done = %v, want 1", got)
+	}
 	if !tb.personaKnows("pickle") || !tb.personaKnows("thread") {
 		t.Error("did not learn the old messages")
 	}

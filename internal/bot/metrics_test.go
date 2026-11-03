@@ -93,3 +93,32 @@ func TestMarkovLearnMetrics(t *testing.T) {
 		t.Error("no chain steps")
 	}
 }
+
+func TestPersonaMetrics(t *testing.T) {
+	tb := personaBot(t)
+	tb.run(tMod, "markov blockadd", strOpt("text", "cats"))
+	tb.say(tTarget, tChGeneral, "my guitar is very loud", false)
+	tb.say(tTarget, tChArchived, "secret mod words", false)
+	tb.say(tTarget, tChGeneral, "i like cats", false)
+	tb.say(tTarget, tChGeneral, "https://example.com", false)
+	for result, want := range map[string]float64{"queued": 1, "skipped_category": 1, "blocked": 1, "no_words": 1} {
+		if got := testutil.ToFloat64(tb.m.personaSeen.WithLabelValues(result)); got != want {
+			t.Errorf("persona %s = %v, want %v", result, got, want)
+		}
+	}
+	tb.flushPersona()
+	if m, w := testutil.ToFloat64(tb.m.personaLearn.WithLabelValues("messages")), testutil.ToFloat64(tb.m.personaLearn.WithLabelValues("words")); m != 1 || w != 5 {
+		t.Errorf("learned messages = %v, words = %v", m, w)
+	}
+	tb.updatePersonaStats()
+	if w := testutil.ToFloat64(tb.m.personaWords); w != 5 {
+		t.Errorf("chain words = %v, want 5", w)
+	}
+	if s := testutil.ToFloat64(tb.m.personaSteps); s == 0 {
+		t.Error("no chain steps")
+	}
+	tb.say(tUser, tChGeneral, "hey target-bot, the guitar?", false)
+	if got := testutil.ToFloat64(tb.m.personaReply.WithLabelValues("name")); got != 1 {
+		t.Errorf("name replies = %v, want 1", got)
+	}
+}

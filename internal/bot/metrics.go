@@ -48,12 +48,21 @@ type botMetrics struct {
 	markovWords  prometheus.Gauge
 	markovSteps  prometheus.Gauge
 	rankSeconds  prometheus.Observer
-	triggers     prometheus.Counter
-	reminders    *prometheus.CounterVec // result: set, limit, sent, failed, deleted
-	autoreacts   prometheus.Counter
-	backups      *prometheus.CounterVec // result
-	lastBackup   prometheus.Gauge
-	nickLookups  *prometheus.CounterVec // result
+
+	personaReply *prometheus.CounterVec // kind: name, chance, failed
+	personaSeen  *prometheus.CounterVec // result: queued, skipped_category, no_words, blocked, queue_full
+	personaLearn *prometheus.CounterVec // what: messages, words, errors
+	personaWords prometheus.Gauge
+	personaSteps prometheus.Gauge
+	backfillMsgs *prometheus.CounterVec // result: found, learned, skipped
+	backfillRuns *prometheus.CounterVec // result: done, stopped, error
+
+	triggers    prometheus.Counter
+	reminders   *prometheus.CounterVec // result: set, limit, sent, failed, deleted
+	autoreacts  prometheus.Counter
+	backups     *prometheus.CounterVec // result
+	lastBackup  prometheus.Gauge
+	nickLookups *prometheus.CounterVec // result
 }
 
 func newBotMetrics(b *Bot) *botMetrics {
@@ -122,6 +131,26 @@ func newBotMetrics(b *Bot) *botMetrics {
 		defer b.mk.mu.Unlock()
 		return float64(len(b.mk.pending))
 	})
+	m.personaReply = counter("persona_replies_total", "Persona chat posts, by kind (name, chance), and posts that failed (failed).", "kind")
+	m.personaSeen = counter("persona_messages_total", "Messages of the persona member, by result (queued, skipped_category, no_words, blocked, queue_full).", "result")
+	m.personaLearn = counter("persona_learned_total", "What the persona chain learned: messages and words written to persona.db, and failed writes (errors).", "what")
+	m.personaWords = prometheus.NewGauge(prometheus.GaugeOpts{Name: "hcbot_persona_chain_words", Help: "Different words in the persona chain."})
+	m.personaSteps = prometheus.NewGauge(prometheus.GaugeOpts{Name: "hcbot_persona_chain_transitions", Help: "Word steps (transitions) in the persona chain."})
+	f(m.personaWords)
+	f(m.personaSteps)
+	gaugeFunc("persona_pending_messages", "Messages waiting to be written to persona.db.", func() float64 {
+		b.pr.mu.Lock()
+		defer b.pr.mu.Unlock()
+		return float64(len(b.pr.pending))
+	})
+	gaugeFunc("persona_backfill_running", "1 while a persona backfill runs.", func() float64 {
+		if b.pr.backfill.Load() {
+			return 1
+		}
+		return 0
+	})
+	m.backfillMsgs = counter("persona_backfill_messages_total", "Messages of persona backfills, by result (found, learned, skipped).", "result")
+	m.backfillRuns = counter("persona_backfill_runs_total", "Persona backfills that ended, by result (done: got to the end, stopped: turned off or shutdown, error).", "result")
 	m.rankSeconds = hist("markov_rank_seconds", "The time of a rank request to the worker.", fast).WithLabelValues()
 	m.triggers = counter("triggers_total", "Triggers that answered.").WithLabelValues()
 	m.autoreacts = counter("autoreacts_total", "Autoreact emotes that the bot added.").WithLabelValues()
@@ -139,6 +168,9 @@ func newBotMetrics(b *Bot) *botMetrics {
 	gaugeFunc("db_bytes", "The size of hcbot.db.", fileSize(b.db.Path))
 	if b.chain != nil {
 		gaugeFunc("markov_db_bytes", "The size of markov.db.", fileSize(b.chain.Path))
+	}
+	if b.persona != nil {
+		gaugeFunc("persona_db_bytes", "The size of persona.db.", fileSize(b.persona.Path))
 	}
 	m.backups = counter("backups_total", "Database backups, by result.", "result")
 	m.lastBackup = prometheus.NewGauge(prometheus.GaugeOpts{Name: "hcbot_last_backup_timestamp_seconds",

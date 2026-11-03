@@ -222,6 +222,7 @@ func (b *Bot) startLoops() {
 		b.every(markovFlushEvery, b.flushMarkov)
 		b.every(markovFlushEvery, b.flushPersona)
 		b.every(markovStatsEvery, b.updateMarkovStats)
+		b.every(markovStatsEvery, b.updatePersonaStats)
 		b.every(nickSaveEvery, b.saveNicks)
 		b.resumeTTSJobs()
 	})
