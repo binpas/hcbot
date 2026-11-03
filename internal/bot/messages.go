@@ -43,7 +43,8 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 		return // a trigger fired: no autoreacts or Markov chat
 	}
 	b.autoreact(m.Message)
-	b.markovMessage(m.Message)
+	spoke := b.personaMessage(m.Message)
+	b.markovMessage(m.Message, spoke)
 }
 
 // mentionKeyword returns the word after a leading mention of the bot,

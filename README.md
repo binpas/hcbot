@@ -20,6 +20,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Autoreacts:** the bot reacts with an emote when a word or phrase is said. *(Needs the [Message Content option](#message-content-features).)*
 - **Reaction roles** built with a wizard.
 - **Markov chat:** the bot learns how people talk in chosen channels and replies with its own mix of their words. It has a blocklist and tools to remove words. Its data is in a separate database file.
+- **Persona chat:** a second Markov chain that learns from one member only, and talks like that member, in a red embed with its own name and avatar. It can learn the member's old messages with Discord's search. *(Needs the [Message Content option](#message-content-features).)*
 - **Curation (starboard):** messages with enough reactions are copied to a curated channel, with their pictures and files. *(Needs the [Message Content option](#message-content-features).)*
 - **Audit logging:** messages, channels, threads, roles, voice, bans and invites.
 - **Admin tools:** database backups (also daily), emoji/sticker export and import, a channel permissions report, permission templates, and channel archiving.
@@ -127,6 +128,7 @@ METRICS_ADDR=
 | `MEDIA_CACHE_SIZE` | How many messages' attachments the audit log keeps (default 300). |
 | `MEDIA_CACHE_MAX_BYTES` | Largest attachment it keeps, in bytes (default 8 MiB). |
 | `MARKOV_DB_PATH` | The database file for the [Markov chat](#markov-chat) (default `markov.db`). |
+| `PERSONA_DB_PATH` | The database file for the [persona chat](#persona-chat-1) (default `persona.db`). |
 | `GIPHY_API_KEY` | The GIPHY API key for [Markov GIFs](#markov-chat). When it is not set, Markov GIFs are off. |
 | `YTDLP_COOKIES` | A cookies file for yt-dlp, for [video downloads](#video-downloads) (for example `youtube-cookies.txt`, relative to the working folder). When it is not set, yt-dlp uses no cookies. |
 | `TTS_URL` | The address of the [text to speech worker](#text-to-speech), for example `http://host.docker.internal:8765`. When it is not set, `/say` and `/voices` are not registered. |
@@ -191,6 +193,13 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `COMIC_CHANNELS` | Channels where comics work (up to 25). Empty: all channels ¹ | — |
 | `COMIC_MAX_MESSAGES` | Most messages in one comic (2–20) ¹ | 10 |
 | `COMIC_COOLDOWN` | Seconds that a member must wait between comics. 0: no wait. ¹ | 30 |
+| `PERSONA_ENABLED` | Turn the [persona chat](#persona-chat-1) on or off. `/persona on` and `/persona off` also set it. ¹ | off |
+| `PERSONA_USER` | The member that the persona learns from. A member menu in `/setup`. ¹ | — |
+| `PERSONA_BOT_NAME` | The persona's name, shown at the top of its posts. A message in a persona reply channel that contains this name (as a full word, in any case) gets a persona reply. ¹ | — |
+| `PERSONA_REPLY_CHANNELS` | Channels where the persona talks (up to 25, with their threads). Empty: it does not talk. ¹ | — |
+| `PERSONA_CHANCE` | Percent chance (decimals allowed) that the persona talks after a normal message in a persona reply channel. Separate from `MARKOV_REPLY_CHANCE`. ¹ | 0 |
+| `PERSONA_COOLDOWN` | Seconds after a persona message before it talks again by chance in that channel. Its name always gets a reply. ¹ | 60 |
+| `PERSONA_SKIP_CATEGORY` | A category that the persona never learns from, for example the mod category. Also used by `/persona backfill`. ¹ | — |
 
 ¹ Shown only when `ENABLE_MESSAGE_CONTENT_FEATURES` is on, because the feature needs it. The stored value is kept when the option is off.
 
@@ -468,6 +477,18 @@ A trigger with the same name as a command does not fire. The `/autoreact` comman
 
 See [Markov chat](#markov-chat) for how it learns.
 
+### Persona chat
+
+These commands exist only with `ENABLE_MESSAGE_CONTENT_FEATURES`.
+
+| Command | Access | Description |
+|---|---|---|
+| `/persona status` | mod only | The state, the member, the name, the size of the chain, the channels, the chance, and the backfill. |
+| `/persona on` | mod only | Turns the persona chat on. |
+| `/persona off` | mod only | Turns the persona chat off. It does not learn or talk, and a running backfill stops. The chain stays. |
+| `/persona avatar <file>` | mod only | Sets the picture at the top of the persona's posts (PNG, JPEG, GIF or WebP, at most 2 MB), and shows a preview. |
+| `/persona backfill` | mod only | Searches the whole server for the member's old messages and learns them, after you confirm. See [Persona chat](#persona-chat-1). |
+
 ### Reaction roles
 
 | Command | Access | Description |
@@ -563,6 +584,22 @@ A trigger wins: `@BotName <trigger>` posts the trigger, not a Markov reply.
 
 **Size:** each word step uses about 40–60 bytes. A busy server can make 100–300 MB in some months. `/markov status` shows the size, and `/markov prune` makes it smaller. `markov.db` is not in the daily backup.
 
+## Persona chat
+
+The persona chat is a second Markov chain, in its own file (`persona.db`). It learns only from the member in `PERSONA_USER`, and talks like that member. It needs `ENABLE_MESSAGE_CONTENT_FEATURES`, and `PERSONA_ENABLED` must be on.
+
+**Learning:** the bot learns each new message from the member, in all channels and threads, except the channels in `PERSONA_SKIP_CATEGORY`. The Markov blocklist also applies. The bot keeps the ID of each learned message, so it never learns a message two times.
+
+**Backfill:** `/persona backfill` uses Discord's message search (`GET /guilds/{id}/messages/search`, with the member as the author) to find the member's old messages, 25 at a time, newest first. It skips the same category, and messages that it learned before. It runs in the background, and the reply shows the progress. A backfill can take some minutes. If Discord has not indexed the server yet, the bot waits and tries again. If the backfill stops (for example a restart or `/persona off`), the next `/persona backfill` continues from where it stopped.
+
+**Talking** (in `PERSONA_REPLY_CHANNELS`):
+
+- A message that contains `PERSONA_BOT_NAME` always gets a persona reply. This also applies to `@BotName` messages: then the persona answers, not the normal Markov chat.
+- After a normal message, the persona talks with a chance of `PERSONA_CHANCE` percent, as a reply. `PERSONA_COOLDOWN` is the time between two of these messages in one channel.
+- A persona post is an embed with a red border, with `PERSONA_BOT_NAME` and the avatar from `/persona avatar` at the top. The bot posts it, so the bot's name and the APP tag show above it. Nobody can think that the member wrote it. Persona posts cannot ping anyone.
+
+**Remove data:** `/persona off` stops the feature. To delete the chain, stop the bot and delete `persona.db`, `persona.db-wal` and `persona.db-shm`.
+
 ### Train with the `hcbot-train` script
 
 ```bash
@@ -590,7 +627,7 @@ The bot keeps the last 1000 messages in memory. A delete of an older message is 
 
 ## Run as a systemd service
 
-Each bot is an **instance**: a systemd service with its own name, user, working folder, `.env` and token. All instances run the same binary from the install folder (`/usr/local/bin`). The bot reads `.env`, `hcbot.db`, `markov.db`, `backups/` and `README.md` from its **working folder**, not from the folder of the binary.
+Each bot is an **instance**: a systemd service with its own name, user, working folder, `.env` and token. All instances run the same binary from the install folder (`/usr/local/bin`). The bot reads `.env`, `hcbot.db`, `markov.db`, `persona.db`, `backups/` and `README.md` from its **working folder**, not from the folder of the binary.
 
 `deploy/systemd/hcbot.service.in` is the template for the unit files. Do not install it directly.
 
@@ -675,7 +712,7 @@ Under systemd, the bot writes its log lines without its own timestamp, because t
 
 Each push to `main` builds a container image, `ghcr.io/binpas/hcbot` (linux/amd64), with GitHub Actions (`.github/workflows/image.yml`). The image has `hcbot`, `hcbot-train`, and the [video download](#video-downloads) tools: `yt-dlp`, `deno`, `ffmpeg`, and `ffprobe`. It has no secrets and no data. The tags are `latest` (the newest `main`) and `sha-<commit>` (one for each build, to go back to an older image).
 
-The bot runs as UID and GID 568 (the TrueNAS `apps` user) in the folder `/data`. Mount the bot folder there. It holds `.env`, `hcbot.db`, `markov.db`, `backups/`, and the cookies file.
+The bot runs as UID and GID 568 (the TrueNAS `apps` user) in the folder `/data`. Mount the bot folder there. It holds `.env`, `hcbot.db`, `markov.db`, `persona.db`, `backups/`, and the cookies file.
 
 The image package on GHCR is private. Give TrueNAS a login for it once: make a GitHub personal access token (classic) with only the `read:packages` scope. Then add it in **Apps > Configuration > Manage Container Image Registries**, with registry `ghcr.io`, your GitHub user name, and the token as the password. Do not use your GitHub password.
 
@@ -851,6 +888,16 @@ make check
 |---|---|
 | `words` | Each word the Markov chat knows |
 | `transitions` | How often each pair of words came before each word |
+| `learned` | Not used by the Markov chat (see `persona.db`) |
+| `meta` | Not used by the Markov chat |
+
+`persona.db` (SQLite) in the working folder, or at `PERSONA_DB_PATH`, has the same tables, for the [persona chat](#persona-chat-1):
+
+| Table | Content |
+|---|---|
+| `words`, `transitions` | The persona's chain, from the messages of `PERSONA_USER` |
+| `learned` | The ID of each learned message, so that a message is learned only once |
+| `meta` | The backfill position, and the persona's avatar |
 
 ---
 

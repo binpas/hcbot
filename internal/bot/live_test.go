@@ -83,7 +83,7 @@ func newLive(t *testing.T) *live {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = chain.Close() })
-	b, err := New(config.Env{BotToken: token, GuildID: guildID}, database, chain)
+	b, err := New(config.Env{BotToken: token, GuildID: guildID}, database, chain, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

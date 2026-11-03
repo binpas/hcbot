@@ -267,7 +267,7 @@ func TestMentionReplyMigrate(t *testing.T) {
 		if err := tb.db.ImportConfig(values, false); err != nil {
 			t.Fatal(err)
 		}
-		b, err := New(tb.env, tb.db, tb.chain)
+		b, err := New(tb.env, tb.db, tb.chain, tb.persona)
 		if err != nil {
 			t.Fatal(err)
 		}

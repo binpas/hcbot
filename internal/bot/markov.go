@@ -202,7 +202,8 @@ func (b *Bot) markovChannel(key, channelID string) bool {
 }
 
 // markovMessage learns from a message and replies to it when it should.
-func (b *Bot) markovMessage(m *discordgo.Message) {
+// quiet stops it from talking, for example because the persona answered.
+func (b *Bot) markovMessage(m *discordgo.Message, quiet bool) {
 	if b.chain == nil || m.GuildID == "" {
 		return
 	}
@@ -215,7 +216,7 @@ func (b *Bot) markovMessage(m *discordgo.Message) {
 		words = markov.Tokenize(markovNames(m, botID))
 	}
 
-	if b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
+	if !quiet && b.markovChannel("MARKOV_REPLY_CHANNELS", m.ChannelID) {
 		switch {
 		case mentioned:
 			mode, mod := b.cfg.Choice("MARKOV_MENTION_REPLY"), b.messageFromMod(m)
@@ -338,7 +339,7 @@ func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool, ki
 		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
 	})
 	seed = seed[:min(len(seed), 5)]
-	out, err := b.markovGenerate(seed, strings.Join(words, " "))
+	out, err := b.markovGenerate(b.chain, seed, strings.Join(words, " "))
 	if err != nil {
 		log.Printf("markov generate: %v", err)
 		return

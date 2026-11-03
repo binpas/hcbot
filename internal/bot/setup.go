@@ -35,6 +35,8 @@ var contentOnlySettings = map[string]bool{
 	"CURATED": true, "CURATED_EMOTE": true, "CURATED_THRESHOLD": true,
 	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
 	"COMIC_ENABLED": true, "COMIC_CHANNELS": true, "COMIC_MAX_MESSAGES": true, "COMIC_COOLDOWN": true,
+	"PERSONA_ENABLED": true, "PERSONA_USER": true, "PERSONA_BOT_NAME": true, "PERSONA_REPLY_CHANNELS": true,
+	"PERSONA_CHANCE": true, "PERSONA_COOLDOWN": true, "PERSONA_SKIP_CATEGORY": true,
 }
 
 // setupSections sets the order of /setup: each section shows its settings
@@ -57,6 +59,8 @@ var setupSections = []struct {
 	{"Video downloads", []string{"DOWNLOAD_ENABLED", "DOWNLOAD_MAX_MB"}},
 	{"Speech (/say)", []string{"TTS_ENABLED", "TTS_CHANNELS", "TTS_MAX_CHARS", "TTS_COOLDOWN", "TTS_QUEUE_MAX"}},
 	{"Comics", []string{"COMIC_ENABLED", "COMIC_CHANNELS", "COMIC_MAX_MESSAGES", "COMIC_COOLDOWN"}},
+	{"Persona chat", []string{"PERSONA_ENABLED", "PERSONA_USER", "PERSONA_BOT_NAME", "PERSONA_REPLY_CHANNELS",
+		"PERSONA_CHANCE", "PERSONA_COOLDOWN", "PERSONA_SKIP_CATEGORY"}},
 	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
 }
 
@@ -191,6 +195,11 @@ func (v setupView) components(disabled bool) []discordgo.MessageComponent {
 				MenuType: discordgo.RoleSelectMenu, CustomID: v.id("role", k.Key),
 				Placeholder: "Set " + k.Key, MaxValues: 1, Disabled: disabled,
 			}
+		case config.KindUser:
+			comp = discordgo.SelectMenu{
+				MenuType: discordgo.UserSelectMenu, CustomID: v.id("user", k.Key),
+				Placeholder: "Set " + k.Key, MaxValues: 1, Disabled: disabled,
+			}
 		case config.KindRoleList:
 			var defaults []discordgo.SelectMenuDefaultValue
 			for _, id := range v.b.cfg.List(k.Key) {
@@ -306,7 +315,7 @@ func (b *Bot) onSetupComponent(c *Ctx) {
 	}
 
 	switch action {
-	case "ch", "role":
+	case "ch", "role", "user":
 		if vals := c.Values(); len(vals) == 1 && b.setupSave(c, key, vals[0]) {
 			v.refresh(c)
 		}
@@ -433,6 +442,8 @@ func (b *Bot) setupDisplay(guildID, kind, raw string) string {
 			return roleMention(raw)
 		}
 		return fmt.Sprintf("`%s` *(not found)*", raw)
+	case config.KindUser:
+		return userMention(raw)
 	case config.KindRoleList, config.KindChanList:
 		ids := config.ParseIDList(raw)
 		if len(ids) == 0 {

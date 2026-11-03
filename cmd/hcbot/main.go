@@ -56,8 +56,18 @@ func main() {
 		}
 	}()
 
+	persona, err := markov.Open(env.PersonaDBPath)
+	if err != nil {
+		log.Fatalf("open persona database: %v", err)
+	}
+	defer func() {
+		if err := persona.Close(); err != nil {
+			log.Printf("close persona database: %v", err)
+		}
+	}()
+
 	bot.Version = version
-	b, err := bot.New(env, database, chain)
+	b, err := bot.New(env, database, chain, persona)
 	if err != nil {
 		log.Fatalf("create bot: %v", err)
 	}

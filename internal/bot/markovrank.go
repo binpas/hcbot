@@ -36,15 +36,15 @@ type rankedReply struct {
 	score float64
 }
 
-// markovGenerate makes a reply from the seed words, as an answer to
-// msgText ("" when the bot cannot read the message).
-func (b *Bot) markovGenerate(seed []string, msgText string) (string, error) {
+// markovGenerate makes a reply from the seed words with chain, as an
+// answer to msgText ("" when the bot cannot read the message).
+func (b *Bot) markovGenerate(chain *markov.Store, seed []string, msgText string) (string, error) {
 	ok := func(w []string) bool { return !b.markovBlocks(w) }
 	n := min(max(b.cfg.Int("MARKOV_CANDIDATES"), 1), markovMaxCands)
 	if n == 1 || b.env.TTSURL == "" {
-		return b.chain.Generate(seed, ok)
+		return chain.Generate(seed, ok)
 	}
-	cands, err := b.chain.GenerateN(seed, ok, n)
+	cands, err := chain.GenerateN(seed, ok, n)
 	if len(cands) == 0 {
 		return "", err
 	}

@@ -64,6 +64,10 @@ var schema = []string{
 		count INTEGER NOT NULL,
 		PRIMARY KEY (w1, w2, next)
 	) WITHOUT ROWID`,
+	// learned holds the Discord message IDs LearnOnce has learned.
+	`CREATE TABLE IF NOT EXISTS learned (id TEXT PRIMARY KEY) WITHOUT ROWID`,
+	// meta holds small values, for example a search position or an image.
+	`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value BLOB NOT NULL) WITHOUT ROWID`,
 }
 
 // Learn adds each message (already tokenized) to the chain, in one
@@ -77,6 +81,14 @@ func (s *Store) Learn(messages [][]string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := learnTx(tx, messages); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// learnTx adds the messages to the chain inside tx.
+func learnTx(tx *sql.Tx, messages [][]string) error {
 	addWord, err := tx.Prepare(`INSERT INTO words (word) VALUES (?) ON CONFLICT (word) DO NOTHING`)
 	if err != nil {
 		return err
@@ -124,7 +136,7 @@ func (s *Store) Learn(messages [][]string) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // maxWords is the longest reply Generate makes.
@@ -463,6 +475,9 @@ func (s *Store) Reset() error {
 		return err
 	}
 	if _, err := s.sql.Exec(`DELETE FROM words`); err != nil {
+		return err
+	}
+	if _, err := s.sql.Exec(`DELETE FROM learned`); err != nil {
 		return err
 	}
 	return s.vacuum()

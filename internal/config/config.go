@@ -32,6 +32,8 @@ type Env struct {
 
 	// MarkovDBPath is the separate database file for the Markov chat.
 	MarkovDBPath string
+	// PersonaDBPath is the separate database file for the persona chat.
+	PersonaDBPath string
 
 	// GiphyKey is the GIPHY API key for Markov GIFs. Empty turns them off.
 	GiphyKey string
@@ -63,6 +65,7 @@ func LoadEnv() Env {
 		MediaCacheSize:     envInt("MEDIA_CACHE_SIZE", 300),
 		MediaCacheMaxBytes: envInt("MEDIA_CACHE_MAX_BYTES", 8*1024*1024),
 		MarkovDBPath:       envStr("MARKOV_DB_PATH", "markov.db"),
+		PersonaDBPath:      envStr("PERSONA_DB_PATH", "persona.db"),
 		GiphyKey:           strings.TrimSpace(os.Getenv("GIPHY_API_KEY")),
 		YtdlpCookies:       strings.TrimSpace(os.Getenv("YTDLP_COOKIES")),
 		TTSURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("TTS_URL")), "/"),
@@ -99,6 +102,7 @@ const (
 	KindChannel  = "channel"
 	KindCategory = "category"
 	KindRole     = "role"
+	KindUser     = "user"
 	KindRoleList = "role_list"
 	KindChanList = "channel_list"
 	KindBool     = "bool"   // "on" or "off"
@@ -219,6 +223,20 @@ var SetupKeys = []SetupKey{
 		"Most messages in one comic (2-20)"},
 	{"COMIC_COOLDOWN", "COMIC_COOLDOWN", KindInt, "30",
 		"Seconds a member must wait between comics (0: no wait)"},
+	{"PERSONA_ENABLED", "PERSONA_ENABLED", KindBool, "off",
+		"Turn the persona chat on: a second Markov chain that learns only from PERSONA_USER and talks like that member (also /persona on and /persona off)"},
+	{"PERSONA_USER", "PERSONA_USER_ID", KindUser, "",
+		"The member the persona chat learns from"},
+	{"PERSONA_BOT_NAME", "PERSONA_BOT_NAME", KindText, "",
+		"The persona's name, shown on its posts. A message in a persona reply channel that contains this name gets a persona reply"},
+	{"PERSONA_REPLY_CHANNELS", "PERSONA_REPLY_CHANNEL_IDS", KindChanList, "",
+		"Channels where the persona talks — pick up to 25. Empty: it does not talk"},
+	{"PERSONA_CHANCE", "PERSONA_CHANCE", KindDecimal, "0",
+		"Percent chance (0-100, decimals allowed, e.g. 0.05) that the persona talks after a normal message in a persona reply channel"},
+	{"PERSONA_COOLDOWN", "PERSONA_COOLDOWN", KindInt, "60",
+		"Seconds after a persona message before it talks again by chance in that channel (its name always gets a reply)"},
+	{"PERSONA_SKIP_CATEGORY", "PERSONA_SKIP_CATEGORY_ID", KindCategory, "",
+		"Category the persona never learns from (for example the mod category), also in /persona backfill"},
 }
 
 // Choice is one value of a KindChoice setting.
@@ -329,7 +347,7 @@ func CheckValue(key, value string) error {
 		if _, err := ParseDecimal(value); err != nil {
 			return err
 		}
-	case KindChannel, KindCategory, KindRole:
+	case KindChannel, KindCategory, KindRole, KindUser:
 		if !isID(value) {
 			return errors.New("must be a Discord ID")
 		}

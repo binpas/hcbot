@@ -27,10 +27,13 @@ type Bot struct {
 	s     *discordgo.Session
 	db    *db.DB
 	chain *markov.Store // the Markov chat's own database
-	env   config.Env
-	cfg   *config.Store
-	mk    markovState
-	gif   gifState
+	// persona is the persona chat's chain (persona.go); nil turns it off.
+	persona *markov.Store
+	env     config.Env
+	cfg     *config.Store
+	mk      markovState
+	pr      personaState
+	gif     gifState
 
 	commands   map[string]*command // keyed by qualified name, e.g. "jail arrest"
 	groups     map[string]*group
@@ -73,7 +76,7 @@ type Bot struct {
 var Version = "dev"
 
 // New builds the bot. Call Run to connect.
-func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
+func New(env config.Env, database *db.DB, chain, persona *markov.Store) (*Bot, error) {
 	values, err := database.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -105,6 +108,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 		s:            s,
 		db:           database,
 		chain:        chain,
+		persona:      persona,
 		env:          env,
 		cfg:          config.NewStore(values),
 		commands:     map[string]*command{},
@@ -144,6 +148,7 @@ func New(env config.Env, database *db.DB, chain *markov.Store) (*Bot, error) {
 	b.registerAssets()
 	b.registerBotProfile()
 	b.registerMarkov()
+	b.registerPersona()
 	b.registerDownload()
 	b.registerTweetshot()
 	b.registerTTS()
@@ -186,6 +191,7 @@ func (b *Bot) Open() error {
 func (b *Bot) Close() error {
 	close(b.stop)
 	b.flushMarkov()
+	b.flushPersona()
 	b.saveNicks()
 	return b.s.Close()
 }
@@ -214,6 +220,7 @@ func (b *Bot) startLoops() {
 		b.every(30*time.Second, b.runReminders)
 		b.daily(4, 0, b.runDailyBackup)
 		b.every(markovFlushEvery, b.flushMarkov)
+		b.every(markovFlushEvery, b.flushPersona)
 		b.every(markovStatsEvery, b.updateMarkovStats)
 		b.every(nickSaveEvery, b.saveNicks)
 		b.resumeTTSJobs()

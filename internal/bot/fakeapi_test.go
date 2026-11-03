@@ -279,7 +279,12 @@ func newTestBot(t *testing.T, opts ...func(*config.Env)) *testBot {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = chain.Close() })
-	b, err := New(env, database, chain)
+	persona, err := markov.Open(filepath.Join(t.TempDir(), "persona.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = persona.Close() })
+	b, err := New(env, database, chain, persona)
 	if err != nil {
 		t.Fatal(err)
 	}

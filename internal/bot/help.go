@@ -48,7 +48,7 @@ func (b *Bot) modCommandCategories() []helpCategory {
 	cats := b.allModCommandCategories()
 	if !b.env.MessageContent {
 		// /autoreact is not registered without the Message Content option.
-		cats = slices.DeleteFunc(cats, func(c helpCategory) bool { return c.title == "Autoreacts" })
+		cats = slices.DeleteFunc(cats, func(c helpCategory) bool { return c.title == "Autoreacts" || c.title == "Persona Chat" })
 	}
 	if b.env.TTSURL == "" {
 		// /say and /voices are registered only with a text to speech worker.
@@ -104,6 +104,13 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/markov import <file>", "Train from a .txt file (one message per line) or a DiscordChatExporter .json."},
 			{"/markov candidates <text>", "Show the replies the chat makes for a text, with the scores it picks by."},
 			{"/markov prune", "Remove word steps seen only once, to shrink the database."},
+		}},
+		{"Persona Chat", []helpEntry{
+			{"/persona status", "Show the persona's settings, the size of its chain and the backfill."},
+			{"/persona on", "Turn the persona chat on."},
+			{"/persona off", "Turn the persona chat off. It stops learning and talking; its chain stays."},
+			{"/persona avatar <file>", "Set the picture on the persona's posts."},
+			{"/persona backfill", "Learn the member's old messages with Discord's search, in the background."},
 		}},
 		{"Autoreacts", []helpEntry{
 			{"/autoreact add <emote> <phrase>", "React with an emote whenever a word or phrase is said."},
