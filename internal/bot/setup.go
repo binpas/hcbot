@@ -36,7 +36,7 @@ var contentOnlySettings = map[string]bool{
 	"ON_THE_REAL": true, "MEDIA_CACHE_TOTAL_MB": true,
 	"COMIC_ENABLED": true, "COMIC_CHANNELS": true, "COMIC_MAX_MESSAGES": true, "COMIC_COOLDOWN": true,
 	"PERSONA_ENABLED": true, "PERSONA_USER": true, "PERSONA_BOT_NAME": true, "PERSONA_REPLY_CHANNELS": true,
-	"PERSONA_CHANCE": true, "PERSONA_COOLDOWN": true, "PERSONA_SKIP_CATEGORY": true,
+	"PERSONA_CHANCE": true, "PERSONA_COOLDOWN": true, "PERSONA_SKIP_CATEGORY": true, "PERSONA_RANK_PROMPT": true,
 }
 
 // setupSections sets the order of /setup: each section shows its settings
@@ -52,7 +52,7 @@ var setupSections = []struct {
 	{"Warnings", []string{"WARN_ARREST_THRESHOLD", "WARN_ARREST_DURATION", "WARN_KICK_THRESHOLD"}},
 	{"Community", []string{"MOTD_ROLE", "CURATED", "CURATED_EMOTE", "CURATED_THRESHOLD", "ON_THE_REAL"}},
 	{"Markov chat", []string{"MARKOV_LEARN_CHANNELS", "MARKOV_REPLY_CHANNELS", "MARKOV_MENTION_REPLY",
-		"MARKOV_REPLY_CHANCE", "MARKOV_RANDOM_AS_REPLY", "MARKOV_COOLDOWN", "MARKOV_CANDIDATES", "MARKOV_PICK",
+		"MARKOV_REPLY_CHANCE", "MARKOV_RANDOM_AS_REPLY", "MARKOV_COOLDOWN", "MARKOV_CANDIDATES", "MARKOV_PICK", "MARKOV_RANK_PROMPT",
 		"MARKOV_GIF_CHANCE", "MARKOV_GIF_COOLDOWN", "MARKOV_GIF_RATING", "MARKOV_LOG_CHANNEL", "MARKOV_LOG_MODE"}},
 	{"File and memory limits", []string{"TRIGGER_IMPORT_MAX_MB", "ASSETS_IMPORT_MAX_MB", "MARKOV_IMPORT_MAX_MB",
 		"MEDIA_CACHE_TOTAL_MB"}},
@@ -60,7 +60,7 @@ var setupSections = []struct {
 	{"Speech (/say)", []string{"TTS_ENABLED", "TTS_CHANNELS", "TTS_MAX_CHARS", "TTS_COOLDOWN", "TTS_QUEUE_MAX"}},
 	{"Comics", []string{"COMIC_ENABLED", "COMIC_CHANNELS", "COMIC_MAX_MESSAGES", "COMIC_COOLDOWN"}},
 	{"Persona chat", []string{"PERSONA_ENABLED", "PERSONA_USER", "PERSONA_BOT_NAME", "PERSONA_REPLY_CHANNELS",
-		"PERSONA_CHANCE", "PERSONA_COOLDOWN", "PERSONA_SKIP_CATEGORY"}},
+		"PERSONA_CHANCE", "PERSONA_COOLDOWN", "PERSONA_SKIP_CATEGORY", "PERSONA_RANK_PROMPT"}},
 	{"Links and files", []string{"README_PATH", "PRIVACY_URL", "TERMS_URL"}},
 }
 
@@ -374,9 +374,13 @@ func (b *Bot) setupSave(c *Ctx, key, value string) bool {
 
 func (b *Bot) openSetupModal(c *Ctx, v setupView, key string) {
 	var desc string
+	style, maxLen := discordgo.TextInputShort, 100
 	for _, k := range config.SetupKeys {
 		if k.Key == key {
 			desc = k.Description
+			if k.Kind == config.KindLongText {
+				style, maxLen = discordgo.TextInputParagraph, 500
+			}
 		}
 	}
 	c.Modal(
@@ -384,8 +388,8 @@ func (b *Bot) openSetupModal(c *Ctx, v setupView, key string) {
 		truncate("Set "+key, 45),
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.TextInput{
-				CustomID: "value", Label: truncate(desc, 45), Style: discordgo.TextInputShort,
-				Value: b.cfg.Raw(key), Required: true, MaxLength: 100,
+				CustomID: "value", Label: truncate(desc, 45), Style: style,
+				Value: b.cfg.Raw(key), Required: true, MaxLength: maxLen,
 			},
 		}},
 	)

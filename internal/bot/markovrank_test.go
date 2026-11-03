@@ -2,8 +2,12 @@ package bot
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/binpas/hcbot/internal/config"
+	"github.com/binpas/hcbot/internal/markov"
 )
 
 const (
@@ -48,7 +52,7 @@ func TestMarkovRankBest(t *testing.T) {
 		t.Errorf("only %d of 5 replies were ranked", len(f.ranks))
 	}
 	for _, r := range f.ranks {
-		if r.Context != "hello apple" || len(r.Candidates) != 2 {
+		if r.Context != "hello apple" || len(r.Candidates) != 2 || !strings.HasPrefix(r.System, "This is a casual Discord chat.") {
 			t.Errorf("rank request = %+v", r)
 		}
 	}
@@ -104,4 +108,61 @@ func TestMarkovCandidates(t *testing.T) {
 	if strings.Count(r.text(), "\n1. ") != 1 {
 		t.Errorf("reply = %q", r.text())
 	}
+}
+
+// personaRankBot is a persona test bot with a fake worker. The persona
+// chain knows two replies.
+func personaRankBot(t *testing.T) (*testBot, *fakeTTS) {
+	t.Helper()
+	f := &fakeTTS{}
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	tb := newTestBot(t, withMessageContent, func(e *config.Env) { e.TTSURL, e.TTSToken = srv.URL, testTTSToken })
+	tb.config(map[string]string{
+		"PERSONA_ENABLED": "on", "PERSONA_USER": tTarget, "PERSONA_BOT_NAME": "Target-bot",
+		"PERSONA_REPLY_CHANNELS": tChGeneral, "PERSONA_COOLDOWN": "0", "MARKOV_PICK": "best",
+	})
+	if _, err := tb.persona.LearnOnce([]markov.Item{
+		{ID: "1", Words: markov.Tokenize(shortReply)}, {ID: "2", Words: markov.Tokenize(longReply)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return tb, f
+}
+
+func TestPersonaRankQuestion(t *testing.T) {
+	tb, f := personaRankBot(t)
+	for range 5 {
+		tb.say(tUser, tChGeneral, "can you ask target-bot how he feels about apple", true)
+	}
+	if len(f.ranks) == 0 {
+		t.Fatal("no rank requests")
+	}
+	for _, r := range f.ranks {
+		if r.Context != "how do you feel about apple?" {
+			t.Errorf("context = %q", r.Context)
+		}
+		if want := "This is a casual Discord chat. Target-bot is one of the members. The next message is Target-bot's short answer to the question."; r.System != want {
+			t.Errorf("system = %q", r.System)
+		}
+	}
+
+	tb.config(map[string]string{"PERSONA_RANK_PROMPT": "{name} talks."})
+	n := len(f.ranks)
+	for range 5 {
+		tb.run(tMod, "persona candidates", strOpt("text", "ask target-bot if he likes apple"))
+	}
+	r := tb.expect(true, "candidates", "The ranker gets:", "`do you like apple?`")
+	if len(f.ranks) == n {
+		t.Fatal("/persona candidates made no rank request")
+	}
+	if got := f.ranks[len(f.ranks)-1].System; got != "Target-bot talks." {
+		t.Errorf("system = %q", got)
+	}
+	if !strings.Contains(r.text(), "`") {
+		t.Errorf("reply = %q", r.text())
+	}
+
+	tb.run(tUser, "persona candidates", strOpt("text", "hi"))
+	tb.expect(true, "must be a moderator")
 }

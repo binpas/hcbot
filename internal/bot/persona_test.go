@@ -52,7 +52,7 @@ func TestPersonaLearnsAndTalks(t *testing.T) {
 
 	// The name (any case) gets a persona reply, also with a bot mention;
 	// the normal Markov chat stays quiet.
-	tb.say(tUser, tChGeneral, "hey target-BOT, how is the guitar?", true)
+	tb.say(tUser, tChGeneral, "hey target-BOT, what about the guitar?", true)
 	sent := tb.markovSent(tChGeneral)
 	if len(sent) != 1 {
 		t.Fatalf("sent %d messages, want 1 persona reply", len(sent))

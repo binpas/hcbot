@@ -111,6 +111,7 @@ func (b *Bot) allModCommandCategories() []helpCategory {
 			{"/persona off", "Turn the persona chat off. It stops learning and talking; its chain stays."},
 			{"/persona avatar <file>", "Set the picture on the persona's posts."},
 			{"/persona backfill", "Learn the member's old messages with Discord's search, in the background."},
+			{"/persona candidates <text>", "Show the replies the persona makes for a question, with their scores."},
 		}},
 		{"Autoreacts", []helpEntry{
 			{"/autoreact add <emote> <phrase>", "React with an emote whenever a word or phrase is said."},

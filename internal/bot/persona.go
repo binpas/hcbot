@@ -93,6 +93,18 @@ func (b *Bot) registerPersona() {
 		handler:     b.cmdPersonaBackfill,
 	})
 	b.addConfirm("pbackfill", b.onPersonaBackfillConfirm)
+	b.addCommand(&command{
+		name:        "persona candidates",
+		description: "Show the replies the persona makes for a question, with their scores.",
+		options:     []*discordgo.ApplicationCommandOption{optStr("text", "A message to the persona", true)},
+		perm:        permMod,
+		handler:     b.cmdPersonaCandidates,
+	})
+}
+
+// personaRankPrompt is PERSONA_RANK_PROMPT with the persona's name.
+func (b *Bot) personaRankPrompt() string {
+	return strings.ReplaceAll(b.cfg.Str("PERSONA_RANK_PROMPT"), "{name}", b.personaName())
 }
 
 // personaUser is the member the persona learns from, or "" when the
@@ -198,13 +210,7 @@ func (b *Bot) personaMessage(m *discordgo.Message) bool {
 // chance) is for the metrics.
 func (b *Bot) personaReply(m *discordgo.Message, words []string, kind string) {
 	b.flushPersona() // the chain is small: it can use the newest words
-	name := strings.ToLower(b.personaName())
-	seed := slices.DeleteFunc(slices.Clone(words), func(w string) bool { return w == name })
-	slices.SortStableFunc(seed, func(x, y string) int {
-		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
-	})
-	seed = seed[:min(len(seed), 5)]
-	out, err := b.markovGenerate(b.persona, seed, strings.Join(words, " "))
+	out, err := b.markovGenerate(b.persona, b.personaSeed(words), personaQuestion(words, b.personaName()), b.personaRankPrompt())
 	if err != nil {
 		log.Printf("persona generate: %v", err)
 		return
@@ -224,6 +230,58 @@ func (b *Bot) personaReply(m *discordgo.Message, words []string, kind string) {
 		}
 	}
 	b.m.personaReply.WithLabelValues(kind).Inc()
+}
+
+// personaSeed is the start words for a reply: the 5 longest words of the
+// message, without the persona's name.
+func (b *Bot) personaSeed(words []string) []string {
+	name := strings.ToLower(b.personaName())
+	seed := slices.DeleteFunc(slices.Clone(words), func(w string) bool { return core(w) == name })
+	slices.SortStableFunc(seed, func(x, y string) int {
+		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
+	})
+	return seed[:min(len(seed), 5)]
+}
+
+// cmdPersonaCandidates shows the persona's candidates for a text, with
+// the question that the ranker gets and the scores, best first.
+func (b *Bot) cmdPersonaCandidates(c *Ctx) {
+	text, _ := c.Str("text")
+	words := markov.Tokenize(text)
+	n := min(max(b.cfg.Int("MARKOV_CANDIDATES"), 2), markovMaxCands)
+	c.Defer(true)
+	b.flushPersona()
+	cands, err := b.persona.GenerateN(b.personaSeed(words), func(w []string) bool { return !b.markovBlocks(w) }, n)
+	if err != nil || len(cands) == 0 {
+		c.Reply(true, errEmbed("The persona chain made no reply. Is it empty?"))
+		return
+	}
+	q := personaQuestion(words, b.personaName())
+	shown := "*none: the worker uses \"Say something in the chat.\"*"
+	if q != "" {
+		shown = "`" + truncate(q, 300) + "`"
+	}
+	var lines []string
+	note := ""
+	if b.env.TTSURL == "" {
+		note = "No worker (`TTS_URL`), so there are no scores."
+	} else if ranked, err := b.markovRank(q, cands, b.personaRankPrompt()); err != nil {
+		log.Printf("persona candidates: %v", err)
+		note = "The worker did not answer, so there are no scores. The persona posts the first one."
+	} else {
+		for i, r := range ranked {
+			lines = append(lines, fmt.Sprintf("%d. `%.2f` %s", i+1, r.score, truncateEllipsis(r.text, 300)))
+		}
+		note = fmt.Sprintf("Higher is better. `MARKOV_PICK` is `%s`.", b.cfg.Choice("MARKOV_PICK"))
+	}
+	if lines == nil {
+		for i, t := range cands {
+			lines = append(lines, fmt.Sprintf("%d. %s", i+1, truncateEllipsis(t, 300)))
+		}
+	}
+	e := makeEmbed(fmt.Sprintf("🎭 %d candidates", len(cands)),
+		"**The ranker gets:** "+shown+"\n\n"+truncateEllipsis(strings.Join(lines, "\n"), 3500)+"\n\n"+note, colourRed)
+	c.ReplyComplex(true, []*discordgo.MessageEmbed{e}, nil)
 }
 
 // personaPost builds a persona message: an embed with a red border, and

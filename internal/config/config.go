@@ -111,6 +111,7 @@ const (
 	KindInt      = "int"
 	KindDecimal  = "decimal" // a number that can have a decimal part, e.g. 0.05
 	KindText     = "text"
+	KindLongText = "long_text" // text of up to 500 characters, in a larger box
 )
 
 // SetupKey describes one /setup-editable setting.
@@ -189,6 +190,9 @@ var SetupKeys = []SetupKey{
 		"How many replies the Markov chat makes before it picks one (1-20). The GPU worker (TTS_URL) picks the one that answers best, or sounds most natural. 1: no picking"},
 	{"MARKOV_PICK", "MARKOV_PICK", KindChoice, "top3",
 		"Which candidate the Markov chat posts: best (the highest score) or top3 (a random one of the best three, for more variety)"},
+	{"MARKOV_RANK_PROMPT", "MARKOV_RANK_PROMPT", KindLongText,
+		"This is a casual Discord chat. The next message is a short reply from one of the members.",
+		"How the GPU worker sees the chat when it scores the Markov candidates. Describe the chat and who speaks next. The model does not write or pick the reply: it scores how natural each candidate is as the next message"},
 	{"MARKOV_GIF_CHANCE", "MARKOV_GIF_CHANCE", KindDecimal, "0",
 		"Percent chance (0-100, decimals allowed) that a Markov message also gets a GIF from GIPHY, found with the message text. Needs GIPHY_API_KEY in .env"},
 	{"MARKOV_GIF_COOLDOWN", "MARKOV_GIF_COOLDOWN", KindInt, "40",
@@ -237,6 +241,9 @@ var SetupKeys = []SetupKey{
 		"Seconds after a persona message before it talks again by chance in that channel (its name always gets a reply)"},
 	{"PERSONA_SKIP_CATEGORY", "PERSONA_SKIP_CATEGORY_ID", KindCategory, "",
 		"Category the persona never learns from (for example the mod category), also in /persona backfill"},
+	{"PERSONA_RANK_PROMPT", "PERSONA_RANK_PROMPT", KindLongText,
+		"This is a casual Discord chat. {name} is one of the members. The next message is {name}'s short answer to the question.",
+		"How the GPU worker sees the chat when it scores the persona's candidates. {name} is PERSONA_BOT_NAME. Describe the chat and who speaks next. The model does not write or pick the reply: it scores how natural each candidate is as the next message"},
 }
 
 // Choice is one value of a KindChoice setting.

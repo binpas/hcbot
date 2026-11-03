@@ -339,7 +339,7 @@ func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool, ki
 		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
 	})
 	seed = seed[:min(len(seed), 5)]
-	out, err := b.markovGenerate(b.chain, seed, strings.Join(words, " "))
+	out, err := b.markovGenerate(b.chain, seed, strings.Join(words, " "), b.cfg.Str("MARKOV_RANK_PROMPT"))
 	if err != nil {
 		log.Printf("markov generate: %v", err)
 		return

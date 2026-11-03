@@ -51,6 +51,7 @@ type fakeJob struct {
 type rankRequest struct {
 	Context    string   `json:"context"`
 	Candidates []string `json:"candidates"`
+	System     string   `json:"system"`
 }
 
 func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {

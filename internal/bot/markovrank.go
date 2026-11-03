@@ -37,8 +37,9 @@ type rankedReply struct {
 }
 
 // markovGenerate makes a reply from the seed words with chain, as an
-// answer to msgText ("" when the bot cannot read the message).
-func (b *Bot) markovGenerate(chain *markov.Store, seed []string, msgText string) (string, error) {
+// answer to msgText ("" when the bot cannot read the message). system is
+// the rank prompt (MARKOV_RANK_PROMPT or PERSONA_RANK_PROMPT).
+func (b *Bot) markovGenerate(chain *markov.Store, seed []string, msgText, system string) (string, error) {
 	ok := func(w []string) bool { return !b.markovBlocks(w) }
 	n := min(max(b.cfg.Int("MARKOV_CANDIDATES"), 1), markovMaxCands)
 	if n == 1 || b.env.TTSURL == "" {
@@ -54,7 +55,7 @@ func (b *Bot) markovGenerate(chain *markov.Store, seed []string, msgText string)
 	if len(cands) == 1 {
 		return cands[0], nil
 	}
-	ranked, err := b.markovRank(msgText, cands)
+	ranked, err := b.markovRank(msgText, cands, system)
 	if err != nil {
 		log.Printf("markov rank: %v", err)
 		return cands[0], nil
@@ -67,12 +68,17 @@ func (b *Bot) markovGenerate(chain *markov.Store, seed []string, msgText string)
 }
 
 // markovRank asks the worker for a score for each candidate, and returns
-// the candidates with the best first.
-func (b *Bot) markovRank(msgText string, cands []string) ([]rankedReply, error) {
+// the candidates with the best first. system ("": the worker's own) sets
+// the scene for the model.
+func (b *Bot) markovRank(msgText string, cands []string, system string) ([]rankedReply, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), markovRankTimeout)
 	defer cancel()
 	defer func(start time.Time) { b.m.rankSeconds.Observe(time.Since(start).Seconds()) }(time.Now())
-	resp, err := b.ttsDo(ctx, http.MethodPost, "/rank", map[string]any{"context": msgText, "candidates": cands})
+	req := map[string]any{"context": msgText, "candidates": cands}
+	if system = strings.TrimSpace(system); system != "" {
+		req["system"] = system
+	}
+	resp, err := b.ttsDo(ctx, http.MethodPost, "/rank", req)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +122,7 @@ func (b *Bot) cmdMarkovCandidates(c *Ctx) {
 	note := ""
 	if b.env.TTSURL == "" {
 		note = "No worker (`TTS_URL`), so there are no scores."
-	} else if ranked, err := b.markovRank(strings.Join(words, " "), cands); err != nil {
+	} else if ranked, err := b.markovRank(strings.Join(words, " "), cands, b.cfg.Str("MARKOV_RANK_PROMPT")); err != nil {
 		log.Printf("markov candidates: %v", err)
 		note = "The worker did not answer, so there are no scores. The chat posts the first one."
 	} else {

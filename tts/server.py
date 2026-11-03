@@ -18,7 +18,7 @@ Endpoints (all except /health need "Authorization: Bearer <TTS_TOKEN>"):
                             "ahead": n, "error": null|"unknown voice"|...}
   GET    /jobs/<id>/audio  audio/wav, when the state is done
   DELETE /jobs/<id>        removes a queued or finished job
-  POST   /rank             {"context": "...", "candidates": ["...", ...]}
+  POST   /rank             {"context": "...", "candidates": ["...", ...], "system": "..." (optional)}
                            -> {"scores": [...]}, higher is better
 
 The clip jobs are kept in QUEUE_DIR (see Queue), so they stay after a
@@ -127,6 +127,7 @@ RANK_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 RANK_ENABLED = os.environ.get("RANK_ENABLED", "1") != "0"
 RANK_MAX_CANDIDATES = 20
 RANK_MAX_CHARS = 2000
+RANK_MAX_SYSTEM = 500
 RANK_SYSTEM = "You are a member of a casual Discord chat server. Reply with one short chat message."
 RANK_NO_CONTEXT = "Say something in the chat."
 
@@ -593,9 +594,9 @@ class Ranker:
         ).cuda().eval()
         self.lock = threading.Lock()
 
-    def score(self, context, candidates):
+    def score(self, context, candidates, system=""):
         msgs = [
-            {"role": "system", "content": RANK_SYSTEM},
+            {"role": "system", "content": system or RANK_SYSTEM},
             {"role": "user", "content": context or RANK_NO_CONTEXT},
         ]
         text = self.tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
@@ -805,6 +806,7 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(body)
             context = str(req.get("context") or "")[:RANK_MAX_CHARS]
             cands = [str(c)[:RANK_MAX_CHARS] for c in req.get("candidates", [])]
+            system = str(req.get("system") or "").strip()[:RANK_MAX_SYSTEM]
         except (ValueError, AttributeError, TypeError):
             self.send_json(400, {"error": "bad json"})
             return
@@ -813,7 +815,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         start = time.time()
         try:
-            scores = self.server.ranker.score(context, cands)
+            scores = self.server.ranker.score(context, cands, system)
         except Exception:
             log.exception("rank failed")
             with RANK_TIMES.lock:
