@@ -96,12 +96,16 @@ func (w *webTest) json(method, path string, c *http.Cookie, v any) *httptest.Res
 }
 
 func (w *webTest) upload(path string, c *http.Cookie, data []byte, fields map[string]string) *httptest.ResponseRecorder {
+	return w.uploadNamed(path, c, "up.png", data, fields)
+}
+
+func (w *webTest) uploadNamed(path string, c *http.Cookie, filename string, data []byte, fields map[string]string) *httptest.ResponseRecorder {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	for k, v := range fields {
 		_ = mw.WriteField(k, v)
 	}
-	part, _ := mw.CreateFormFile("file", "up.png")
+	part, _ := mw.CreateFormFile("file", filename)
 	_, _ = part.Write(data)
 	_ = mw.Close()
 	return w.do("POST", path, c, buf.Bytes(), mw.FormDataContentType())

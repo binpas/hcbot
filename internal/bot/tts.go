@@ -528,7 +528,17 @@ func (b *Bot) resumeTTSJobs() {
 func (b *Bot) ttsWatch(j db.TTSJob) {
 	defer b.ttsDone()
 	it := &discordgo.Interaction{AppID: j.AppID, Token: j.Token}
+	// A job from the web interface has no interaction: it reports to the page.
+	fromWeb := j.Token == ""
 	status := func(e *discordgo.MessageEmbed) {
+		if fromWeb {
+			state := "working"
+			if e.Color == colourRed {
+				state = "failed"
+			}
+			b.webJobUpdate(j, state, cmpOr(e.Description, e.Title), "")
+			return
+		}
 		if _, err := b.s.InteractionResponseEdit(it, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{e}}); err != nil {
 			log.Printf("say: status: %v", err)
 		}
@@ -614,7 +624,9 @@ func (b *Bot) ttsWatch(j db.TTSJob) {
 		finish("post_error", fmt.Sprintf("I could not post in <#%s>. I need Send Messages, Attach Files, and Send Voice Messages there.", target.channelID))
 		return
 	}
-	if err := b.s.InteractionResponseDelete(it); err != nil {
+	if fromWeb {
+		b.webJobUpdate(j, "done", "Posted.", b.webMessageLink(j.ChannelID, posted))
+	} else if err := b.s.InteractionResponseDelete(it); err != nil {
 		log.Printf("say: delete status: %v", err)
 	}
 	b.logSay(j.GuildID, j.UserID, target, posted, j.Voice, j.Text, sentAsVoice)

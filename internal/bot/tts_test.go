@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,6 +41,8 @@ type fakeTTS struct {
 
 	ranks      []rankRequest
 	rankStatus int // for /rank; 0 is 200
+
+	uploads []fakeUpload
 }
 
 type fakeJob struct {
@@ -61,6 +64,9 @@ func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.serveWeb(w, r) {
+		return
+	}
 	switch r.URL.Path {
 	case "/voices":
 		_ = json.NewEncoder(w).Encode(map[string][]string{"voices": f.voices})
@@ -100,6 +106,64 @@ func (f *fakeTTS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		f.serveJob(w, r)
 	}
+}
+
+// serveWeb answers the worker's voice upload and saved clip endpoints.
+func (f *fakeTTS) serveWeb(w http.ResponseWriter, r *http.Request) bool {
+	p := r.URL.Path
+	switch {
+	case strings.HasPrefix(p, "/voices/"):
+		name := strings.TrimPrefix(p, "/voices/")
+		if r.Method == http.MethodDelete {
+			if !slices.Contains(f.voices, name) {
+				w.WriteHeader(http.StatusNotFound)
+				return true
+			}
+			f.voices = slices.DeleteFunc(f.voices, func(v string) bool { return v == name })
+		} else {
+			data, _ := io.ReadAll(r.Body)
+			f.uploads = append(f.uploads, fakeUpload{name, r.URL.Query().Get("ext"), r.URL.Query().Has("replace"), data})
+			if string(data) == "not audio" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "I cannot read this file as audio."})
+				return true
+			}
+			if slices.Contains(f.voices, name) && !r.URL.Query().Has("replace") {
+				w.WriteHeader(http.StatusConflict)
+				return true
+			}
+			if !slices.Contains(f.voices, name) {
+				f.voices = append(f.voices, name)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string][]string{"voices": f.voices})
+	case p == "/clips/days":
+		_ = json.NewEncoder(w).Encode(map[string]any{"saving": true, "days": []map[string]any{{"day": "2026-11-04", "count": 2}}})
+	case p == "/clips/list":
+		if r.URL.Query().Get("day") != "2026-11-04" {
+			w.WriteHeader(http.StatusNotFound)
+			return true
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"day": "2026-11-04", "clips": []map[string]any{
+			{"file": "120000-abc_alex_hello.ogg", "text": "hello there", "voice": "alex", "audio_seconds": 2.5},
+			{"file": "110000-def_sam_old.wav", "text": "an old clip", "voice": "sam", "audio_seconds": 1.0},
+		}})
+	case strings.HasPrefix(p, "/clips/file/2026-11-04/"):
+		if strings.HasSuffix(p, ".wav") {
+			_, _ = w.Write(testWAV(8000, 800, 1000))
+		} else {
+			_, _ = w.Write([]byte("OggS saved"))
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+type fakeUpload struct {
+	name, ext string
+	replace   bool
+	data      []byte
 }
 
 // serveJob answers GET /jobs/<id>, GET /jobs/<id>/audio, and DELETE

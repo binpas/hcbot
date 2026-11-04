@@ -78,6 +78,8 @@ type webState struct {
 	sessions map[string]*webSession
 	names    map[string]webName
 	uploads  map[string]webUpload // who uploaded new art, for the undo. In memory only.
+	cands    map[string]webCand   // generated Markov and persona candidates
+	jobs     map[string]webJob    // clips started on the page
 
 	artMu sync.Mutex // one change to the art at a time
 
@@ -91,6 +93,8 @@ func newWebState() webState {
 		sessions:     map[string]*webSession{},
 		names:        map[string]webName{},
 		uploads:      map[string]webUpload{},
+		cands:        map[string]webCand{},
+		jobs:         map[string]webJob{},
 		client:       &http.Client{Timeout: 10 * time.Second},
 		apiURL:       "https://discord.com/api/v10",
 		authorizeURL: "https://discord.com/oauth2/authorize",
@@ -175,6 +179,7 @@ func (b *Bot) webHandler() http.Handler {
 	route("GET /api/members/search", webMod, b.webSearchMembers)
 	route("PUT /api/members/{id}", webMod, b.webSetMember)
 	route("DELETE /api/members/{id}", webMod, b.webClearMember)
+	b.registerWebAreas(route)
 
 	return b.webGuard(mux)
 }
@@ -196,7 +201,7 @@ func (b *Bot) webGuard(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
 			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "+
-			"img-src 'self' https://cdn.discordapp.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+			"img-src 'self' https://cdn.discordapp.com; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Strict-Transport-Security", "max-age=31536000")
@@ -457,7 +462,7 @@ func (b *Bot) webLogout(w http.ResponseWriter, r *http.Request, _ *webSession) {
 func (b *Bot) webMe(w http.ResponseWriter, _ *http.Request, s *webSession) {
 	webJSON(w, http.StatusOK, map[string]any{
 		"id": s.userID, "name": s.name, "admin": s.admin,
-		"comics": b.comics != nil, "poses": comic.PoseNames(),
+		"off": b.webFeatures(), "poses": comic.PoseNames(),
 	})
 }
 

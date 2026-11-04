@@ -823,9 +823,11 @@ How the art is drawn, so that it looks right:
 
 ## Web interface
 
-A page on your local network to manage the comic art and the members' characters. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
+A control panel on your local network: comic art and characters, speech clips and voices, Markov and persona replies, and the settings. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
 
-The page has a side menu of areas, with one area now: **Comics**. Each view and each open item has its own link, so a reload keeps your place. Details and add forms open in a side panel next to the list.
+The page has a side menu of areas. Each view and each open item has its own link, so a reload keeps your place. Details and add forms open in a side panel next to the list. An area that is off says why.
+
+**Comics**
 
 | View | What it does |
 |---|---|
@@ -835,7 +837,25 @@ The page has a side menu of areas, with one area now: **Comics**. Each view and 
 | **Members** | Find a member by name or user ID. Assign, change, or clear a character. Lock a character so that the member cannot change it with `/character`. |
 | **Preview** | Draw a test comic with sample text. |
 
-**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
+**Speech** (needs the [text to speech worker](#text-to-speech))
+
+| View | What it does |
+|---|---|
+| **Send** | Type the text, select a voice and one channel, and make a clip. It has the same limits as `/say`: `TTS_ENABLED`, `TTS_CHANNELS`, `TTS_MAX_CHARS`, `TTS_COOLDOWN`, and `TTS_QUEUE_MAX`. The page shows your recent clips and their results. |
+| **Clips** | The clips that the worker saved (`CLIPS_DIR`), by day, with their text. Search them, play them, and post one to a channel. This makes nothing new, so it uses no GPU time and has no cooldown. All mods can read the text of all saved clips, also those of other mods. |
+| **Voices** | The voice list. Administrators can add, replace, and remove voices: WAV, MP3, FLAC, OGG, or M4A, at most 20 MB. The worker checks the file and uses at most the first 60 seconds. A replaced or removed file goes to `.trash` in the voices folder. |
+
+A member sees only the channels in `TTS_CHANNELS` where they can post. An empty `TTS_CHANNELS` means all channels where they can post.
+
+**Markov and Persona**
+
+Type a message and generate candidates, with their scores when the worker answers. Persona also shows the question that the ranker got. Send one candidate to a channel in `MARKOV_REPLY_CHANNELS` or `PERSONA_REPLY_CHANNELS`, if you can post there. Only generated text can be sent: the bot keeps each candidate for 15 minutes, for the member who made it, and sends it once. The post looks like a normal reply. The mod log shows who sent it.
+
+**Settings**
+
+All the settings of `/setup`, with a search field. Mods can read them. **Only Administrators** can change them. The bot uses the same checks as `/setup`, and the mod log shows who changed what, with the old and new values. The button that posts the mod support message stays in `/setup`.
+
+**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can change settings, change voices, and do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
 
 **Art rules:** the same as for [custom comic art](#comic-art). The built-in Comic Chat art cannot be changed or removed, only hidden. A removed or replaced file goes to `custom/.trash` in the art folder, so you can get it back through SMB. The bot does not delete that folder. New art works at once, with no restart.
 

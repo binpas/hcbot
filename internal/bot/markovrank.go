@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -103,14 +104,21 @@ func (b *Bot) markovRank(msgText string, cands []string, system string) ([]ranke
 	return ranked, nil
 }
 
+// markovSeed is the start words for a reply: the 5 longest words.
+func markovSeed(words []string) []string {
+	seed := slices.Clone(words)
+	slices.SortStableFunc(seed, func(x, y string) int {
+		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
+	})
+	return seed[:min(len(seed), 5)]
+}
+
 // cmdMarkovCandidates shows the candidates for a text and their scores,
 // best first, to see how the picking works.
 func (b *Bot) cmdMarkovCandidates(c *Ctx) {
 	text, _ := c.Str("text")
 	words := markov.Tokenize(text)
-	seed := slices.Clone(words)
-	slices.SortStableFunc(seed, func(x, y string) int { return len(y) - len(x) })
-	seed = seed[:min(len(seed), 5)]
+	seed := markovSeed(words)
 	n := min(max(b.cfg.Int("MARKOV_CANDIDATES"), 2), markovMaxCands)
 	c.Defer(true)
 	cands, err := b.chain.GenerateN(seed, func(w []string) bool { return !b.markovBlocks(w) }, n)

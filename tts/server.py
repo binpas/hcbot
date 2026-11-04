@@ -10,6 +10,15 @@ Endpoints (all except /health need "Authorization: Bearer <TTS_TOKEN>"):
   GET    /health           {"ok": true, "voices": n, "rank": true}
   GET    /voices           {"voices": ["alex", "sam"]}
   POST   /reload           reads the voices folder again
+  PUT    /voices/<name>?ext=.mp3[&replace=1]
+                           the body is the audio. It checks the file and adds
+                           it -> {"voices": [...]}; 409 when the name is in
+                           use, 400 for a file that it cannot read. A replaced
+                           or removed file goes to VOICES_DIR/.trash.
+  DELETE /voices/<name>    -> {"voices": [...]}; 404 for an unknown voice
+  GET    /clips/days       {"saving": true, "days": [{"day": "...", "count": n}]}
+  GET    /clips/list?day=YYYY-MM-DD   {"day": "...", "clips": [...]}
+  GET    /clips/file/<day>/<file>     one saved clip
   POST   /jobs             {"text": "...", "voice": "alex"}
                            -> 202 {"id": "...", "ahead": n}; 404 for an
                            unknown voice. ahead is the number of clips
@@ -92,6 +101,9 @@ DTYPE = {"bf16": torch.bfloat16, "fp16": torch.float16}[os.environ.get("TTS_DTYP
 SHORT_CHARS = int(os.environ.get("TTS_SHORT_CHARS", "150"))
 MAX_CHARS = 600
 MAX_BODY = 16 << 10
+MAX_VOICE = 20 << 20
+VOICE_PATH_RE = re.compile(r"^/voices/([a-z0-9][a-z0-9_-]{0,31})(?:\?(.*))?$")
+CLIP_PATH_RE = re.compile(r"^/clips/file/([^/?]+)/([^/?]+)$")
 
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8766"))
 DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
@@ -142,7 +154,77 @@ class Voices:
     def __init__(self, folder):
         self.folder = folder
         self.lock = threading.Lock()
+        self.write_lock = threading.Lock()
         self.voices = {}
+
+    def _files(self, name):
+        """The audio files of a voice name, in any case."""
+        try:
+            return [f for f in os.listdir(self.folder)
+                    if os.path.splitext(f)[0].lower() == name and os.path.splitext(f)[1].lower() in AUDIO_EXTS]
+        except OSError:
+            return []
+
+    def _to_trash(self, fname):
+        trash = os.path.join(self.folder, ".trash")
+        os.makedirs(trash, exist_ok=True)
+        stem, ext = os.path.splitext(fname)
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
+        for n in range(1000):  # never over an older file
+            target = os.path.join(trash, f"{stem}-{stamp}-{n}{ext}")
+            if not os.path.exists(target):
+                os.rename(os.path.join(self.folder, fname), target)
+                return
+
+    def save(self, name, ext, data, replace):
+        """Adds a voice file. It returns the HTTP status and the answer."""
+        with self.write_lock:
+            old = self._files(name)
+            if old and not replace:
+                return 409, {"error": "That name is already in use."}
+            tmp = os.path.join(self.folder, f".upload-{secrets.token_hex(8)}{ext}")
+            try:
+                with open(tmp, "xb") as f:
+                    f.write(data)
+            except OSError as e:
+                log.warning("voice not saved: %s", e)
+                return 500, {"error": "The voices folder is not writable."}
+            try:
+                try:
+                    load_audio(tmp, max_duration=60)
+                except Exception as e:  # a bad file must not stop the worker
+                    log.info("voice upload refused: %s", e)
+                    return 400, {"error": "I cannot read this file as audio."}
+                try:
+                    for fname in old:
+                        self._to_trash(fname)
+                    os.rename(tmp, os.path.join(self.folder, name + ext))
+                except OSError as e:
+                    log.warning("voice not saved: %s", e)
+                    return 500, {"error": "The voices folder is not writable."}
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            self.reload()
+            return 200, {"voices": self.names()}
+
+    def remove(self, name):
+        """Moves a voice to the trash, with its settings file."""
+        with self.write_lock:
+            files = self._files(name)
+            if not files:
+                return 404, {"error": "unknown voice"}
+            try:
+                for fname in files:
+                    side = os.path.splitext(fname)[0] + ".json"
+                    if os.path.exists(os.path.join(self.folder, side)):
+                        self._to_trash(side)
+                    self._to_trash(fname)
+            except OSError as e:
+                log.warning("voice not removed: %s", e)
+                return 500, {"error": "The voices folder is not writable."}
+            self.reload()
+            return 200, {"voices": self.names()}
 
     def reload(self):
         found = {}
@@ -154,7 +236,7 @@ class Voices:
         for fname in names:
             stem, ext = os.path.splitext(fname)
             name = stem.lower()
-            if ext.lower() not in AUDIO_EXTS:
+            if ext.lower() not in AUDIO_EXTS or fname.startswith("."):
                 continue
             if not VOICE_NAME_RE.match(name) or name == "random":
                 log.warning("voice %r skipped: use a-z, 0-9, - and _ (at most 32)", fname)
@@ -735,6 +817,8 @@ class Handler(BaseHTTPRequestHandler):
         m = JOB_PATH_RE.match(self.path)
         if self.path == "/voices":
             self.send_json(200, {"voices": self.server.voices.names()})
+        elif self.path == "/clips/days" or self.path.startswith("/clips/list?") or self.path.startswith("/clips/file/"):
+            self.clips_get()
         elif m and not m[2]:
             st = self.server.queue.status(m[1])
             if st is None:
@@ -750,8 +834,62 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_json(404, {"error": "not found"})
 
+    def clips_get(self):
+        clips = self.server.clips
+        path, _, query = self.path.partition("?")
+        if path == "/clips/days":
+            self.send_json(200, {"saving": clips is not None, "days": clips.days() if clips else []})
+            return
+        if clips is None:
+            self.send_json(404, {"error": "clips are not saved"})
+        elif path == "/clips/list":
+            day = urllib.parse.parse_qs(query).get("day", [""])[0]
+            found = clips.list(day)
+            if found is None:
+                self.send_json(404, {"error": "unknown day"})
+            else:
+                self.send_json(200, {"day": day, "clips": found})
+        else:
+            m = CLIP_PATH_RE.match(path)
+            file = clips.file(urllib.parse.unquote(m[1]), urllib.parse.unquote(m[2])) if m else None
+            if file is None:
+                self.send_json(404, {"error": "unknown clip"})
+                return
+            with open(file, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav" if file.endswith(".wav") else "audio/ogg")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    def do_PUT(self):
+        if not self.authorized():
+            return
+        m = VOICE_PATH_RE.match(self.path)
+        if not m or m[1] == "random":
+            self.send_json(404, {"error": "not found"})
+            return
+        query = urllib.parse.parse_qs(m[2] or "")
+        ext = query.get("ext", [""])[0].lower()
+        length = int(self.headers.get("Content-Length") or 0)
+        if ext not in AUDIO_EXTS:
+            self.send_json(400, {"error": "Use a WAV, MP3, FLAC, OGG or M4A file."})
+        elif length <= 0:
+            self.send_json(400, {"error": "The file is empty."})
+        elif length > MAX_VOICE:
+            self.send_json(413, {"error": "The file is larger than 20 MB."})
+        else:
+            status, body = self.server.voices.save(m[1], ext, self.rfile.read(length), "replace" in query)
+            self.send_json(status, body)
+
     def do_DELETE(self):
         if not self.authorized():
+            return
+        vm = VOICE_PATH_RE.match(self.path)
+        if vm:
+            status, body = self.server.voices.remove(vm[1])
+            self.send_json(status, body)
             return
         m = JOB_PATH_RE.match(self.path)
         if not m or m[2]:

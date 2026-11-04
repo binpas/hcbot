@@ -167,6 +167,22 @@
   }
   .id { font-variant-numeric: tabular-nums; }
 
+  /* Lists of the other areas. */
+  .rows { display: grid; }
+  .rowitem { display: grid; gap: 4px; padding: 12px 8px; border-top: 1px solid var(--md-sys-color-outline-variant); color: var(--md-sys-color-on-surface); text-decoration: none; min-width: 0; overflow-wrap: anywhere; }
+  .rows > .rowitem:first-child { border-top: 0; }
+  a.rowitem:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+  @media (hover: hover) { a.rowitem:hover { background: var(--md-sys-color-surface-container); } }
+  a.rowitem[aria-current] { box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); border-radius: 8px; }
+  .rowhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .rowhead .grow { flex: 1 1 auto; min-width: 0; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .875rem; }
+  .pre { white-space: pre-wrap; }
+  .narrow-form { display: grid; gap: 16px; max-width: 720px; }
+  .settings-section { margin-top: 16px; }
+  .checks { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; }
+  .checks label { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 8px; overflow-wrap: anywhere; }
+  audio { width: 100%; max-width: 480px; height: 36px; color-scheme: dark; }
   #preview-img { display: block; max-width: 100%; border-radius: 8px; }
   .poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
   .pose { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 8px; border-radius: 8px; background: var(--md-sys-color-surface-container); }
@@ -252,7 +268,11 @@
   <div id="menu">
     <div class="brand md-typescale-title-large">HEALTH Bot</div>
     <nav aria-label="Areas">
-      <a id="nav-comics" href="#/comics/overview" aria-current="page"><span>Comics</span><span id="nav-count" class="count" hidden></span></a>
+      <a id="nav-comics" href="#/comics/overview"><span>Comics</span><span id="nav-count" class="count" hidden></span></a>
+      <a id="nav-speech" href="#/speech/send"><span>Speech</span></a>
+      <a id="nav-markov" href="#/markov/markov"><span>Markov</span></a>
+      <a id="nav-persona" href="#/persona/persona"><span>Persona</span></a>
+      <a id="nav-settings" href="#/settings/settings"><span>Settings</span></a>
     </nav>
     <div id="account">
       <span id="whoami" class="who label md-typescale-label-large"></span>
@@ -262,14 +282,9 @@
 
   <div id="work">
     <main id="area">
-      <h1 class="md-typescale-headline-small">Comics</h1>
-      <md-tabs id="tabs" aria-label="Comics views">
-        <md-primary-tab id="tab-overview" aria-controls="overview">Overview</md-primary-tab>
-        <md-primary-tab id="tab-characters" aria-controls="characters">Characters</md-primary-tab>
-        <md-primary-tab id="tab-backgrounds" aria-controls="backgrounds">Backgrounds</md-primary-tab>
-        <md-primary-tab id="tab-members" aria-controls="members">Members</md-primary-tab>
-        <md-primary-tab id="tab-preview" aria-controls="preview">Preview</md-primary-tab>
-      </md-tabs>
+      <h1 id="area-title" class="md-typescale-headline-small">Comics</h1>
+      <md-tabs id="tabs" aria-label="Views"></md-tabs>
+      <div id="off" class="empty" role="status" hidden><p id="off-text" class="md-typescale-body-large"></p></div>
 
       <div id="overview" class="view" role="tabpanel" aria-labelledby="tab-overview">
         <section>
@@ -336,6 +351,47 @@
         <p class="hint md-typescale-body-small">Draws a comic with sample text. Each click gives a different comic.</p>
         <img id="preview-img" alt="A test comic with sample text" hidden>
       </div>
+
+      <div id="send" class="view" role="tabpanel" aria-labelledby="tab-send" hidden>
+        <div class="narrow-form">
+          <md-outlined-text-field id="send-text" label="Text" type="textarea" rows="3"></md-outlined-text-field>
+          <div class="toolbar">
+            <md-outlined-select id="send-voice" label="Voice"></md-outlined-select>
+            <md-outlined-select id="send-channel" label="Channel"></md-outlined-select>
+          </div>
+          <label class="row md-typescale-body-medium">Post as a voice message (no text with it)<md-switch id="send-voicemsg" selected></md-switch></label>
+          <div><md-filled-button id="send-go">Make the clip and post it</md-filled-button></div>
+        </div>
+        <section style="margin-top:16px">
+          <h2 class="md-typescale-title-medium">Your recent clips</h2>
+          <div id="send-jobs" class="rows"></div>
+        </section>
+      </div>
+
+      <div id="clips" class="view" role="tabpanel" aria-labelledby="tab-clips" hidden>
+        <div class="toolbar">
+          <md-outlined-select id="clip-day" label="Day (UTC)"></md-outlined-select>
+          <md-outlined-select id="clip-voice" label="Voice"></md-outlined-select>
+          <md-outlined-text-field id="clip-filter" label="Search the text" type="search"></md-outlined-text-field>
+        </div>
+        <div id="clip-list" class="rows"></div>
+      </div>
+
+      <div id="voices" class="view" role="tabpanel" aria-labelledby="tab-voices" hidden>
+        <div id="voice-tools" class="toolbar"></div>
+        <div id="voice-list" class="rows"></div>
+      </div>
+
+      <div id="markov" class="view" role="region" aria-labelledby="area-title" hidden></div>
+      <div id="persona" class="view" role="region" aria-labelledby="area-title" hidden></div>
+
+      <div id="settings" class="view" role="region" aria-labelledby="area-title" hidden>
+        <div class="toolbar">
+          <md-outlined-text-field id="settings-filter" label="Search the settings" type="search"></md-outlined-text-field>
+        </div>
+        <p id="settings-note" class="hint md-typescale-body-small"></p>
+        <div id="settings-list"></div>
+      </div>
     </main>
 
     <aside id="panel" aria-labelledby="panel-title" tabindex="-1" hidden>
@@ -357,10 +413,19 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const enc = encodeURIComponent;
-const VIEWS = ["overview", "characters", "backgrounds", "members", "preview"];
+// The areas of the side menu, with their views. The view names are unique.
+const AREAS = {
+  comics: {title: "Comics", views: [["overview", "Overview"], ["characters", "Characters"], ["backgrounds", "Backgrounds"], ["members", "Members"], ["preview", "Preview"]]},
+  speech: {title: "Speech", views: [["send", "Send"], ["clips", "Clips"], ["voices", "Voices"]]},
+  markov: {title: "Markov", views: [["markov", "Generate"]]},
+  persona: {title: "Persona", views: [["persona", "Generate"]]},
+  settings: {title: "Settings", views: [["settings", "Settings"]]},
+};
+const VIEWS = Object.values(AREAS).flatMap(a => a.views.map(v => v[0]));
+const areaOf = view => Object.keys(AREAS).find(a => AREAS[a].views.some(v => v[0] === view));
 let me = null, art = null, members = null;
-// Where the page is: the view, and the open item ("+" is the add form).
-let here = {view: "overview", item: ""};
+// Where the page is: the area, the view, and the open item ("+" is the add form).
+let here = {area: "", view: "", item: ""};
 // Members that a search found, by ID, for the details panel.
 const known = {};
 
@@ -521,33 +586,66 @@ function undoLeft(key) {
 let keepMessage = false;
 let focusSearch = false; // "Find member" goes to the search field
 function go(view, item) {
-  location.hash = "#/comics/" + view + (item ? "/" + enc(item) : "");
+  location.hash = "#/" + areaOf(view) + "/" + view + (item ? "/" + enc(item) : "");
 }
 
 function readHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
-  const view = parts[0] === "comics" && VIEWS.includes(parts[1]) ? parts[1] : "overview";
+  const area = AREAS[parts[0]] ? parts[0] : "comics";
+  const views = AREAS[area].views.map(v => v[0]);
+  const view = views.includes(parts[1]) ? parts[1] : views[0];
   let item = "";
   try { item = parts[2] ? decodeURIComponent(parts[2]) : ""; } catch { /* a damaged link: no item */ }
-  return {view, item};
+  return {area, view, item};
+}
+
+// A new tab bar for each area: md-tabs does not follow a change of its tabs.
+function renderTabs(area, view) {
+  const views = AREAS[area].views;
+  const tabs = el("md-tabs", {id: "tabs", ariaLabel: "Views", onchange: () => {
+    const active = tabs.activeTab;
+    const id = active && active.getAttribute("aria-controls");
+    if (id && id !== here.view) go(id);
+  }}, ...(views.length < 2 ? [] : views.map(([id, label]) =>
+    el("md-primary-tab", {id: "tab-" + id, "aria-controls": id, active: id === view}, label))));
+  tabs.hidden = views.length < 2;
+  $("tabs").replaceWith(tabs);
 }
 
 function route() {
   const next = readHash();
-  const changed = next.view !== here.view || next.item !== here.item;
+  const changed = next.view !== here.view || next.item !== here.item || next.area !== here.area;
   // The result of an add must stay when the new item opens. A message in a
   // confirmation stays until the confirmation closes.
   if (changed && !keepMessage) { $("panel-msg").textContent = ""; $("panel-msg").className = "msg"; }
   keepMessage = false;
+  const newArea = next.area !== here.area;
   here = next;
   closeMenu();
-  const tab = VIEWS.indexOf(here.view);
-  if ($("tabs").activeTabIndex !== tab) $("tabs").activeTabIndex = tab;
-  for (const v of VIEWS) $(v).hidden = v !== here.view;
-  const title = $("tab-" + here.view).textContent.replace(/ \(.*/, "");
-  document.title = (here.item && here.item !== "+" && here.view !== "preview" ? here.item + " · " : "") + title + " · HEALTH Bot";
-  if (!art) return;
+  if (newArea) {
+    renderTabs(here.area, here.view);
+    $("area-title").textContent = AREAS[here.area].title;
+    for (const a of Object.keys(AREAS)) {
+      if (a === here.area) $("nav-" + a).setAttribute("aria-current", "page");
+      else $("nav-" + a).removeAttribute("aria-current");
+    }
+    renderCounts();
+  }
+  const tab = AREAS[here.area].views.findIndex(v => v[0] === here.view);
+  if (AREAS[here.area].views.length > 1 && $("tabs").activeTabIndex !== tab) $("tabs").activeTabIndex = tab;
+  const label = AREAS[here.area].views[tab][1];
+  const pageTitle = AREAS[here.area].views.length > 1 ? label : AREAS[here.area].title;
+  document.title = (here.item && here.item !== "+" && here.view !== "preview" ? here.item.split("/").pop() + " · " : "") + pageTitle + " · HEALTH Bot";
+  const why = me.off && me.off[here.area];
+  $("off").hidden = !why;
+  $("off-text").textContent = why || "";
+  $("tabs").hidden = !!why || AREAS[here.area].views.length < 2;
+  for (const v of VIEWS) $(v).hidden = !!why || v !== here.view;
+  if (why) { $("panel").hidden = true; syncCovered(); return; }
   if (here.view === "overview" || here.view === "members") loadMembers();
+  if (here.area === "speech") loadSpeech();
+  if (here.view === "clips") loadClipDays();
+  if (here.view === "settings") loadSettings();
   renderView();
   if (here.view === "preview" && here.item) presetPreview(here.item);
   renderPanel();
@@ -574,11 +672,12 @@ function renderAll() {
 }
 
 function renderCounts() {
+  if (!art) return;
   const n = (art.problems || []).length;
   $("nav-count").hidden = n === 0;
   $("nav-count").textContent = n;
   $("nav-count").setAttribute("aria-label", n + (n === 1 ? " art problem" : " art problems"));
-  $("tab-overview").textContent = n ? "Overview (" + n + ")" : "Overview";
+  if ($("tab-overview")) $("tab-overview").textContent = n ? "Overview (" + n + ")" : "Overview";
 }
 
 function renderView() {
@@ -589,6 +688,11 @@ function renderView() {
   // The options change only with the art. Drawing them again resets a choice
   // that the user just made in the open list.
   if (here.view === "preview" && previewArt !== art) { previewArt = art; renderPreviewOptions(); }
+  if (here.view === "send") renderSend();
+  if (here.view === "clips") renderClips();
+  if (here.view === "voices") renderVoices();
+  if (here.view === "markov" || here.view === "persona") renderChat(here.view);
+  if (here.view === "settings") renderSettings();
 }
 
 let previewArt = null;
@@ -806,7 +910,28 @@ function renderPanel() {
     $("panel-body").replaceChildren(...body);
     $("panel").hidden = false;
   };
-  if (!item || view === "overview" || view === "preview") { $("panel").hidden = true; return; }
+  if (!item || view === "overview" || view === "preview" || view === "send" || view === "markov" || view === "persona") { $("panel").hidden = true; return; }
+  if (view === "settings") {
+    if (!settings) { $("panel").hidden = true; return; } // it opens when they load
+    const k = settings.sections.flatMap(sec => sec.settings).find(x => x.key === item);
+    if (k) { show(k.key, settingBody(k)); return; }
+  }
+  if (view === "voices") {
+    if (!speech) { $("panel").hidden = true; return; } // it opens when they load
+    if (item === "+" && me.admin) { show("Add a voice", addVoiceBody()); return; }
+  }
+  if (view === "clips") {
+    const slash = item.indexOf("/");
+    const day = item.slice(0, slash), file = item.slice(slash + 1);
+    if (clipData.day !== day) {
+      show(file, [el("p", {class: "hint md-typescale-body-medium"}, "Loading the clip…")]);
+      loadClips(day).then(() => { if (here.item === item) { renderClips(); renderPanel(); } });
+      return;
+    }
+    const clip = clipData.clips.find(c => c.file === file);
+    if (clip && speech) { show(clip.voice + " clip", clipBody(day, clip)); return; }
+    if (clip) { show(clip.voice + " clip", [el("p", {class: "hint md-typescale-body-medium"}, "Loading…")]); return; }
+  }
   if (item === "+" && view === "characters") { show("Add a character", addCharacterBody()); return; }
   if (item === "+" && view === "backgrounds") { show("Add a background", addBackgroundBody()); return; }
   if (view === "characters") {
@@ -1065,6 +1190,364 @@ function memberBody(m) {
   ];
 }
 
+// ---- Speech. ----
+
+let speech = null;
+let speechLoading = null;
+
+function loadSpeech(fresh) {
+  if (speech && !fresh) { return Promise.resolve(); }
+  if (speechLoading) return speechLoading;
+  speechLoading = api("GET", "/api/speech" + (fresh ? "?fresh=1" : "")).then(data => {
+    speech = data;
+    if (here.area === "speech") { renderView(); renderPanel(); }
+  }).catch(e => toast(e.message, true)).finally(() => { speechLoading = null; });
+  return speechLoading;
+}
+
+const channelOptions = list => list.map(c => [c.id, "#" + c.name]);
+
+function noChannelsHint(setting) {
+  return "You have no channel to post in. An Administrator can check " + setting + " in Settings.";
+}
+
+let sendFilled = null;
+function renderSend() {
+  if (!speech) return;
+  if (sendFilled !== speech) {
+    sendFilled = speech;
+    $("send-text").maxLength = speech.maxChars;
+    $("send-text").supportingText = "At most " + speech.maxChars + " characters.";
+    setOptions($("send-voice"), [["random", "At random"], ...speech.voices.map(v => [v, v])]);
+    setOptions($("send-channel"), channelOptions(speech.channels), true);
+    $("send-go").disabled = speech.channels.length === 0;
+    if (!speech.channels.length) toast(noChannelsHint("TTS_CHANNELS"), true);
+  }
+  loadJobs();
+}
+
+let jobsTimer = null;
+async function loadJobs() {
+  clearTimeout(jobsTimer);
+  const jobs = await api("GET", "/api/speech/jobs").catch(() => null);
+  if (!jobs || here.view !== "send") return;
+  const name = id => { const c = speech && speech.channels.find(x => x.id === id); return c ? "#" + c.name : id; };
+  $("send-jobs").replaceChildren(...(jobs.length ? jobs.map(j => {
+    const tag = el("span", {class: "tag " + (j.state === "failed" ? "limit" : j.state === "done" ? "use" : "off")},
+      j.state === "done" ? "posted" : j.state === "failed" ? "failed" : "working");
+    const row = el("div", {class: "rowitem"},
+      el("div", {class: "rowhead md-typescale-label-large"}, tag, el("span", {}, j.voice), el("span", {class: "hint"}, name(j.channel))),
+      el("div", {class: "md-typescale-body-medium pre"}, j.text));
+    if (j.state === "done" && j.link) row.append(el("a", {href: j.link, target: "_blank", rel: "noopener", class: "md-typescale-body-small"}, "Open it in Discord"));
+    else row.append(el("div", {class: "hint md-typescale-body-small"}, j.detail));
+    return row;
+  }) : [el("p", {class: "hint md-typescale-body-medium"}, "You have made no clips here since the bot started.")]));
+  if (jobs.some(j => j.state === "working")) jobsTimer = setTimeout(loadJobs, 2000);
+}
+
+async function sendClip() {
+  const text = $("send-text").value.trim();
+  if (!text) { toast("Type the text.", true); return; }
+  if (!$("send-channel").value) { toast("Select a channel.", true); return; }
+  const ok = await act(() => api("POST", "/api/speech/send", {text, voice: $("send-voice").value, channel: $("send-channel").value, voiceMsg: $("send-voicemsg").selected}),
+    "The clip is in the queue.", $("send-go"));
+  if (ok) { $("send-text").value = ""; loadJobs(); }
+}
+
+let clipData = {day: "", clips: [], days: null, saving: true};
+async function loadClipDays() {
+  const data = await api("GET", "/api/speech/days").catch(e => { toast(e.message, true); return null; });
+  if (!data) return;
+  clipData.days = data.days; clipData.saving = data.saving;
+  setOptions($("clip-day"), data.days.map(d => [d.day, d.day + " (" + d.count + ")"]), true, clipData.day || (data.days[0] && data.days[0].day) || "");
+  if (data.days.length) {
+    await loadClips(clipData.day || data.days[0].day);
+  }
+  if (here.view === "clips") { renderClips(); renderPanel(); }
+}
+
+async function loadClips(day) {
+  const data = await api("GET", "/api/speech/clips?day=" + enc(day)).catch(e => { toast(e.message, true); return null; });
+  clipData.day = day; clipData.clips = data ? data.clips : [];
+  const voices = [...new Set(clipData.clips.map(c => c.voice))].sort();
+  setOptions($("clip-voice"), [["*", "All voices"], ...voices.map(v => [v, v])]);
+}
+
+function clipURL(day, clip) { return "/audio/clip/" + enc(day) + "/" + enc(clip.file); }
+const clipTime = file => /^\d{6}/.test(file) ? file.slice(0, 2) + ":" + file.slice(2, 4) + ":" + file.slice(4, 6) : "";
+const clipLength = c => c.audio_seconds ? Math.round(c.audio_seconds) + " s" : "";
+
+function renderClips() {
+  const host = $("clip-list");
+  if (!clipData.days) { host.replaceChildren(el("p", {class: "hint md-typescale-body-medium"}, "Loading the clips…")); return; }
+  if (!clipData.saving) { host.replaceChildren(el("p", {class: "hint md-typescale-body-medium"}, "The speech worker does not save clips. An operator must set CLIPS_DIR.")); return; }
+  if (!clipData.days.length) { host.replaceChildren(el("p", {class: "hint md-typescale-body-medium"}, "There are no saved clips yet.")); return; }
+  const q = $("clip-filter").value.trim().toLowerCase(), v = $("clip-voice").value;
+  const list = clipData.clips.filter(c => (v === "*" || !v || c.voice === v) && c.text.toLowerCase().includes(q));
+  host.replaceChildren(...(list.length ? list.map(c => {
+    const id = clipData.day + "/" + c.file;
+    const post = el("md-outlined-button", {href: "#/speech/clips/" + enc(id), "data-key": "open:clips:" + id, ariaLabel: "Post the clip: " + c.text.slice(0, 60)}, "Post");
+    return el("div", {class: "rowitem"},
+      el("div", {class: "rowhead"},
+        el("span", {class: "grow md-typescale-label-large"}, c.voice),
+        el("span", {class: "hint md-typescale-body-small id"}, [clipTime(c.file), clipLength(c)].filter(Boolean).join(" · ")), post),
+      el("div", {class: "md-typescale-body-medium pre"}, c.text || "(no text saved)"),
+      el("audio", {controls: true, preload: "none", src: clipURL(clipData.day, c), "aria-label": "Play this clip"}));
+  }) : [el("p", {class: "hint md-typescale-body-medium"}, "No clip matches this search.")]));
+}
+
+function clipBody(day, c) {
+  const channel = el("md-outlined-select", {label: "Channel", class: "wide"});
+  setOptions(channel, channelOptions(speech.channels), true);
+  const voiceMsg = el("md-switch", {selected: true, ariaLabel: "Post as a voice message"});
+  const go = el("md-filled-button", {disabled: speech.channels.length === 0, onclick: async () => {
+    if (!channel.value) { toast("Select a channel.", true); return; }
+    const ok = await act(() => api("POST", "/api/speech/clips/post", {day, file: c.file, channel: channel.value, voiceMsg: voiceMsg.selected}), "Posted.", go);
+    if (ok && ok.link) $("panel-body").append(el("a", {href: ok.link, target: "_blank", rel: "noopener"}, "Open it in Discord"));
+  }}, "Post this clip");
+  const body = [
+    el("p", {class: "md-typescale-body-medium pre"}, c.text || "(no text saved)"),
+    el("p", {class: "hint md-typescale-body-small"}, [day, clipTime(c.file), clipLength(c)].filter(Boolean).join(" · ")),
+    el("audio", {controls: true, preload: "metadata", src: clipURL(day, c), "aria-label": "Play this clip"}),
+    channel,
+    el("label", {class: "row md-typescale-body-medium"}, "Post as a voice message (no text with it)", voiceMsg),
+    el("div", {}, go),
+  ];
+  if (!speech.channels.length) body.push(el("p", {class: "hint md-typescale-body-small"}, noChannelsHint("TTS_CHANNELS")));
+  return body;
+}
+
+function renderVoices() {
+  if (!speech) return;
+  $("voice-tools").replaceChildren(...(me.admin
+    ? [el("md-filled-button", {href: "#/speech/voices/+"}, "Add voice")]
+    : [el("p", {class: "hint md-typescale-body-small"}, "Only an Administrator can add, replace or remove voices.")]));
+  keepFocus(() => $("voice-list").replaceChildren(...(speech.voices.length ? speech.voices.map(v => {
+    const row = el("div", {class: "rowitem"}, el("div", {class: "rowhead"}, el("span", {class: "grow md-typescale-body-large"}, v)));
+    if (me.admin) {
+      const head = row.firstChild;
+      head.append(el("md-text-button", {"data-key": "replace:voice:" + v, ariaLabel: "Replace the voice " + v, onclick: () => {
+        confirmDanger("Replace the voice " + v + "?", "New clips will use the new file. " + TRASH, "Select the new file", async () => {
+          const f = await pickFile(VOICE_ACCEPT);
+          return f ? uploadVoice(v, f, true) : false;
+        });
+      }}, "Replace"));
+      head.append(el("md-text-button", {"data-key": "remove:voice:" + v, ariaLabel: "Remove the voice " + v, onclick: () => {
+        confirmDanger("Remove the voice " + v + "?", "New clips cannot use this voice. Saved clips stay. " + TRASH, "Remove", async () => {
+          const data = await act(() => api("DELETE", "/api/speech/voices/" + enc(v)), "Removed.");
+          if (data) { speech.voices = data.voices; sendFilled = null; renderVoices(); }
+          return data;
+        });
+      }}, "Remove"));
+    }
+    return row;
+  }) : [el("p", {class: "hint md-typescale-body-medium"}, "There are no voices yet.")])));
+}
+
+const VOICE_ACCEPT = ".wav,.mp3,.flac,.ogg,.m4a,audio/*";
+
+async function uploadVoice(name, file, replace) {
+  const data = await act(() => api("POST", "/api/speech/voices", form(file, {name, replace: replace ? "true" : "false"})), "Saved.");
+  if (data) { speech.voices = data.voices; sendFilled = null; if (here.view === "voices") renderVoices(); }
+  return data;
+}
+
+function addVoiceBody() {
+  const add = async () => {
+    const value = name.value.trim().toLowerCase();
+    if (!nameOK(value)) return;
+    if (value === "random") { toast("The name \"random\" is not available.", true); return; }
+    const f = await pickFile(VOICE_ACCEPT);
+    if (!f) return;
+    pick.disabled = true;
+    const ok = await uploadVoice(value, f, false);
+    pick.disabled = false;
+    if (ok) { keepMessage = true; go("voices"); }
+  };
+  const name = nameField("Name", add);
+  const pick = el("md-filled-button", {onclick: add}, "Select an audio file");
+  return [name,
+    el("p", {class: "hint md-typescale-body-small"}, "A WAV, MP3, FLAC, OGG or M4A file, at most 20 MB, with one clear voice. The worker uses at most the first 60 seconds. The name shows in the voice list."),
+    el("div", {}, pick)];
+}
+
+// ---- Markov and Persona. ----
+
+const CHATS = {
+  markov: {chain: "markov", setting: "MARKOV_REPLY_CHANNELS", intro: "Type a message. The chain makes replies, and you can send one to an approved channel."},
+  persona: {chain: "persona", setting: "PERSONA_REPLY_CHANNELS", intro: "Type a message to the persona. The chain makes replies, and you can send one to an approved channel."},
+};
+const chatState = {};
+
+function renderChat(view) {
+  const cfg = CHATS[view];
+  let st = chatState[view];
+  if (!st) {
+    st = chatState[view] = {result: null, sent: {}};
+    st.input = el("md-outlined-text-field", {label: "Message", type: "textarea", rows: 2, maxLength: 2000, class: "wide"});
+    st.go = el("md-filled-button", {onclick: () => generate(view)}, "Generate");
+    st.channel = el("md-outlined-select", {label: "Send to"});
+    st.out = el("div", {});
+    $(view).replaceChildren(el("div", {class: "narrow-form"},
+      el("p", {class: "hint md-typescale-body-medium"}, cfg.intro), st.input, el("div", {}, st.go)), st.out);
+  }
+}
+
+async function generate(view) {
+  const st = chatState[view];
+  const text = st.input.value.trim();
+  if (!text) { toast("Type a message.", true); return; }
+  const data = await act(() => api("POST", "/api/chat/" + CHATS[view].chain + "/generate", {text}), "", st.go);
+  if (!data || data === true) return;
+  st.result = data; st.sent = {};
+  drawCandidates(view);
+}
+
+function drawCandidates(view) {
+  const st = chatState[view], d = st.result, cfg = CHATS[view];
+  const kids = [];
+  setOptions(st.channel, channelOptions(d.channels), true);
+  kids.push(el("div", {class: "toolbar", style: "margin:16px 0 8px"}, st.channel));
+  if (!d.channels.length) kids.push(el("p", {class: "hint md-typescale-body-small"}, noChannelsHint(cfg.setting)));
+  if (d.question) kids.push(el("p", {class: "hint md-typescale-body-small"}, "The ranker got this question: " + d.question));
+  if (d.note) kids.push(el("p", {class: "hint md-typescale-body-small"}, d.note));
+  const rows = el("div", {class: "rows"});
+  for (const c of d.candidates) {
+    const send = el("md-outlined-button", {disabled: !d.channels.length, ariaLabel: "Send this reply: " + c.text.slice(0, 60), onclick: async () => {
+      if (!st.channel.value) { toast("Select a channel in Send to.", true); return; }
+      const ok = await act(() => api("POST", "/api/chat/" + cfg.chain + "/send", {id: c.id, channel: st.channel.value}), "Sent.", send);
+      if (ok) {
+        const link = ok.link ? el("a", {href: ok.link, target: "_blank", rel: "noopener", class: "md-typescale-label-large"}, "Open it in Discord") : el("span", {class: "tag use"}, "sent");
+        send.replaceWith(link);
+      }
+    }}, "Send");
+    rows.append(el("div", {class: "rowitem"}, el("div", {class: "rowhead"},
+      c.score !== undefined ? el("span", {class: "tag id", title: "Higher is better"}, c.score.toFixed(2)) : "",
+      el("span", {class: "grow md-typescale-body-medium pre"}, c.text), send)));
+  }
+  kids.push(rows);
+  st.out.replaceChildren(...kids);
+}
+
+// ---- Settings. ----
+
+let settings = null, guildLists = null;
+
+async function loadSettings() {
+  const data = await Promise.all([api("GET", "/api/settings"), api("GET", "/api/guild")]).catch(e => { toast(e.message, true); return null; });
+  if (!data) return;
+  settings = data[0]; guildLists = data[1];
+  if (here.view === "settings") { renderSettings(); renderPanel(); }
+}
+
+function nameOf(list, id, prefix) {
+  const n = list.find(x => x.id === id);
+  return n ? prefix + n.name : id + " (not found)";
+}
+
+// settingText is a value as words: names, not IDs.
+function settingText(k) {
+  const v = k.value;
+  const g = guildLists || {channels: [], roles: []};
+  switch (k.kind) {
+    case "bool": return v === "on" || v === "true" ? "On" : "Off";
+    case "choice": { const c = (k.choices || []).find(x => x.Value === v); return c ? c.Label : v; }
+    case "channel": case "category": return v ? nameOf(g.channels, v, k.kind === "channel" ? "#" : "") : "Not set";
+    case "role": return v ? nameOf(g.roles, v, "@") : "Not set";
+    case "user": return v ? (k.display ? k.display + " (" + v + ")" : v) : "Not set";
+    case "channel_list": return v ? v.split(",").map(id => nameOf(g.channels, id, "#")).join(", ") : "None";
+    case "role_list": return v ? v.split(",").map(id => nameOf(g.roles, id, "@")).join(", ") : "None";
+  }
+  return v === "" ? "Not set" : v;
+}
+
+function renderSettings() {
+  $("settings-note").textContent = me.admin ? "Click a setting to change it. Each change goes in the mod log." : "You can read the settings. Only an Administrator can change them.";
+  if (!settings) { $("settings-list").replaceChildren(el("p", {class: "hint md-typescale-body-medium"}, "Loading the settings…")); return; }
+  const q = $("settings-filter").value.trim().toLowerCase();
+  const out = [];
+  for (const sec of settings.sections) {
+    const hits = sec.settings.filter(k => !q || [k.key, k.description, settingText(k), sec.title].some(t => t.toLowerCase().includes(q)));
+    if (!hits.length) continue;
+    out.push(el("section", {class: "settings-section"}, el("h2", {class: "md-typescale-title-medium"}, sec.title),
+      el("div", {class: "rows"}, ...hits.map(k => {
+        const a = el("a", {class: "rowitem", href: "#/settings/settings/" + enc(k.key), "data-key": "open:settings:" + k.key},
+          el("div", {class: "rowhead"}, el("span", {class: "grow mono"}, k.key), el("span", {class: "md-typescale-label-large"}, settingText(k))),
+          el("div", {class: "hint md-typescale-body-small"}, k.description));
+        if (here.item === k.key) a.setAttribute("aria-current", "true");
+        return a;
+      }))));
+  }
+  keepFocus(() => $("settings-list").replaceChildren(...(out.length ? out : [el("p", {class: "hint md-typescale-body-medium"}, "No setting matches this search.")])));
+}
+
+// settingEditor makes the control for a kind of setting.
+function settingEditor(k) {
+  const g = guildLists || {channels: [], roles: []};
+  const select = (options, label) => {
+    const sel = el("md-outlined-select", {label, class: "wide"});
+    setOptions(sel, options, false, k.value === "" ? "*" : k.value);
+    return {node: sel, get: () => sel.value === "*" ? "" : sel.value};
+  };
+  const checks = (list, prefix) => {
+    const chosen = new Set(k.value ? k.value.split(",") : []);
+    const boxes = list.map(x => {
+      const box = el("md-checkbox", {checked: chosen.has(x.id), ariaLabel: x.name});
+      box.dataset.id = x.id;
+      return box;
+    });
+    return {node: el("div", {class: "checks"}, ...list.map((x, i) => el("label", {class: "md-typescale-body-medium"}, boxes[i], prefix + x.name))),
+      get: () => boxes.filter(b => b.checked).map(b => b.dataset.id).join(",")};
+  };
+  switch (k.kind) {
+    case "bool": {
+      const s = el("md-switch", {selected: k.value === "on" || k.value === "true", ariaLabel: k.key});
+      return {node: el("label", {class: "row md-typescale-body-medium"}, "On", s), get: () => s.selected ? "on" : "off"};
+    }
+    case "choice": return select((k.choices || []).map(c => [c.Value, c.Label]), "Value");
+    case "channel": return select([["*", "Not set"], ...g.channels.filter(c => c.kind === "channel").map(c => [c.id, "#" + c.name])], "Channel");
+    case "category": return select([["*", "Not set"], ...g.channels.filter(c => c.kind === "category").map(c => [c.id, c.name])], "Category");
+    case "role": return select([["*", "Not set"], ...g.roles.map(r => [r.id, "@" + r.name])], "Role");
+    case "channel_list": return checks(g.channels.filter(c => c.kind === "channel"), "#");
+    case "role_list": return checks(g.roles, "@");
+  }
+  const props = {label: k.kind === "user" ? "User ID" : "Value", value: k.value, class: "wide"};
+  if (k.kind === "long_text") { props.type = "textarea"; props.rows = 4; props.maxLength = 500; }
+  if (k.kind === "int") props.type = "number";
+  const field = el("md-outlined-text-field", props);
+  return {node: field, get: () => field.value};
+}
+
+function settingBody(k) {
+  const body = [
+    el("p", {class: "md-typescale-body-medium"}, k.description),
+    el("div", {class: "group"}, el("h3", {class: "md-typescale-label-large"}, "Now"), el("p", {class: "md-typescale-body-medium pre"}, settingText(k))),
+  ];
+  if (k.default !== "" && k.kind !== "channel_list" && k.kind !== "role_list") {
+    body.push(el("p", {class: "hint md-typescale-body-small"}, "Default: " + k.default));
+  }
+  if (!me.admin) {
+    body.push(el("p", {class: "hint md-typescale-body-small"}, "Only an Administrator can change this setting."));
+    return body;
+  }
+  const editor = settingEditor(k);
+  const save = el("md-filled-button", {onclick: async () => {
+    const value = editor.get();
+    const ok = await act(() => api("PUT", "/api/settings/" + enc(k.key), {value}), "Saved.", save);
+    if (!ok) return;
+    k.value = ok.value;
+    // A setting can turn an area on or off, or change who can post where.
+    me = {...me, ...await api("GET", "/api/me")};
+    speech = null;
+    renderSettings();
+    renderPanel();
+  }}, "Save");
+  body.push(editor.node);
+  if (k.key === "MOD_SUPPORT") body.push(el("p", {class: "hint md-typescale-body-small"}, "After a change, post the ticket message again with /setup."));
+  body.push(el("div", {}, save));
+  return body;
+}
+
 // ---- The events. ----
 
 // nameOK checks a new name before the file pick, with the rule of the server.
@@ -1101,10 +1584,6 @@ function closeMenu() {
 }
 
 window.addEventListener("hashchange", route);
-$("tabs").addEventListener("change", () => {
-  const view = $("tabs").activeTab.getAttribute("aria-controls");
-  if (view !== here.view) go(view);
-});
 $("menu-open").addEventListener("click", openMenu);
 $("scrim").addEventListener("click", closeMenu);
 $("panel-close").addEventListener("click", closePanel);
@@ -1116,6 +1595,13 @@ document.addEventListener("keydown", e => {
   if (closeMenu()) { $("menu-open").focus(); return; }
   if (!$("panel").hidden) closePanel();
 }, true);
+$("send-go").addEventListener("click", sendClip);
+$("clip-filter").addEventListener("input", renderClips);
+$("clip-voice").addEventListener("change", renderClips);
+$("clip-day").addEventListener("change", async () => {
+  if ($("clip-day").value && $("clip-day").value !== clipData.day) { await loadClips($("clip-day").value); renderClips(); }
+});
+$("settings-filter").addEventListener("input", renderSettings);
 $("char-filter").addEventListener("input", renderCharacters);
 $("back-filter").addEventListener("input", renderBackgrounds);
 $("member-filter").addEventListener("input", renderMembers);
@@ -1149,7 +1635,7 @@ async function start() {
   // A property set before its component loads is lost. The components come
   // from a CDN, so they can fail to load.
   const parts = Promise.all(["md-switch", "md-outlined-select", "md-dialog", "md-tabs", "md-primary-tab",
-    "md-outlined-text-field", "md-linear-progress", "md-filter-chip", "md-chip-set", "md-icon-button"].map(n => customElements.whenDefined(n)));
+    "md-outlined-text-field", "md-linear-progress", "md-filter-chip", "md-chip-set", "md-icon-button", "md-checkbox"].map(n => customElements.whenDefined(n)));
   const late = new Promise(r => setTimeout(() => r("late"), 10000));
   if (await Promise.race([parts, late]) === "late") {
     bootError("The page components did not load from the internet. Check the connection, then reload the page.", () => location.reload());
@@ -1163,12 +1649,13 @@ async function start() {
     return;
   }
   $("whoami").textContent = me.name + (me.admin ? " (admin)" : " (mod)");
-  if (!me.comics) { bootError("Comics are off on this bot, so this page has nothing to show. An operator must turn comics on."); return; }
-  try {
-    art = await api("GET", "/api/art");
-  } catch (e) {
-    if ($("login").hidden) bootError(e.message, start);
-    return;
+  if (!me.off.comics) {
+    try {
+      art = await api("GET", "/api/art");
+    } catch (e) {
+      if ($("login").hidden) bootError(e.message, start);
+      return;
+    }
   }
   $("loading").hidden = true; $("login").hidden = true; $("shell").hidden = false;
   renderCounts();

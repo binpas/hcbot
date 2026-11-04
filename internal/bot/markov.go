@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -334,12 +333,7 @@ func (b *Bot) messageFromMod(m *discordgo.Message) bool {
 // markovReply posts a generated message, as a reply to m when asReply is
 // set. It tries to start from a word of the message, longer words first.
 func (b *Bot) markovReply(m *discordgo.Message, words []string, asReply bool, kind string) {
-	seed := slices.Clone(words)
-	slices.SortStableFunc(seed, func(x, y string) int {
-		return utf8.RuneCountInString(y) - utf8.RuneCountInString(x)
-	})
-	seed = seed[:min(len(seed), 5)]
-	out, err := b.markovGenerate(b.chain, seed, strings.Join(words, " "), b.cfg.Str("MARKOV_RANK_PROMPT"))
+	out, err := b.markovGenerate(b.chain, markovSeed(words), strings.Join(words, " "), b.cfg.Str("MARKOV_RANK_PROMPT"))
 	if err != nil {
 		log.Printf("markov generate: %v", err)
 		return

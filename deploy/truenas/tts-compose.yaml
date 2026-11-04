@@ -38,7 +38,8 @@ services:
       CLIPS_DIR: /clips
     volumes:
       - /mnt/POOL/apps/tts:/data
-      - /mnt/POOL/apps/tts-voices:/voices:ro
+      # Writable: the bot's web interface can upload voices (README.md).
+      - /mnt/POOL/apps/tts-voices:/voices
       - /mnt/POOL/apps/tts-clips:/clips
     ports:
       # Change the address to the docker0 address of the host

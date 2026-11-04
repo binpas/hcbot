@@ -15,7 +15,7 @@ web
 
 HEALTH Bot is the moderation, engagement, and community bot of the HEALTH Discord server. The web page is its control panel. It gives mods a better place than slash commands for tasks that are visual or large, such as managing comic art and giving characters to members. Success: a mod can complete a management task correctly, the first time, without help.
 
-The control panel starts with comic art and member characters. It is planned to grow into the main place for bot administration, for example settings, reminders, triggers, and status. Comics are only the first area.
+The control panel has these areas: Comics, Speech, Markov, Persona, and Settings. It is planned to grow into the main place for bot administration, for example reminders, triggers, and status.
 
 ## Positioning
 
@@ -31,7 +31,8 @@ A bot and control panel made for one community: the HEALTH server, with the appr
 ## Capabilities and Constraints
 
 - **Now on the page:** add and remove custom characters and backgrounds, manage poses and face points, hide any art, make a character private, find a member, assign a character, lock a character, draw a test comic, and list art problems.
-- **Access:** a member must have the mod role or Administrator on the server. Mods can do everything except destructive actions. Only Administrators can remove or replace art. Each change goes to the mod log with the member's name.
+- **Also on the page:** make a speech clip and post it to one channel, list saved clips and post one, generate Markov and persona candidates and send one to an approved channel, and read the settings.
+- **Access:** a member must have the mod role or Administrator on the server. Mods can do everything except destructive actions, voice changes, and setting changes. Only Administrators can remove or replace art, change voices, and change settings. Each change goes to the mod log with the member's name.
 - **Removed files** go to a trash folder, so that a person can get them back. Built-in art cannot be changed, only hidden.
 - **Technical:** one Go program that serves one HTML page, built into the program. The page must work with the current security rules, and the bot does not have the Server Members intent, so there is no full member list. Members are found by search or by user ID.
 - **The repository is public.** Server IDs, private addresses, and secrets do not go in it.

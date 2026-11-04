@@ -22,6 +22,27 @@ import (
 	"github.com/binpas/hcbot/internal/tweetshot"
 )
 
+// http2Health makes the HTTP clients test a quiet HTTP/2 connection with a
+// ping, and replace it when no answer comes. Without this, a connection that
+// died (for example, when the internet goes down) stays in use until the
+// operating system gives up, about 15 minutes later, and all the requests on
+// it time out.
+func http2Health() *http.HTTP2Config {
+	return &http.HTTP2Config{SendPingTimeout: 15 * time.Second, PingTimeout: 10 * time.Second}
+}
+
+var http2HealthOnce sync.Once
+
+// useHTTP2Health sets http2Health on the default transport, which the Discord
+// session and the other clients use. It must run before the first request.
+func useHTTP2Health() {
+	http2HealthOnce.Do(func() {
+		if t, ok := http.DefaultTransport.(*http.Transport); ok {
+			t.HTTP2 = http2Health()
+		}
+	})
+}
+
 // Bot holds the shared state every handler needs.
 type Bot struct {
 	s     *discordgo.Session
@@ -78,6 +99,7 @@ var Version = "dev"
 
 // New builds the bot. Call Run to connect.
 func New(env config.Env, database *db.DB, chain, persona *markov.Store) (*Bot, error) {
+	useHTTP2Health()
 	values, err := database.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
