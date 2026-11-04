@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net"
@@ -189,7 +190,7 @@ func (b *Bot) webGuard(next http.Handler) http.Handler {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("Origin") != b.env.WebURL {
-			webFail(w, http.StatusForbidden, "This request did not come from this page.")
+			webFail(w, http.StatusForbidden, "I refused this request, because it did not come from this page. Reload the page and try again.")
 			return
 		}
 		h := w.Header()
@@ -243,7 +244,7 @@ func (b *Bot) webAuth(level webLevel, h func(http.ResponseWriter, *http.Request,
 			}
 			if !mod {
 				b.webEnd(r)
-				webFail(w, http.StatusUnauthorized, "You are not a mod now.")
+				webFail(w, http.StatusUnauthorized, "You no longer have the mod role, so your login ended.")
 				return
 			}
 			s.admin, s.checked = admin, time.Now()
@@ -332,15 +333,18 @@ func (b *Bot) webLogin(w http.ResponseWriter, r *http.Request) {
 		"response_type": {"code"},
 		"scope":         {"identify"},
 		"state":         {state},
-		"prompt":        {"none"},
 	}
 	http.Redirect(w, r, b.web.authorizeURL+"?"+q.Encode(), http.StatusFound)
 }
 
+// webLoginFailed shows why the login stopped, in the colors of the page, with
+// a way back.
 func webLoginFailed(w http.ResponseWriter, status int, text string) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = io.WriteString(w, text+"\n")
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HEALTH Bot</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-content:center;gap:16px;padding:16px;text-align:center;background:#000;color:#f7ecec;font:16px Roboto,system-ui,sans-serif}a{color:#ff6b66}</style>
+<p>%s</p><p><a href="/">Back to the login page</a></p></html>`, html.EscapeString(text))
 }
 
 // webCallback is where Discord sends the browser after the login. The
@@ -348,13 +352,13 @@ func webLoginFailed(w http.ResponseWriter, status int, text string) {
 func (b *Bot) webCallback(w http.ResponseWriter, r *http.Request) {
 	state, err := r.Cookie(webStateName)
 	if err != nil || state.Value == "" || state.Value != r.URL.Query().Get("state") {
-		webLoginFailed(w, http.StatusBadRequest, "The login expired or is not correct. Go back and log in again.")
+		webLoginFailed(w, http.StatusBadRequest, "The login expired or is not correct. Log in again.")
 		return
 	}
 	http.SetCookie(w, webCookie(webStateName, "", -time.Second))
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		webLoginFailed(w, http.StatusForbidden, "Discord did not log you in.")
+		webLoginFailed(w, http.StatusForbidden, "Discord did not log you in. Try again, and select Authorize on the Discord page.")
 		return
 	}
 	user, err := b.webDiscordUser(r.Context(), code)
@@ -370,7 +374,7 @@ func (b *Bot) webCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !mod {
-		webLoginFailed(w, http.StatusForbidden, "This page is only for mods of the server.")
+		webLoginFailed(w, http.StatusForbidden, "This page is only for mods of the server. You need the mod role to log in.")
 		return
 	}
 	id := webRandom()
@@ -550,7 +554,7 @@ func (b *Bot) webArt(w http.ResponseWriter, _ *http.Request, s *webSession) {
 	body, err := b.webArtBody(pack, s)
 	if err != nil {
 		log.Printf("web: art: %v", err)
-		webFail(w, http.StatusInternalServerError, "I could not read the database.")
+		webFail(w, http.StatusInternalServerError, "I could not read the database. Try again. If this continues, tell an operator.")
 		return
 	}
 	webJSON(w, http.StatusOK, body)
@@ -624,7 +628,7 @@ func (b *Bot) webChange(w http.ResponseWriter, s *webSession, what string, chang
 	pack, err := b.loadComicPack()
 	if err != nil {
 		log.Printf("web: reload art: %v", err)
-		webFail(w, http.StatusInternalServerError, "The change is saved, but I could not read the art again, so the old art stays.")
+		webFail(w, http.StatusInternalServerError, "The change is saved, but comics still use the old art. Tell an operator.")
 		return
 	}
 	b.comics.pack.Store(pack)
@@ -633,7 +637,7 @@ func (b *Bot) webChange(w http.ResponseWriter, s *webSession, what string, chang
 	body, err := b.webArtBody(pack, s)
 	if err != nil {
 		log.Printf("web: art: %v", err)
-		webFail(w, http.StatusInternalServerError, "I could not read the database.")
+		webFail(w, http.StatusInternalServerError, "I could not read the database. Try again. If this continues, tell an operator.")
 		return
 	}
 	if warning != "" {
@@ -648,12 +652,12 @@ func (b *Bot) webChangeFailed(w http.ResponseWriter, what string, err error) {
 		text := strings.TrimPrefix(err.Error(), comic.ErrInvalid.Error()+": ")
 		webFail(w, http.StatusBadRequest, strings.ToUpper(text[:1])+text[1:]+".")
 	case errors.Is(err, comic.ErrExists):
-		webFail(w, http.StatusConflict, "That name is already in use.")
+		webFail(w, http.StatusConflict, "That name is already in use, so type another name. If this is your own upload, you can undo it. An Administrator can replace custom art.")
 	case errors.Is(err, comic.ErrNotFound):
-		webFail(w, http.StatusNotFound, "That is not custom art, or it does not exist.")
+		webFail(w, http.StatusNotFound, "This art does not exist, or it is built-in art, which cannot be changed.")
 	default:
 		log.Printf("web: %s: %v", what, err)
-		webFail(w, http.StatusInternalServerError, "I could not save the change.")
+		webFail(w, http.StatusInternalServerError, "I could not save the change. Try again.")
 	}
 }
 
@@ -902,7 +906,7 @@ func (b *Bot) webMembers(w http.ResponseWriter, _ *http.Request, _ *webSession) 
 	rows, err := b.db.ComicMembers(b.env.GuildID)
 	if err != nil {
 		log.Printf("web: members: %v", err)
-		webFail(w, http.StatusInternalServerError, "I could not read the database.")
+		webFail(w, http.StatusInternalServerError, "I could not read the database. Try again. If this continues, tell an operator.")
 		return
 	}
 	out := make([]webMember, len(rows))
@@ -927,7 +931,7 @@ func (b *Bot) webSearchMembers(w http.ResponseWriter, r *http.Request, _ *webSes
 	rows, err := b.db.ComicMembers(b.env.GuildID)
 	if err != nil {
 		log.Printf("web: members: %v", err)
-		webFail(w, http.StatusInternalServerError, "I could not read the database.")
+		webFail(w, http.StatusInternalServerError, "I could not read the database. Try again. If this continues, tell an operator.")
 		return
 	}
 	// A result must show the member's current character and lock, or an
@@ -952,7 +956,7 @@ func (b *Bot) webSearchMembers(w http.ResponseWriter, r *http.Request, _ *webSes
 		members, err := b.s.GuildMembersSearch(b.env.GuildID, q, webMaxSearch)
 		if err != nil {
 			log.Printf("web: member search: %v", err)
-			webFail(w, http.StatusBadGateway, "The Discord search did not work. Paste the user ID.")
+			webFail(w, http.StatusBadGateway, "The Discord search did not work. Paste the user ID, or try again.")
 			return
 		}
 		for _, m := range members {
@@ -1013,7 +1017,7 @@ func (b *Bot) webClearMember(w http.ResponseWriter, r *http.Request, s *webSessi
 	}
 	if err := b.db.DeleteComicCharacter(b.env.GuildID, id); err != nil {
 		log.Printf("web: clear member: %v", err)
-		webFail(w, http.StatusInternalServerError, "I could not save the change.")
+		webFail(w, http.StatusInternalServerError, "I could not save the change. Try again.")
 		return
 	}
 	b.webAudit(s, fmt.Sprintf("cleared the character of <@%s>", id))

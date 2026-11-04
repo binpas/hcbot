@@ -988,7 +988,7 @@ func (b *Bot) cmdCharacter(c *Ctx) {
 	_ = c.reply(true, []*discordgo.MessageEmbed{e}, characterButtons(), comicFile("character.png", data))
 }
 
-const comicLockedText = "A mod set your comic character, so you cannot change it."
+const comicLockedText = "A mod set your comic character, so you cannot change it. Ask a mod if you want another one."
 
 func characterButtons() []discordgo.MessageComponent {
 	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{

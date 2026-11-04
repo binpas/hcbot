@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
-<title>HEALTH bot</title>
+<title>HEALTH Bot</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -74,50 +74,118 @@
     --md-filled-button-pressed-state-layer-color: var(--hc-on-danger);
   }
   body { margin: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-ref-typeface-plain); }
-  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 24px; background: var(--md-sys-color-surface-container); }
-  header h1 { margin: 0; flex: 1; }
-  .tabs { background: var(--md-sys-color-surface-container); }
-  md-tabs { max-width: 1100px; margin: 0 auto; --md-primary-tab-container-color: transparent; }
-  .view { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
   [hidden] { display: none !important; }
-  .card { position: relative; border-radius: 12px; background: var(--md-sys-color-surface-container-low); --md-elevation-level: 1; padding: 16px; }
-  .card h2 { margin: 0 0 12px; }
+  a { color: var(--md-sys-color-primary); }
+  h1, h2, h3, p { margin: 0; }
+
+  /* The shell: the menu of areas, then the work, then the details of one item. */
+  #shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 100vh; }
+  #menu { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 24px; padding: 20px 12px 16px;
+    background: var(--md-sys-color-surface-container-low); border-right: 1px solid var(--md-sys-color-outline-variant); }
+  #menu .brand { padding: 0 12px; }
+  #menu nav { flex: 1; display: grid; align-content: start; gap: 4px; }
+  #menu nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: var(--md-sys-color-on-surface); text-decoration: none; }
+  @media (hover: hover) { #menu nav a:hover { background: var(--md-sys-color-surface-container-high); } }
+  #menu nav a[aria-current] { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+  #menu nav a:focus-visible, .tile:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+  .count { min-width: 22px; padding: 2px 6px; border-radius: 11px; text-align: center; font-size: 12px; background: var(--hc-danger); color: var(--hc-on-danger); }
+  #account { display: grid; gap: 4px; padding: 12px 12px 0; border-top: 1px solid var(--md-sys-color-outline-variant); }
+  #account md-text-button { justify-self: start; margin-left: -12px; }
+  #account .who { overflow-wrap: anywhere; }
+  #topbar { display: none; }
+  #scrim { display: none; }
+
+  #work { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; min-width: 0; }
+  #area { min-width: 0; padding: 24px 32px 48px; container-type: inline-size; }
+  #area > h1 { margin-bottom: 8px; }
+  md-tabs { margin: 0 -8px 24px; max-width: 760px; --md-primary-tab-container-color: transparent; }
+  .view { display: grid; gap: 16px; max-width: 1480px; }
+
+  /* The details of one item. It is beside the list, so the list stays usable. */
+  #panel { position: sticky; top: 0; width: 440px; height: 100vh; overflow-y: auto; padding: 20px 20px 32px;
+    background: var(--md-sys-color-surface-container-low); border-left: 1px solid var(--md-sys-color-outline-variant); }
+  #panel { overscroll-behavior: contain; }
+  #panel:focus { outline: none; }
+  /* The close button stays in reach when the panel is long. */
+  .panel-head { position: sticky; top: -20px; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -20px -20px 16px; padding: 12px 12px 12px 20px;
+    background: var(--md-sys-color-surface-container-low); }
+  #panel-title { overflow-wrap: anywhere; min-width: 0; }
+  #panel-title:focus { outline: none; }
+  #panel-body { display: grid; gap: 24px; }
+  .group { display: grid; gap: 8px; }
+  .group > h3 { color: var(--md-sys-color-on-surface-variant); }
+  .panel-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 16px; border-top: 1px solid var(--md-sys-color-outline-variant); }
+
   .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  .toolbar md-outlined-text-field { flex: 1; min-width: 180px; }
-  .toolbar md-outlined-select { min-width: 220px; }
+  .toolbar md-outlined-text-field { flex: 1 1 220px; min-width: 0; }
+  .toolbar md-outlined-select { flex: 0 1 240px; min-width: 180px; }
   .hint, .label { color: var(--md-sys-color-on-surface-variant); }
-  .hint { margin: 8px 0 0; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-  .item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--md-sys-color-surface-container); min-width: 0; }
-  .item.off img { opacity: .4; }
-  .item button.open { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-  .item button.open:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
-  .item .name { overflow-wrap: anywhere; text-align: center; }
-  .thumb { height: 72px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 8px; padding: 4px; }
-  .thumb.back { width: 100%; height: 110px; object-fit: cover; padding: 0; }
   .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+  .empty { display: grid; gap: 12px; justify-items: start; padding: 32px 0; }
+
+  /* A tile is a link to the item. The art leads. */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 12px; }
+  .tile { display: flex; flex-direction: column; gap: 8px; align-items: center; padding: 8px 8px 12px; border-radius: 12px; min-width: 0; color: var(--md-sys-color-on-surface); text-decoration: none;
+    background: var(--md-sys-color-surface-container); box-shadow: inset 0 0 0 1px transparent; }
+  @media (hover: hover) { .tile:hover { background: var(--md-sys-color-surface-container-high); } }
+  .tile[aria-current] { box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+  .tile.off img { opacity: .4; }
+  .tile .name { overflow-wrap: anywhere; text-align: center; }
+  .tile .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; min-height: 20px; }
+  .thumb { width: 100%; height: 120px; object-fit: contain; background: #fff; border-radius: 8px; padding: 6px; }
+  .thumb.back { object-fit: cover; padding: 0; }
   /* Color groups the tags by meaning. The word carries the meaning itself. */
-  .tag { font-size: 12px; padding: 2px 8px; border-radius: 8px; background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 8px; white-space: nowrap; background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
   .tag.limit { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
   .tag.use { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
   .tag.off { background: none; color: var(--md-sys-color-on-surface-variant); box-shadow: inset 0 0 0 1px var(--md-sys-color-outline); }
-  .member { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--md-sys-color-outline-variant); flex-wrap: wrap; }
+
+  /* Overview. */
+  .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin: 0; max-width: 640px; }
+  .facts dt { color: var(--md-sys-color-on-surface-variant); }
+  .facts dd { margin: 0; }
+  section > h2 { margin-bottom: 12px; }
+  #overview { gap: 32px; }
+  .problem { padding: 8px 0; border-top: 1px solid var(--md-sys-color-outline-variant); overflow-wrap: anywhere; }
+
+  /* Members. */
+  .member { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--md-sys-color-outline-variant); }
   .member:first-child { border-top: 0; }
-  .member .who { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
-  .member img, .member .noavatar { width: 40px; height: 40px; border-radius: 50%; background: var(--md-sys-color-surface-container-highest); }
-  .member .char { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 8px; }
+  .member .who { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .member > img, .member .noavatar { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--md-sys-color-surface-container-highest); }
+  .member .has { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+  .member .has img { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 8px; }
+  .member md-outlined-button { flex: none; }
+  /* A member row follows the width of the list, not of the screen: the panel
+     can make the list narrow on a large screen. */
+  @container (max-width: 520px) {
+    .member { flex-wrap: wrap; }
+    .member .who { flex-basis: calc(100% - 52px); }
+    .member .has { justify-content: flex-start; margin-left: 52px; flex: 1 1 auto; }
+    .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .facts dd { margin-bottom: 12px; }
+  }
   .id { font-variant-numeric: tabular-nums; }
-  #preview-img { max-width: 100%; border-radius: 8px; }
+
+  #preview-img { display: block; max-width: 100%; border-radius: 8px; }
   .poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
   .pose { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 8px; border-radius: 8px; background: var(--md-sys-color-surface-container); }
   .pose img { height: 72px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 4px; }
   .pose .missing { height: 72px; display: flex; align-items: center; }
-  .face-box { position: relative; display: inline-block; line-height: 0; cursor: crosshair; background: #fff; border-radius: 8px; max-width: 100%; }
+  .picture { display: block; max-width: 100%; max-height: 320px; background: #fff; border-radius: 8px; }
+  .face-box { position: relative; display: inline-block; justify-self: start; line-height: 0; cursor: crosshair; background: #fff; border-radius: 8px; max-width: 100%; }
   .face-box img { max-height: 320px; max-width: 100%; }
   .face-dot { position: absolute; width: 14px; height: 14px; margin: -7px; border-radius: 50%; background: #e53935; border: 2px solid #fff; pointer-events: none; }
-  md-dialog { max-width: min(760px, calc(100vw - 32px)); width: 100%; }
+  .fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .fields md-outlined-text-field { width: 110px; }
+  md-outlined-text-field.wide, md-outlined-select.wide { width: 100%; }
+  md-dialog { max-width: min(520px, calc(100vw - 32px)); width: 100%; }
   .stack { display: grid; gap: 16px; }
-  #login { display: grid; place-items: center; min-height: 60vh; text-align: center; }
+  #login { display: grid; place-items: center; min-height: 100vh; padding: 16px; text-align: center; }
+  #loading { padding: 32px 16px; text-align: center; }
+  #boot-error { padding: 32px 16px; max-width: 640px; margin: 0 auto; }
+  .state { display: grid; gap: 12px; justify-items: start; }
+
   /* The toast stays in the page when it is empty, so that a screen reader announces new text. */
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 16px; border-radius: 8px; max-width: calc(100vw - 32px);
     background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: 0 0 0 1px var(--md-sys-color-outline), 0 6px 18px #000; z-index: 100; }
@@ -126,131 +194,175 @@
      change worked. */
   #toast.bad { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
   #toast.warn { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary), 0 6px 18px #000; }
-  #dialog-msg:empty { display: block; height: 0; }
-  #dialog-msg:not(:empty) { padding: 8px 12px; margin-bottom: 16px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
-  #dialog-msg.bad:not(:empty) { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
-  #dialog-msg.warn:not(:empty) { background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+  .msg:empty { display: block; height: 0; }
+  .msg:not(:empty) { padding: 8px 12px; margin-bottom: 16px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  .msg.bad:not(:empty) { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+  .msg.warn:not(:empty) { background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
   #busy { position: fixed; top: 0; left: 0; right: 0; z-index: 101; }
-  .state { display: grid; gap: 12px; justify-items: start; }
-  .fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
-  .fields md-outlined-text-field { width: 110px; }
-  @media (max-width: 600px) {
-    header { padding: 12px 16px; }
-    .view { padding: 12px 16px; }
-    .toolbar md-outlined-select { min-width: 0; flex: 1 1 100%; }
+
+  @media (max-width: 1180px) { #panel { width: 380px; } #area { padding: 24px 20px 48px; } }
+  /* A narrow screen: the menu goes behind a button, and the details fill the screen. */
+  @media (max-width: 899px) {
+    #shell { display: block; }
+    #topbar { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 10; padding: 4px 8px; min-height: 56px;
+      background: var(--md-sys-color-surface-container-low); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+    #menu { position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s ease-out, visibility .2s; }
+    #menu.open { visibility: visible; transform: none; transition: transform .2s ease-out, visibility 0s; }
+    #scrim.open { display: block; position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / .7); }
+    #work { display: block; }
+    #area { padding: 16px 16px 48px; }
+    #panel { position: fixed; inset: 0; z-index: 20; width: auto; height: auto; border: 0; padding: 12px 16px 32px; }
+    .panel-head { top: -12px; margin: -12px -16px 12px; padding: 8px 8px 8px 16px; }
+    .thumb { height: 100px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+    .toolbar md-outlined-select { flex: 1 1 100%; }
+    /* Small text is harder to read on a phone. */
+    :root { --md-sys-typescale-body-small-size: .875rem; --md-sys-typescale-body-small-line-height: 1.25rem; }
   }
+  @media (prefers-reduced-motion: reduce) { #menu { transition: none; } }
 </style>
 </head>
 <body>
 <md-linear-progress id="busy" indeterminate aria-label="Working" hidden></md-linear-progress>
-<header>
-  <h1 class="md-typescale-title-large">HEALTH bot</h1>
-  <span id="whoami" class="label md-typescale-label-large"></span>
-  <md-text-button id="logout" hidden>Log out</md-text-button>
-</header>
+
+<p id="loading" role="status" class="hint md-typescale-body-large">Loading HEALTH Bot…</p>
 
 <div id="login" hidden>
   <div class="stack">
-    <p id="login-text" class="md-typescale-body-large">This page is for mods of the server.</p>
+    <h1 class="md-typescale-headline-small">HEALTH Bot</h1>
+    <p id="login-text" class="md-typescale-body-large">This page is for mods of the server. Log in with your Discord account.</p>
     <div><md-filled-button href="/auth/login">Log in with Discord</md-filled-button></div>
   </div>
 </div>
 
-<div id="boot-error" class="view" hidden>
-  <section class="card state" role="alert">
-    <p id="boot-error-text" class="md-typescale-body-large" style="margin:0"></p>
+<div id="boot-error" hidden>
+  <div class="state" role="alert">
+    <h1 class="md-typescale-headline-small">HEALTH Bot</h1>
+    <p id="boot-error-text" class="md-typescale-body-large"></p>
     <div><md-filled-button id="boot-retry" hidden>Try again</md-filled-button></div>
-  </section>
+  </div>
 </div>
 
-<div id="app" hidden>
-  <div class="tabs">
-    <md-tabs id="tabs" aria-label="Views">
-      <md-primary-tab id="tab-characters" aria-controls="characters">Characters</md-primary-tab>
-      <md-primary-tab id="tab-backgrounds" aria-controls="backgrounds">Backgrounds</md-primary-tab>
-      <md-primary-tab id="tab-members" aria-controls="members">Members</md-primary-tab>
-      <md-primary-tab id="tab-preview" aria-controls="preview">Preview</md-primary-tab>
-      <md-primary-tab id="tab-problems" aria-controls="problems">Problems</md-primary-tab>
-    </md-tabs>
+<div id="shell" hidden>
+  <div id="topbar">
+    <md-icon-button id="menu-open" aria-label="Open the menu"><md-icon>menu</md-icon></md-icon-button>
+    <span class="md-typescale-title-medium">HEALTH Bot</span>
+  </div>
+  <div id="scrim"></div>
+  <div id="menu">
+    <div class="brand md-typescale-title-large">HEALTH Bot</div>
+    <nav aria-label="Areas">
+      <a id="nav-comics" href="#/comics/overview" aria-current="page"><span>Comics</span><span id="nav-count" class="count" hidden></span></a>
+    </nav>
+    <div id="account">
+      <span id="whoami" class="who label md-typescale-label-large"></span>
+      <md-text-button id="logout">Log out</md-text-button>
+    </div>
   </div>
 
-  <main>
-  <div id="characters" class="view" role="tabpanel" aria-labelledby="tab-characters">
-    <section class="card"><md-elevation></md-elevation>
-      <h2 class="md-typescale-title-medium">Add a character</h2>
-      <div class="toolbar">
-        <md-outlined-text-field id="char-name" label="Name" maxlength="32"></md-outlined-text-field>
-        <md-outlined-button id="char-add">Select neutral.png</md-outlined-button>
-      </div>
-      <p class="hint md-typescale-body-small">A PNG with a transparent background, facing right, 40–1000 px wide and 100–1000 px high (about 400 px high is best), at most 8 MB. A name has a–z, 0–9, - and _.</p>
-    </section>
-    <section class="card"><md-elevation></md-elevation>
-      <div class="toolbar">
-        <md-outlined-text-field id="char-filter" label="Filter" type="search"></md-outlined-text-field>
-      </div>
-      <p class="hint md-typescale-body-small">Click a character for details. A hidden character cannot be chosen and is not given at random. Members who already chose it keep it.</p>
-      <div id="char-grid" class="grid" style="margin-top:12px"></div>
-    </section>
-  </div>
+  <div id="work">
+    <main id="area">
+      <h1 class="md-typescale-headline-small">Comics</h1>
+      <md-tabs id="tabs" aria-label="Comics views">
+        <md-primary-tab id="tab-overview" aria-controls="overview">Overview</md-primary-tab>
+        <md-primary-tab id="tab-characters" aria-controls="characters">Characters</md-primary-tab>
+        <md-primary-tab id="tab-backgrounds" aria-controls="backgrounds">Backgrounds</md-primary-tab>
+        <md-primary-tab id="tab-members" aria-controls="members">Members</md-primary-tab>
+        <md-primary-tab id="tab-preview" aria-controls="preview">Preview</md-primary-tab>
+      </md-tabs>
 
-  <div id="backgrounds" class="view" role="tabpanel" aria-labelledby="tab-backgrounds" hidden>
-    <section class="card"><md-elevation></md-elevation>
-      <h2 class="md-typescale-title-medium">Add a background</h2>
-      <div class="toolbar">
-        <md-outlined-text-field id="back-name" label="Name" maxlength="32"></md-outlined-text-field>
-        <md-outlined-button id="back-add">Select a file</md-outlined-button>
+      <div id="overview" class="view" role="tabpanel" aria-labelledby="tab-overview">
+        <section>
+          <h2 class="md-typescale-title-medium">Start a task</h2>
+          <div class="toolbar">
+            <md-filled-tonal-button href="#/comics/characters/+">Add character</md-filled-tonal-button>
+            <md-filled-tonal-button href="#/comics/backgrounds/+">Add background</md-filled-tonal-button>
+            <md-filled-tonal-button id="find-member" href="#/comics/members">Find member</md-filled-tonal-button>
+          </div>
+        </section>
+        <section>
+          <h2 class="md-typescale-title-medium">Status</h2>
+          <dl id="facts" class="facts md-typescale-body-medium"></dl>
+        </section>
+        <section>
+          <h2 class="md-typescale-title-medium">Art files that the bot cannot use</h2>
+          <div id="problem-list"></div>
+        </section>
       </div>
-      <p class="hint md-typescale-body-small">A PNG or JPEG, 160–2000 px each side, at most 8 MB. Square, 320–640 px, is best.</p>
-    </section>
-    <section class="card"><md-elevation></md-elevation>
-      <div id="back-grid" class="grid"></div>
-    </section>
-  </div>
 
-  <div id="members" class="view" role="tabpanel" aria-labelledby="tab-members" hidden>
-    <section class="card"><md-elevation></md-elevation>
-      <h2 class="md-typescale-title-medium">Find a member</h2>
-      <div class="toolbar">
-        <md-outlined-text-field id="member-q" label="Name or user ID" type="search"></md-outlined-text-field>
-        <md-filled-tonal-button id="member-find">Search</md-filled-tonal-button>
+      <div id="characters" class="view" role="tabpanel" aria-labelledby="tab-characters" hidden>
+        <div class="toolbar">
+          <md-filled-button href="#/comics/characters/+">Add character</md-filled-button>
+          <md-outlined-text-field id="char-filter" label="Filter by name" type="search"></md-outlined-text-field>
+        </div>
+        <md-chip-set id="char-chips" aria-label="Filter by status"></md-chip-set>
+        <div id="char-grid" class="grid"></div>
       </div>
-      <div id="member-found" style="margin-top:8px"></div>
-    </section>
-    <section class="card"><md-elevation></md-elevation>
-      <h2 class="md-typescale-title-medium">Members with a character</h2>
-      <div id="member-list"></div>
-    </section>
-  </div>
 
-  <div id="preview" class="view" role="tabpanel" aria-labelledby="tab-preview" hidden>
-    <section class="card"><md-elevation></md-elevation>
-      <div class="toolbar">
-        <md-outlined-select id="prev-char" label="Character"></md-outlined-select>
-        <md-outlined-select id="prev-back" label="Background"></md-outlined-select>
-        <md-filled-button id="prev-draw">Draw</md-filled-button>
+      <div id="backgrounds" class="view" role="tabpanel" aria-labelledby="tab-backgrounds" hidden>
+        <div class="toolbar">
+          <md-filled-button href="#/comics/backgrounds/+">Add background</md-filled-button>
+          <md-outlined-text-field id="back-filter" label="Filter by name" type="search"></md-outlined-text-field>
+        </div>
+        <md-chip-set id="back-chips" aria-label="Filter by status"></md-chip-set>
+        <div id="back-grid" class="grid"></div>
       </div>
-      <p class="hint md-typescale-body-small">Draws a comic with sample text. Each click gives a different comic.</p>
-      <img id="preview-img" alt="The test comic" hidden style="margin-top:12px">
-    </section>
-  </div>
 
-  <div id="problems" class="view" role="tabpanel" aria-labelledby="tab-problems" hidden>
-    <section class="card"><md-elevation></md-elevation>
-      <h2 class="md-typescale-title-medium">Art files that the bot cannot use</h2>
-      <div id="problem-list"></div>
-    </section>
+      <div id="members" class="view" role="tabpanel" aria-labelledby="tab-members" hidden>
+        <section>
+          <h2 class="md-typescale-title-medium">Find a member</h2>
+          <div class="toolbar">
+            <md-outlined-text-field id="member-q" label="Name or user ID" type="search"></md-outlined-text-field>
+            <md-filled-tonal-button id="member-find">Search</md-filled-tonal-button>
+          </div>
+          <p class="hint md-typescale-body-small" style="margin-top:8px">To get a user ID: in Discord, turn on Developer Mode, then right-click the user and select Copy User ID.</p>
+          <div id="member-found" style="margin-top:8px"></div>
+        </section>
+        <section>
+          <h2 class="md-typescale-title-medium">Members with a character</h2>
+          <div class="toolbar" style="margin-bottom:8px">
+            <md-outlined-text-field id="member-filter" label="Filter by name, ID or character" type="search"></md-outlined-text-field>
+          </div>
+          <div id="member-list"></div>
+        </section>
+      </div>
+
+      <div id="preview" class="view" role="tabpanel" aria-labelledby="tab-preview" hidden>
+        <div class="toolbar">
+          <md-outlined-select id="prev-char" label="Character"></md-outlined-select>
+          <md-outlined-select id="prev-back" label="Background"></md-outlined-select>
+          <md-filled-button id="prev-draw">Draw comic</md-filled-button>
+        </div>
+        <p class="hint md-typescale-body-small">Draws a comic with sample text. Each click gives a different comic.</p>
+        <img id="preview-img" alt="A test comic with sample text" hidden>
+      </div>
+    </main>
+
+    <aside id="panel" aria-labelledby="panel-title" tabindex="-1" hidden>
+      <div class="panel-head">
+        <h2 id="panel-title" class="md-typescale-title-large" tabindex="-1"></h2>
+        <md-icon-button id="panel-close" aria-label="Close the details"><md-icon>close</md-icon></md-icon-button>
+      </div>
+      <div id="panel-msg" class="msg" role="status"></div>
+      <div id="panel-body"></div>
+    </aside>
   </div>
-  </main>
 </div>
 
-<md-dialog id="dialog"><div slot="headline" id="dialog-title"></div><div slot="content"><div id="dialog-msg" role="status"></div><div id="dialog-body" class="stack"></div></div><div slot="actions" id="dialog-actions"></div></md-dialog>
+<md-dialog id="dialog"><div slot="headline" id="dialog-title"></div><div slot="content"><div id="dialog-msg" class="msg" role="status"></div><div id="dialog-body" class="stack"></div></div><div slot="actions" id="dialog-actions"></div></md-dialog>
 <div id="toast" role="status"></div>
 <input id="file" type="file" hidden>
 
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-let me = null, art = null;
+const enc = encodeURIComponent;
+const VIEWS = ["overview", "characters", "backgrounds", "members", "preview"];
+let me = null, art = null, members = null;
+// Where the page is: the view, and the open item ("+" is the add form).
+let here = {view: "overview", item: ""};
+// Members that a search found, by ID, for the details panel.
+const known = {};
 
 // el builds an element. All text goes in as text, not as HTML.
 function el(tag, props = {}, ...kids) {
@@ -264,25 +376,28 @@ function el(tag, props = {}, ...kids) {
   n.append(...kids);
   return n;
 }
-const enc = encodeURIComponent;
 
-// A modal dialog covers the toast, so a message goes in the dialog while one
-// is open. There it stays until the next action.
 function dialogOpen() { return $("dialog").open; }
 
-// kind is "" (done), "warn" (done, but look at this), or "bad" (failed).
+// A message goes next to the work: in the confirmation or the details panel
+// if one is open. It stays there until the next action. The toast is for the
+// rest. kind is "" (done), "warn" (done, but look at this), or "bad" (failed).
 function toast(text, kind, wait) {
   if (kind === true) kind = "bad";
-  if (dialogOpen()) {
-    const m = $("dialog-msg");
-    m.textContent = text; m.className = kind || "";
-    m.scrollIntoView({block: "nearest"});
+  const inner = dialogOpen() ? $("dialog-msg") : (!$("panel").hidden ? $("panel-msg") : null);
+  if (inner) {
+    inner.textContent = text; inner.className = "msg " + (kind || "");
+    inner.scrollIntoView({block: "nearest"});
     return;
   }
   const t = $("toast");
   t.textContent = text; t.className = kind || "";
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { t.textContent = ""; t.className = ""; }, wait || (kind ? 10000 : 4000));
+}
+
+function clearMessages() {
+  for (const id of ["dialog-msg", "panel-msg"]) { $(id).textContent = ""; $(id).className = "msg"; }
 }
 
 let pending = 0;
@@ -318,11 +433,11 @@ async function api(method, path, body) {
 // the new art. A warning shows with the success text, not in its place: the
 // change worked. button, if given, cannot be clicked again during the change.
 async function act(run, done, button) {
-  $("dialog-msg").textContent = "";
+  clearMessages();
   if (button) button.disabled = true;
   try {
     const data = await run();
-    if (data && data.characters) { art = data; renderArt(); }
+    if (data && data.characters) { art = data; renderAll(); }
     const text = [done, data && data.warning].filter(Boolean).join(" ");
     if (text) toast(text, data && data.warning ? "warn" : "");
     return data || true;
@@ -353,9 +468,8 @@ function focusKey(key) {
 }
 
 function showLogin(text) {
-  $("app").hidden = true; $("login").hidden = false;
-  $("logout").hidden = true; $("whoami").textContent = "";
-  $("boot-error").hidden = true;
+  $("loading").hidden = true;
+  $("shell").hidden = true; $("boot-error").hidden = true; $("login").hidden = false;
   if (dialogOpen()) $("dialog").close();
   if (text) $("login-text").textContent = text;
 }
@@ -377,39 +491,24 @@ function form(file, fields = {}) {
   return fd;
 }
 
-// The dialog. actions are [label, function, danger]; the function can keep
-// the dialog open by returning false.
-function dialog(title, body, actions) {
-  // The dialog will cover the toast, so its message moves into the dialog.
-  const t = $("toast");
-  if (t.textContent) {
-    $("dialog-msg").textContent = t.textContent; $("dialog-msg").className = t.className;
-    t.textContent = ""; t.className = ""; clearTimeout(toast.timer);
-  }
+// confirmDanger asks before a destructive action. run returns a true value
+// when it worked. If it fails, the dialog stays open with the message.
+function confirmDanger(title, text, label, run) {
   $("dialog-title").textContent = title;
-  $("dialog-body").replaceChildren(...body);
-  $("dialog-actions").replaceChildren(...actions.map(([label, fn, tag, cls]) =>
-    el(tag || "md-text-button", {class: cls || "", onclick: async () => {
-      // No second click while the action runs.
-      const all = [...$("dialog-actions").children];
-      for (const b of all) b.disabled = true;
-      let keep = false;
-      try { keep = fn && (await fn()) === false; }
-      finally { for (const b of all) b.disabled = false; }
-      if (!keep) $("dialog").close();
-    }}, label)));
+  $("dialog-body").replaceChildren(el("p", {class: "md-typescale-body-medium"}, text));
+  clearMessages();
+  const cancel = el("md-text-button", {onclick: () => $("dialog").close()}, "Cancel");
+  const go = el("md-filled-button", {class: "danger", onclick: async () => {
+    cancel.disabled = go.disabled = true; // no second click while it runs
+    const ok = await run();
+    cancel.disabled = go.disabled = false;
+    if (ok) $("dialog").close();
+  }}, label);
+  $("dialog-actions").replaceChildren(cancel, go);
   $("dialog").show();
 }
 
-// confirmDanger asks before a destructive action. back draws what was open
-// before, for Cancel. The dialog stays open with the message if the action
-// fails.
-function confirmDanger(title, text, label, fn, back) {
-  dialog(title, [el("p", {class: "md-typescale-body-medium"}, text)], [
-    ["Cancel", back ? () => { back(); return false; } : undefined],
-    [label, async () => (await fn()) ? undefined : false, "md-filled-button", "danger"],
-  ]);
-}
+const TRASH = "An operator can restore it from the trash folder.";
 
 // undoLeft is the text for the time that is left to undo an upload.
 function undoLeft(key) {
@@ -417,247 +516,234 @@ function undoLeft(key) {
   return "You can undo your upload for " + minutes + (minutes === 1 ? " more minute." : " more minutes.");
 }
 
-function hideSwitch(kind, item) {
-  const key = "hide:" + kind + ":" + item.name;
-  const s = el("md-switch", {selected: !item.hidden, ariaLabel: "Visible: " + item.name, "data-key": key, onchange: async () => {
-    const hidden = !s.selected;
-    const ok = await act(() => api("POST", "/api/hidden", {kind, name: item.name, hidden}),
-      item.name + (hidden ? " is hidden." : " is visible."), s);
-    if (!ok) s.selected = !s.selected;
-    focusKey(key); // the grid is drawn again
-  }});
-  return el("label", {class: "row md-typescale-label-medium"}, "Visible", s);
+// ---- Links: each view and each open item has its own address. ----
+
+let keepMessage = false;
+let focusSearch = false; // "Find member" goes to the search field
+function go(view, item) {
+  location.hash = "#/comics/" + view + (item ? "/" + enc(item) : "");
 }
 
+function readHash() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  const view = parts[0] === "comics" && VIEWS.includes(parts[1]) ? parts[1] : "overview";
+  let item = "";
+  try { item = parts[2] ? decodeURIComponent(parts[2]) : ""; } catch { /* a damaged link: no item */ }
+  return {view, item};
+}
+
+function route() {
+  const next = readHash();
+  const changed = next.view !== here.view || next.item !== here.item;
+  // The result of an add must stay when the new item opens. A message in a
+  // confirmation stays until the confirmation closes.
+  if (changed && !keepMessage) { $("panel-msg").textContent = ""; $("panel-msg").className = "msg"; }
+  keepMessage = false;
+  here = next;
+  closeMenu();
+  const tab = VIEWS.indexOf(here.view);
+  if ($("tabs").activeTabIndex !== tab) $("tabs").activeTabIndex = tab;
+  for (const v of VIEWS) $(v).hidden = v !== here.view;
+  const title = $("tab-" + here.view).textContent.replace(/ \(.*/, "");
+  document.title = (here.item && here.item !== "+" && here.view !== "preview" ? here.item + " · " : "") + title + " · HEALTH Bot";
+  if (!art) return;
+  if (here.view === "overview" || here.view === "members") loadMembers();
+  renderView();
+  if (here.view === "preview" && here.item) presetPreview(here.item);
+  renderPanel();
+  syncCovered();
+  if (focusSearch) { focusSearch = false; $("member-q").focus(); }
+  if (changed && !$("panel").hidden) {
+    const field = here.item === "+" && $("panel-body").querySelector("md-outlined-text-field");
+    if (field) field.updateComplete.then(() => field.focus()); // it has no input until its first draw
+    else $("panel-title").focus();
+  }
+}
+
+function closePanel() {
+  const {view, item} = here;
+  go(view === "preview" ? "preview" : view);
+  // The focus returns to the item in the list.
+  setTimeout(() => focusKey("open:" + view + ":" + item), 0);
+}
+
+// ---- The views. ----
+
+function renderAll() {
+  keepFocus(() => { renderCounts(); renderView(); renderPanel(); });
+}
+
+function renderCounts() {
+  const n = (art.problems || []).length;
+  $("nav-count").hidden = n === 0;
+  $("nav-count").textContent = n;
+  $("nav-count").setAttribute("aria-label", n + (n === 1 ? " art problem" : " art problems"));
+  $("tab-overview").textContent = n ? "Overview (" + n + ")" : "Overview";
+}
+
+function renderView() {
+  if (here.view === "overview") renderOverview();
+  if (here.view === "characters") renderCharacters();
+  if (here.view === "backgrounds") renderBackgrounds();
+  if (here.view === "members") renderMembers();
+  // The options change only with the art. Drawing them again resets a choice
+  // that the user just made in the open list.
+  if (here.view === "preview" && previewArt !== art) { previewArt = art; renderPreviewOptions(); }
+}
+
+let previewArt = null;
+
+function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+function renderOverview() {
+  const chars = art.characters, backs = art.backgrounds;
+  const parts = (list, withPrivate) => {
+    const bits = [];
+    const custom = list.filter(x => x.custom).length, hidden = list.filter(x => x.hidden).length;
+    if (custom) bits.push(custom + " custom");
+    if (withPrivate) {
+      const priv = list.filter(x => x.users && x.users.length).length;
+      if (priv) bits.push(priv + " private");
+    }
+    if (hidden) bits.push(hidden + " hidden");
+    return bits.length ? " (" + bits.join(", ") + ")" : "";
+  };
+  const rows = [
+    ["Characters", "characters", plural(chars.length, "character", "characters") + parts(chars, true)],
+    ["Backgrounds", "backgrounds", plural(backs.length, "background", "backgrounds") + parts(backs, false)],
+  ];
+  if (members) {
+    const locked = members.filter(m => m.locked).length;
+    rows.push(["Members", "members", plural(members.length, "member has a character", "members have a character") + (locked ? " (" + locked + " locked)" : "")]);
+  }
+  $("facts").replaceChildren(...rows.flatMap(([label, view, text]) => [
+    el("dt", {}, label), el("dd", {}, el("a", {href: "#/comics/" + view}, text))]));
+  const list = art.problems || [];
+  $("problem-list").replaceChildren(...(list.length
+    ? [el("p", {class: "hint md-typescale-body-small", style: "margin-bottom:8px"}, "Comics do not use these files. An operator must correct or remove them in the art folder."),
+       ...list.map(p => el("div", {class: "problem md-typescale-body-medium"}, p))]
+    : [el("p", {class: "hint md-typescale-body-medium"}, "All the art files work.")]));
+}
+
+// Filters stay when the view is drawn again.
+const filters = {
+  characters: {status: "all"},
+  backgrounds: {status: "all"},
+};
+
+function renderChips(host, view, options) {
+  const f = filters[view];
+  keepFocus(() => host.replaceChildren(...options.map(([value, label, count]) =>
+    el("md-filter-chip", {label: label + " " + count, selected: f.status === value, "data-key": "chip:" + view + ":" + value, onclick: () => {
+      f.status = value;
+      renderView();
+      focusKey("chip:" + view + ":" + value);
+    }}))));
+}
+
+function emptyResult(host, view, input) {
+  host.replaceChildren(el("div", {class: "empty", style: "grid-column:1/-1"},
+    el("p", {class: "hint md-typescale-body-medium"}, "Nothing matches this filter."),
+    el("md-outlined-button", {onclick: () => { filters[view].status = "all"; input.value = ""; renderView(); input.focus(); }}, "Clear the filter")));
+}
+
+// Custom art first: mods change it most. Then the usual order.
+const customFirst = list => [...list].sort((a, b) => (b.custom ? 1 : 0) - (a.custom ? 1 : 0));
+
 function renderCharacters() {
+  const chars = customFirst(art.characters);
+  const tests = {
+    all: () => true, custom: c => c.custom, hidden: c => c.hidden,
+    used: c => art.used[c.name] > 0, private: c => c.users && c.users.length > 0,
+  };
+  renderChips($("char-chips"), "characters", [
+    ["all", "All", chars.length], ["custom", "Custom", chars.filter(tests.custom).length],
+    ["hidden", "Hidden", chars.filter(tests.hidden).length], ["used", "In use", chars.filter(tests.used).length],
+    ["private", "Private", chars.filter(tests.private).length],
+  ]);
   const q = $("char-filter").value.trim().toLowerCase();
-  $("char-grid").replaceChildren(...art.characters.filter(c => c.name.includes(q)).map(c => {
+  const list = chars.filter(c => c.name.includes(q) && tests[filters.characters.status](c));
+  if (!list.length) { emptyResult($("char-grid"), "characters", $("char-filter")); return; }
+  keepFocus(() => $("char-grid").replaceChildren(...list.map(c => {
     const used = art.used[c.name] || 0;
-    const tags = el("div", {class: "row"});
+    const tags = el("span", {class: "tags"});
     if (c.custom) tags.append(el("span", {class: "tag"}, "custom"));
     if (c.users && c.users.length) tags.append(el("span", {class: "tag limit"}, "private"));
-    if (used) tags.append(el("span", {class: "tag use"}, used + (used === 1 ? " member" : " members")));
+    if (used) tags.append(el("span", {class: "tag use"}, plural(used, "member", "members")));
     if (c.hidden) tags.append(el("span", {class: "tag off"}, "hidden"));
-    return el("div", {class: "item" + (c.hidden ? " off" : "")},
-      el("button", {class: "open", "data-key": "open:" + c.name, onclick: () => openCharacter(c.name)},
-        el("img", {class: "thumb", src: "/img/icon/" + enc(c.name), alt: "", loading: "lazy"}),
-        el("span", {class: "name md-typescale-label-large"}, c.name)),
-      tags, hideSwitch("character", c));
-  }));
+    const open = here.view === "characters" && here.item === c.name;
+    const a = el("a", {class: "tile" + (c.hidden ? " off" : ""), href: "#/comics/characters/" + enc(c.name), "data-key": "open:characters:" + c.name},
+      el("img", {class: "thumb", src: "/img/icon/" + enc(c.name), alt: "", loading: "lazy"}),
+      el("span", {class: "name md-typescale-label-large"}, c.name), tags);
+    if (open) a.setAttribute("aria-current", "true");
+    return a;
+  })));
 }
 
 function renderBackgrounds() {
-  $("back-grid").replaceChildren(...art.backgrounds.map(b => {
-    const item = el("div", {class: "item" + (b.hidden ? " off" : "")},
+  const backs = customFirst(art.backgrounds);
+  const tests = {all: () => true, custom: b => b.custom, hidden: b => b.hidden};
+  renderChips($("back-chips"), "backgrounds", [
+    ["all", "All", backs.length], ["custom", "Custom", backs.filter(tests.custom).length],
+    ["hidden", "Hidden", backs.filter(tests.hidden).length],
+  ]);
+  const q = $("back-filter").value.trim().toLowerCase();
+  const list = backs.filter(b => b.name.includes(q) && tests[filters.backgrounds.status](b));
+  if (!list.length) { emptyResult($("back-grid"), "backgrounds", $("back-filter")); return; }
+  keepFocus(() => $("back-grid").replaceChildren(...list.map(b => {
+    const tags = el("span", {class: "tags"});
+    if (b.custom) tags.append(el("span", {class: "tag"}, "custom"));
+    if (b.hidden) tags.append(el("span", {class: "tag off"}, "hidden"));
+    const a = el("a", {class: "tile" + (b.hidden ? " off" : ""), href: "#/comics/backgrounds/" + enc(b.name), "data-key": "open:backgrounds:" + b.name},
       el("img", {class: "thumb back", src: "/img/background/" + enc(b.name), alt: "", loading: "lazy"}),
-      el("span", {class: "name md-typescale-label-large"}, b.name),
-      hideSwitch("background", b));
-    if (b.custom || b.hidden) {
-      const tags = el("span", {class: "row"});
-      if (b.custom) tags.append(el("span", {class: "tag"}, "custom"));
-      if (b.hidden) tags.append(el("span", {class: "tag off"}, "hidden"));
-      item.append(tags);
-    }
-    if (b.custom) {
-      const undoKey = "background/" + b.name;
-      const replace = el("md-text-button", {"data-key": "replace:" + b.name, ariaLabel: "Replace " + b.name, onclick: () => {
-        confirmDanger("Replace " + b.name + "?",
-          "The new file takes the place of this background in all new comics. The old file goes to custom/.trash.", "Select the new file",
-          async () => {
-            const f = await pickFile("image/png,image/jpeg");
-            return f ? act(() => api("POST", "/api/backgrounds", form(f, {name: b.name, replace: "true"})), "Replaced.") : false;
-          });
-      }}, "Replace");
-      if (me.admin) {
-        item.append(replace);
-        item.append(el("md-text-button", {"data-key": "remove:" + b.name, ariaLabel: "Remove " + b.name, onclick: () => confirmDanger("Remove " + b.name + "?",
-          "The file goes to custom/.trash, so you can get it back with SMB.", "Remove",
-          () => act(() => api("DELETE", "/api/backgrounds/" + enc(b.name)), "Removed."))}, "Remove"));
-      } else if (art.undo[undoKey]) {
-        item.append(el("md-text-button", {"data-key": "remove:" + b.name, ariaLabel: "Undo the upload of " + b.name, onclick: () => confirmDanger("Undo the upload of " + b.name + "?",
-          undoLeft(undoKey) + " The file goes to custom/.trash.", "Undo upload",
-          () => act(() => api("DELETE", "/api/backgrounds/" + enc(b.name)), "Upload undone."))}, "Undo upload"));
-      }
-    }
-    return item;
-  }));
-}
-
-function renderProblems() {
-  const list = art.problems || [];
-  $("problem-list").replaceChildren(...(list.length
-    ? list.map(p => el("p", {class: "md-typescale-body-medium"}, p))
-    : [el("p", {class: "hint md-typescale-body-medium"}, "There are no problems.")]));
-}
-
-// setOptions fills a select. It keeps the old value, or takes the first
-// option, unless noDefault: an empty select means that nothing is chosen yet.
-function setOptions(select, options, noDefault) {
-  const old = select.value;
-  select.replaceChildren(...options.map(([value, text]) =>
-    el("md-select-option", {value}, el("div", {slot: "headline"}, text))));
-  select.value = options.some(o => o[0] === old) ? old : (noDefault ? "" : options[0][0]);
-}
-
-function renderArt() {
-  keepFocus(() => { renderCharacters(); renderBackgrounds(); });
-  renderProblems();
-  setOptions($("prev-char"), [["*", "At random"], ...art.characters.map(c => [c.name, c.name])]);
-  setOptions($("prev-back"), [["*", "At random"], ...art.backgrounds.map(b => [b.name, b.name])]);
-}
-
-// The private list that is not saved yet, by character. It must not be lost
-// when the dialog is drawn again after a pose upload.
-const usersDraft = {};
-
-function poseCard(c, pose) {
-  const has = pose === "icon" ? c.iconFile : c.poses.includes(pose);
-  const url = "/api/characters/" + enc(c.name) + "/poses/" + pose;
-  const key = "pose:" + c.name + ":" + pose;
-  const undoKey = "pose/" + c.name + "/" + pose;
-  const card = el("div", {class: "pose"}, el("span", {class: "md-typescale-label-medium"}, pose));
-  if (pose === "icon" || has) card.append(el("img", {src: (pose === "icon" ? "/img/icon/" + enc(c.name) : "/img/pose/" + enc(c.name) + "/" + pose), alt: pose + " pose of " + c.name}));
-  else card.append(el("span", {class: "missing hint md-typescale-body-small"}, "not set"));
-  const upload = async (button, replace) => {
-    const f = await pickFile("image/png");
-    if (f && await act(() => api("POST", url, form(f, {replace: replace ? "true" : "false"})), "Saved.", button)) openCharacter(c.name, key);
-  };
-  const back = () => openCharacter(c.name, key);
-  if (!has && pose !== "neutral") {
-    const b = el("md-text-button", {"data-key": key, ariaLabel: "Add " + pose + " pose", onclick: () => upload(b, false)}, "Add");
-    card.append(b);
-  } else if (me.admin) {
-    const b = el("md-text-button", {"data-key": key, ariaLabel: "Replace " + pose + " pose", onclick: () => {
-      confirmDanger("Replace the " + pose + " pose of " + c.name + "?", "The old file goes to custom/.trash.", "Select the new file", async () => {
-        const f = await pickFile("image/png");
-        if (!f) { back(); return false; }
-        const ok = await act(() => api("POST", url, form(f, {replace: "true"})), "Saved.");
-        if (ok) back();
-        return false; // the character dialog is open again
-      }, back);
-    }}, "Replace");
-    card.append(b);
-  }
-  const canRemove = has && pose !== "neutral" && pose !== "icon" && (me.admin || art.undo[undoKey]);
-  if (canRemove) {
-    const verb = me.admin ? "Remove" : "Undo upload";
-    card.append(el("md-text-button", {"data-key": key + ":remove", ariaLabel: verb + ": " + pose + " pose", onclick: () => {
-      confirmDanger(verb + ": " + pose + " pose of " + c.name + "?",
-        (me.admin ? "" : undoLeft(undoKey) + " ") + "The file goes to custom/.trash.", verb, async () => {
-          const ok = await act(() => api("DELETE", url), me.admin ? "Removed." : "Upload undone.");
-          if (ok) back();
-          return false;
-        }, back);
-    }}, verb));
-  }
-  return card;
-}
-
-function openCharacter(name, focus) {
-  const c = art.characters.find(x => x.name === name);
-  if (!c) { if (dialogOpen()) $("dialog").close(); return; }
-  const body = [];
-  if (!c.custom) {
-    body.push(el("p", {class: "hint md-typescale-body-medium"}, "A built-in Comic Chat character. You can hide it, but not change it."));
-    body.push(el("div", {}, el("img", {src: "/img/portrait/" + enc(c.name), alt: c.name, style: "max-width:100%;border-radius:8px"})));
-  } else {
-    const setFace = (x, y, button) => act(() => api("PATCH", "/api/characters/" + enc(c.name), {face: [x, y]}), "The face point is saved.", button);
-    const dot = el("div", {class: "face-dot", style: "left:" + (100 * c.face[0] / c.width) + "%;top:" + (100 * c.face[1] / c.height) + "%"});
-    const img = el("img", {src: "/img/pose/" + enc(c.name) + "/neutral", alt: "Neutral pose. The face point is at " + c.face[0] + ", " + c.face[1] + "."});
-    const box = el("div", {class: "face-box", onclick: async e => {
-      const r = img.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left) / r.width * img.naturalWidth);
-      const y = Math.floor((e.clientY - r.top) / r.height * img.naturalHeight);
-      if (await setFace(x, y)) openCharacter(c.name);
-    }}, img, dot);
-    // The same point with the keyboard.
-    const fx = el("md-outlined-text-field", {label: "Face X", type: "number", value: String(c.face[0]), min: "0", max: String(c.width - 1)});
-    const fy = el("md-outlined-text-field", {label: "Face Y", type: "number", value: String(c.face[1]), min: "0", max: String(c.height - 1)});
-    const faceSave = el("md-filled-tonal-button", {"data-key": "face:" + c.name, onclick: async () => {
-      if (await setFace(Number(fx.value), Number(fy.value), faceSave)) openCharacter(c.name, "face:" + c.name);
-    }}, "Save the face point");
-    body.push(el("div", {},
-      el("p", {class: "hint md-typescale-body-small", style: "margin:0 0 8px"}, "Click the middle of the face, or type the point. Balloon tails point there."),
-      box, el("div", {class: "fields"}, fx, fy, faceSave)));
-
-    const saved = (c.users || []).join("\n");
-    const users = el("md-outlined-text-field", {label: "Private to these user IDs (empty: public)", type: "textarea", rows: 2,
-      value: usersDraft[c.name] !== undefined ? usersDraft[c.name] : saved, style: "width:100%",
-      oninput: () => { usersDraft[c.name] = users.value; }});
-    const usersSave = el("md-filled-tonal-button", {"data-key": "users:" + c.name, onclick: async () => {
-      const list = users.value.split(/[\s,]+/).filter(Boolean);
-      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {users: list}), "Saved.", usersSave)) {
-        delete usersDraft[c.name];
-        openCharacter(c.name, "users:" + c.name);
-      }
-    }}, "Save the list");
-    body.push(el("div", {class: "stack"}, users, el("div", {}, usersSave)));
-    body.push(el("div", {class: "poses"}, ...me.poses.map(p => poseCard(c, p))));
-  }
-  const actions = [["Close"]];
-  const undoKey = "character/" + c.name;
-  if (c.custom && (me.admin || art.undo[undoKey])) {
-    const used = art.used[c.name] || 0;
-    const verb = me.admin ? "Remove" : "Undo upload";
-    actions.unshift([verb, () => {
-      confirmDanger(verb + ": " + c.name + "?",
-        (me.admin ? "" : undoLeft(undoKey) + " ") +
-        (used ? used + (used === 1 ? " member uses" : " members use") + " this character. They will get an automatic one. " : "") +
-        "The files go to custom/.trash, so you can get them back with SMB.", verb,
-        () => act(() => api("DELETE", "/api/characters/" + enc(c.name)), me.admin ? "Removed." : "Upload undone."),
-        () => openCharacter(c.name));
-      return false;
-    }]);
-  }
-  dialog(c.name, body, actions);
-  focusKey(focus);
+      el("span", {class: "name md-typescale-label-large"}, b.name), tags);
+    if (here.view === "backgrounds" && here.item === b.name) a.setAttribute("aria-current", "true");
+    return a;
+  })));
 }
 
 function memberRow(m) {
-  const who = el("div", {class: "who"}, el("div", {class: "md-typescale-body-large"}, m.name || "(not on the server)"),
-    el("div", {class: "id label md-typescale-body-small"}, m.id));
+  known[m.id] = m;
   const row = el("div", {class: "member"},
-    m.avatar ? el("img", {src: m.avatar, alt: ""}) : el("div", {class: "noavatar"}), who);
+    m.avatar ? el("img", {src: m.avatar, alt: ""}) : el("div", {class: "noavatar"}),
+    el("div", {class: "who"}, el("div", {class: "md-typescale-body-large"}, m.name || "(name not found)"),
+      el("div", {class: "id label md-typescale-body-small"}, m.id)));
   if (m.character) {
-    row.append(el("img", {class: "char", src: "/img/icon/" + enc(m.character), alt: "", loading: "lazy"}),
+    const has = el("div", {class: "has"},
+      el("img", {src: "/img/icon/" + enc(m.character), alt: "", loading: "lazy"}),
       el("span", {class: "md-typescale-label-large"}, m.character));
-    if (m.locked) row.append(el("span", {class: "tag limit"}, "locked"));
+    if (m.locked) has.append(el("span", {class: "tag limit"}, "locked"));
+    row.append(has);
   }
-  row.append(el("md-outlined-button", {"data-key": "member:" + m.id, ariaLabel: (m.character ? "Change " : "Assign ") + (m.name || m.id), onclick: () => editMember(m)}, m.character ? "Change" : "Assign"));
+  row.append(el("md-outlined-button", {"data-key": "open:members:" + m.id, href: "#/comics/members/" + m.id,
+    ariaLabel: (m.character ? "Change " : "Assign ") + (m.name || m.id)}, m.character ? "Change" : "Assign"));
   return row;
-}
-
-function editMember(m) {
-  const sel = el("md-outlined-select", {label: "Character", style: "width:100%"});
-  setOptions(sel, art.characters.map(c => [c.name, c.name + (c.users && c.users.length ? " (private)" : "") + (c.hidden ? " (hidden)" : "")]), true);
-  sel.value = m.character || "";
-  const lock = el("md-switch", {selected: !!m.locked, ariaLabel: "Lock the character. The member cannot change it."});
-  const body = [sel, el("label", {class: "row md-typescale-body-medium"}, "Lock (the member cannot change it)", lock)];
-  const after = () => { loadMembers(); $("member-found").replaceChildren(); };
-  const actions = [["Cancel"], ["Save", async () => {
-    if (!sel.value) { toast("Select a character.", true); return false; }
-    const ok = await act(() => api("PUT", "/api/members/" + m.id, {character: sel.value, locked: lock.selected}), (m.name || m.id) + " has the character " + sel.value + (lock.selected ? ", locked." : "."));
-    if (ok) after();
-    return !!ok;
-  }, "md-filled-button"]];
-  if (m.character) actions.unshift(["Clear", () => {
-    confirmDanger("Clear the character of " + (m.name || m.id) + "?",
-      m.locked ? "This also removes the lock. The member will get an automatic character." : "The member will get an automatic character.", "Clear",
-      async () => {
-        const ok = await act(() => api("DELETE", "/api/members/" + m.id), "Cleared.");
-        if (ok) after();
-        return ok;
-      }, () => editMember(m));
-    return false;
-  }]);
-  dialog(m.name || m.id, body, actions);
 }
 
 async function loadMembers() {
   const list = await api("GET", "/api/members").catch(e => { toast(e.message, true); return null; });
   if (!list) return;
-  $("member-list").replaceChildren(...(list.length ? list.map(m => memberRow(m))
-    : [el("p", {class: "hint md-typescale-body-medium"}, "No member has chosen a character.")]));
+  members = list;
+  for (const m of list) known[m.id] = m;
+  renderView();
+  if (here.view === "members" && here.item) renderPanel();
+}
+
+function renderMembers() {
+  if (!members) {
+    $("member-list").replaceChildren(el("p", {class: "hint md-typescale-body-medium"}, "Loading members…"));
+    return;
+  }
+  const q = $("member-filter").value.trim().toLowerCase();
+  const list = members.filter(m => [m.name, m.id, m.character].some(v => (v || "").toLowerCase().includes(q)));
+  if (!list.length && members.length) {
+    $("member-list").replaceChildren(el("div", {class: "empty"},
+      el("p", {class: "hint md-typescale-body-medium"}, "Nothing matches this filter."),
+      el("md-outlined-button", {onclick: () => { $("member-filter").value = ""; renderMembers(); $("member-filter").focus(); }}, "Clear the filter")));
+    return;
+  }
+  keepFocus(() => $("member-list").replaceChildren(...(list.length ? list.map(memberRow)
+    : [el("p", {class: "hint md-typescale-body-medium"}, "No member has a character yet. Search above to assign one.")])));
 }
 
 async function findMember() {
@@ -668,8 +754,31 @@ async function findMember() {
   const found = await api("GET", "/api/members/search?q=" + enc(q)).catch(e => { toast(e.message, true); return null; });
   btn.disabled = false;
   if (!found) return;
-  $("member-found").replaceChildren(...(found.length ? found.map(m => memberRow(m))
-    : [el("p", {class: "hint md-typescale-body-medium"}, "I found nobody.")]));
+  $("member-found").replaceChildren(...(found.length ? found.map(memberRow)
+    : [el("p", {class: "hint md-typescale-body-medium"}, "I found no member with that name or ID. Check the text, or paste the user ID.")]));
+}
+
+// setOptions fills a select. It keeps the old value, or takes the first
+// option, unless noDefault: an empty select means that nothing is chosen yet.
+function setOptions(select, options, noDefault, chosen) {
+  const old = chosen !== undefined ? chosen : select.value;
+  const value = options.some(o => o[0] === old) ? old : (noDefault ? "" : options[0][0]);
+  select.replaceChildren(...options.map(([v, text]) =>
+    el("md-select-option", {value: v}, el("div", {slot: "headline"}, text))));
+  select.value = value;
+  // The select knows new options only after they are drawn. Before that, it has
+  // the value but shows no text.
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (value) select.select(value); }));
+}
+
+function renderPreviewOptions(character) {
+  setOptions($("prev-char"), [["*", "At random"], ...art.characters.map(c => [c.name, c.name])], false, character);
+  setOptions($("prev-back"), [["*", "At random"], ...art.backgrounds.map(b => [b.name, b.name])]);
+}
+
+function presetPreview(name) {
+  renderPreviewOptions(name);
+  drawPreview();
 }
 
 function drawPreview() {
@@ -684,36 +793,340 @@ function drawPreview() {
   img.src = "/api/preview?" + q;
 }
 
+// ---- The details panel. ----
+
+// The private list that is not saved yet, by character. It must not be lost
+// when the panel is drawn again after a pose upload.
+const usersDraft = {};
+
+function renderPanel() {
+  const {view, item} = here;
+  const show = (title, body) => {
+    $("panel-title").textContent = title;
+    $("panel-body").replaceChildren(...body);
+    $("panel").hidden = false;
+  };
+  if (!item || view === "overview" || view === "preview") { $("panel").hidden = true; return; }
+  if (item === "+" && view === "characters") { show("Add a character", addCharacterBody()); return; }
+  if (item === "+" && view === "backgrounds") { show("Add a background", addBackgroundBody()); return; }
+  if (view === "characters") {
+    const c = art.characters.find(x => x.name === item);
+    if (c) { show(c.name, characterBody(c)); return; }
+  }
+  if (view === "backgrounds") {
+    const b = art.backgrounds.find(x => x.name === item);
+    if (b) { show(b.name, backgroundBody(b)); return; }
+  }
+  if (view === "members" && /^[0-9]{1,20}$/.test(item)) {
+    if (known[item]) { show(known[item].name || item, memberBody(known[item])); return; }
+    // A link to a member who is not loaded yet.
+    show(item, [el("p", {class: "hint md-typescale-body-medium"}, "Finding this member…")]);
+    api("GET", "/api/members/search?q=" + enc(item)).then(found => {
+      known[item] = found[0] || {id: item};
+      if (here.item === item) renderPanel();
+    }).catch(e => toast(e.message, true));
+    return;
+  }
+  // The item is gone, for example after a removal.
+  $("panel").hidden = true;
+  go(view);
+}
+
+function visibleSwitch(kind, item) {
+  const key = "hide:" + kind + ":" + item.name;
+  const s = el("md-switch", {selected: !item.hidden, ariaLabel: "Visible: " + item.name, "data-key": key, onchange: async () => {
+    const hidden = !s.selected;
+    const ok = await act(() => api("POST", "/api/hidden", {kind, name: item.name, hidden}),
+      item.name + (hidden ? " is hidden." : " is visible."), s);
+    if (!ok) s.selected = !s.selected;
+    focusKey(key);
+  }});
+  return el("label", {class: "row md-typescale-body-medium"}, "Visible", s);
+}
+
+// nameField is the name of new art. Enter opens the file picker.
+function nameField(label, onEnter) {
+  return el("md-outlined-text-field", {label, maxLength: 32, class: "wide", supportingText: "1 to 32 of a–z, 0–9, - and _. It starts with a letter or number.",
+    onkeydown: e => { if (e.key === "Enter") onEnter(); }});
+}
+
+const MOD_NOTE = "You can undo your own upload for 15 minutes. After that, only an Administrator can replace or remove it.";
+
+function addCharacterBody() {
+  const add = async () => {
+    const value = name.value.trim().toLowerCase();
+    if (!nameOK(value)) return;
+    const f = await pickFile("image/png");
+    if (f && await act(() => api("POST", "/api/characters", form(f, {name: value})), "Added.", pick)) { keepMessage = true; go("characters", value); }
+  };
+  const name = nameField("Name", add);
+  const pick = el("md-filled-button", {onclick: add}, "Select a PNG file");
+  const body = [name,
+    el("p", {class: "hint md-typescale-body-small"}, "The file is the normal picture of the character. It must be a PNG with a transparent background, with the character facing right, 40–1000 px wide and 100–1000 px high (about 400 px high is best), at most 8 MB."),
+    el("div", {}, pick)];
+  if (!me.admin) body.push(el("p", {class: "hint md-typescale-body-small"}, MOD_NOTE));
+  return body;
+}
+
+function addBackgroundBody() {
+  const add = async () => {
+    const value = name.value.trim().toLowerCase();
+    if (!nameOK(value)) return;
+    const f = await pickFile("image/png,image/jpeg");
+    if (f && await act(() => api("POST", "/api/backgrounds", form(f, {name: value})), "Added.", pick)) { keepMessage = true; go("backgrounds", value); }
+  };
+  const name = nameField("Name", add);
+  const pick = el("md-filled-button", {onclick: add}, "Select a PNG or JPEG file");
+  const body = [name,
+    el("p", {class: "hint md-typescale-body-small"}, "The file must be 160–2000 px each side, at most 8 MB. Square, 320–640 px, is best."),
+    el("div", {}, pick)];
+  if (!me.admin) body.push(el("p", {class: "hint md-typescale-body-small"}, MOD_NOTE));
+  return body;
+}
+
+function backgroundBody(b) {
+  const body = [
+    el("img", {class: "picture", src: "/img/background/" + enc(b.name), alt: "Background " + b.name}),
+    el("div", {class: "group"}, visibleSwitch("background", b),
+      el("p", {class: "hint md-typescale-body-small"}, "A hidden background is not picked at random and is not in the comic editor.")),
+  ];
+  if (!b.custom) {
+    body.push(el("p", {class: "hint md-typescale-body-medium"}, "A built-in background. You can hide it, but you cannot change it."));
+    return body;
+  }
+  const url = "/api/backgrounds/" + enc(b.name);
+  const undoKey = "background/" + b.name;
+  const actions = el("div", {class: "panel-actions"});
+  if (me.admin) {
+    actions.append(el("md-outlined-button", {"data-key": "replace:" + b.name, ariaLabel: "Replace " + b.name, onclick: () => {
+      confirmDanger("Replace " + b.name + "?", "New comics will use the new file. An operator can restore the old file from the trash folder.", "Select the new file", async () => {
+        const f = await pickFile("image/png,image/jpeg");
+        return f ? act(() => api("POST", "/api/backgrounds", form(f, {name: b.name, replace: "true"})), "Replaced.") : false;
+      });
+    }}, "Replace"));
+    actions.append(el("md-outlined-button", {"data-key": "remove:" + b.name, ariaLabel: "Remove " + b.name, onclick: () => {
+      confirmDanger("Remove " + b.name + "?", "New comics cannot use this background. " + TRASH, "Remove",
+        () => act(() => api("DELETE", url), "Removed."));
+    }}, "Remove"));
+  } else if (art.undo[undoKey]) {
+    actions.append(el("md-outlined-button", {"data-key": "remove:" + b.name, ariaLabel: "Undo the upload of " + b.name, onclick: () => {
+      confirmDanger("Undo the upload of " + b.name + "?", undoLeft(undoKey) + " New comics cannot use this background. " + TRASH, "Undo upload",
+        () => act(() => api("DELETE", url), "Upload undone."));
+    }}, "Undo upload"));
+  } else {
+    actions.append(el("p", {class: "hint md-typescale-body-small"}, "Only an Administrator can replace or remove this background."));
+  }
+  body.push(actions);
+  return body;
+}
+
+function poseCard(c, pose) {
+  const has = pose === "icon" ? c.iconFile : c.poses.includes(pose);
+  const url = "/api/characters/" + enc(c.name) + "/poses/" + pose;
+  const key = "pose:" + c.name + ":" + pose;
+  const undoKey = "pose/" + c.name + "/" + pose;
+  const card = el("div", {class: "pose"}, el("span", {class: "md-typescale-label-medium"}, pose));
+  if (pose === "icon" || has) card.append(el("img", {src: (pose === "icon" ? "/img/icon/" + enc(c.name) : "/img/pose/" + enc(c.name) + "/" + pose), alt: pose + " pose of " + c.name}));
+  else card.append(el("span", {class: "missing hint md-typescale-body-small"}, "not set"));
+  if (!has && pose !== "neutral") {
+    const b = el("md-text-button", {"data-key": key, ariaLabel: "Add " + pose + " pose", onclick: async () => {
+      const f = await pickFile("image/png");
+      if (f) { await act(() => api("POST", url, form(f, {replace: "false"})), "Saved.", b); focusKey(key); }
+    }}, "Add");
+    card.append(b);
+  } else if (me.admin) {
+    card.append(el("md-text-button", {"data-key": key, ariaLabel: "Replace " + pose + " pose", onclick: () => {
+      confirmDanger("Replace the " + pose + " pose of " + c.name + "?", "New comics will use the new file. An operator can restore the old file from the trash folder.", "Select the new file", async () => {
+        const f = await pickFile("image/png");
+        return f ? act(() => api("POST", url, form(f, {replace: "true"})), "Saved.") : false;
+      });
+    }}, "Replace"));
+  }
+  if (has && pose !== "neutral" && pose !== "icon" && (me.admin || art.undo[undoKey])) {
+    const verb = me.admin ? "Remove" : "Undo upload";
+    card.append(el("md-text-button", {"data-key": key + ":remove", ariaLabel: verb + ": " + pose + " pose", onclick: () => {
+      confirmDanger(verb + ": " + pose + " pose of " + c.name + "?",
+        (me.admin ? "" : undoLeft(undoKey) + " ") + TRASH, verb,
+        () => act(() => api("DELETE", url), me.admin ? "Removed." : "Upload undone."));
+    }}, verb));
+  }
+  return card;
+}
+
+function characterBody(c) {
+  const used = art.used[c.name] || 0;
+  const status = el("div", {class: "group"}, visibleSwitch("character", c),
+    el("p", {class: "hint md-typescale-body-small"}, "A hidden character cannot be chosen and is not given at random. Members who already have it keep it."),
+    el("p", {class: "md-typescale-body-medium"}, plural(used, "member has this character.", "members have this character.")),
+    el("div", {}, el("md-text-button", {href: "#/comics/preview/" + enc(c.name), style: "margin-left:-12px"}, "Draw a test comic")));
+  if (!c.custom) {
+    return [
+      el("img", {class: "picture", src: "/img/portrait/" + enc(c.name), alt: c.name}),
+      status,
+      el("p", {class: "hint md-typescale-body-medium"}, "A built-in Comic Chat character. You can hide it, but you cannot change it."),
+    ];
+  }
+  const setFace = (x, y, button) => act(() => api("PATCH", "/api/characters/" + enc(c.name), {face: [x, y]}), "The face point is saved.", button);
+  const dot = el("div", {class: "face-dot", style: "left:" + (100 * c.face[0] / c.width) + "%;top:" + (100 * c.face[1] / c.height) + "%"});
+  const img = el("img", {src: "/img/pose/" + enc(c.name) + "/neutral", alt: "Neutral pose. The face point is at " + c.face[0] + ", " + c.face[1] + "."});
+  const box = el("div", {class: "face-box", onclick: e => {
+    const r = img.getBoundingClientRect();
+    setFace(Math.floor((e.clientX - r.left) / r.width * img.naturalWidth), Math.floor((e.clientY - r.top) / r.height * img.naturalHeight));
+  }}, img, dot);
+  // The same point with the keyboard.
+  const fx = el("md-outlined-text-field", {label: "Face X", type: "number", value: String(c.face[0]), min: "0", max: String(c.width - 1)});
+  const fy = el("md-outlined-text-field", {label: "Face Y", type: "number", value: String(c.face[1]), min: "0", max: String(c.height - 1)});
+  const faceSave = el("md-filled-tonal-button", {"data-key": "face:" + c.name, onclick: async () => {
+    if (!/^\d+$/.test(fx.value) || !/^\d+$/.test(fy.value)) { toast("Type whole numbers for Face X and Face Y.", true); return; }
+    await setFace(Number(fx.value), Number(fy.value), faceSave);
+    focusKey("face:" + c.name);
+  }}, "Save");
+
+  const saved = (c.users || []).join("\n");
+  const users = el("md-outlined-text-field", {label: "Only these users can use it", type: "textarea", rows: 2, class: "wide",
+    value: usersDraft[c.name] !== undefined ? usersDraft[c.name] : saved,
+    oninput: () => { usersDraft[c.name] = users.value; }});
+  const usersSave = el("md-filled-tonal-button", {"data-key": "users:" + c.name, onclick: async () => {
+    const list = users.value.split(/[\s,]+/).filter(Boolean);
+    const save = async () => {
+      delete usersDraft[c.name];
+      const ok = await act(() => api("PATCH", "/api/characters/" + enc(c.name), {users: list}), "Saved.", usersSave);
+      if (!ok) usersDraft[c.name] = users.value;
+      focusKey("users:" + c.name);
+      return ok;
+    };
+    if (!list.length && saved) {
+      confirmDanger("Make " + c.name + " public?", "With no IDs, all members can choose this character, and comics can give it to anyone.", "Make it public", save);
+      return;
+    }
+    await save();
+  }}, "Save the list");
+
+  const body = [
+    el("div", {class: "group"}, el("h3", {class: "md-typescale-label-large"}, "Face point"),
+      el("p", {class: "hint md-typescale-body-small"}, "Click the middle of the face, or type the point. Balloon tails point there."),
+      box, el("div", {class: "fields"}, fx, fy, faceSave)),
+    status,
+    el("div", {class: "group"}, el("h3", {class: "md-typescale-label-large"}, "Private"), users,
+      el("p", {class: "hint md-typescale-body-small"}, "Paste Discord user IDs, one on each line. With no IDs, all members can use this character."),
+      el("div", {}, usersSave)),
+    el("div", {class: "group"}, el("h3", {class: "md-typescale-label-large"}, "Poses"),
+      el("p", {class: "hint md-typescale-body-small"}, "The bot selects a pose from the words in a message. Only the neutral pose is necessary."),
+      el("div", {class: "poses"}, ...me.poses.map(p => poseCard(c, p)))),
+  ];
+  const undoKey = "character/" + c.name;
+  const actions = el("div", {class: "panel-actions"});
+  if (me.admin || art.undo[undoKey]) {
+    const verb = me.admin ? "Remove" : "Undo upload";
+    actions.append(el("md-outlined-button", {"data-key": "remove:" + c.name, onclick: () => {
+      confirmDanger(verb + ": " + c.name + "?",
+        (me.admin ? "" : undoLeft(undoKey) + " ") +
+        (used ? (used === 1 ? "1 member uses this character. Comics will give that member another character. " : used + " members use this character. Comics will give them other characters. ") : "") + TRASH,
+        verb, () => act(() => api("DELETE", "/api/characters/" + enc(c.name)), me.admin ? "Removed." : "Upload undone."));
+    }}, verb + " this character"));
+  } else {
+    actions.append(el("p", {class: "hint md-typescale-body-small"}, "Only an Administrator can replace or remove this character's files."));
+  }
+  body.push(actions);
+  return body;
+}
+
+function memberBody(m) {
+  const sel = el("md-outlined-select", {label: "Character", class: "wide"});
+  setOptions(sel, art.characters.map(c => [c.name, c.name + (c.users && c.users.length ? " (private)" : "") + (c.hidden ? " (hidden)" : "")]), true, m.character || "");
+  const lock = el("md-switch", {selected: !!m.locked, ariaLabel: "Lock the character. The member cannot change it."});
+  const refresh = async () => {
+    await loadMembers();
+    $("member-found").replaceChildren();
+    renderPanel();
+  };
+  const save = el("md-filled-button", {onclick: async () => {
+    if (!sel.value) { toast("Select a character.", true); return; }
+    const character = sel.value, locked = lock.selected;
+    const ok = await act(() => api("PUT", "/api/members/" + m.id, {character, locked}), (m.name || m.id) + " has the character " + character + (locked ? ", locked. They cannot change it with /character." : "."), save);
+    if (ok) { known[m.id] = {...m, character, locked}; await refresh(); }
+  }}, "Save");
+  const actions = el("div", {class: "panel-actions"}, save);
+  if (m.character) actions.append(el("md-outlined-button", {onclick: () => {
+    confirmDanger("Clear the character of " + (m.name || m.id) + "?",
+      m.locked ? "This also removes the lock. Comics will give the member a character until they choose one." : "Comics will give the member a character until they choose one.", "Clear",
+      async () => {
+        const ok = await act(() => api("DELETE", "/api/members/" + m.id), "Cleared.");
+        if (ok) { known[m.id] = {...m, character: "", locked: false}; await refresh(); }
+        return ok;
+      });
+  }}, "Clear"));
+  return [
+    el("div", {class: "member"}, m.avatar ? el("img", {src: m.avatar, alt: ""}) : el("div", {class: "noavatar"}),
+      el("div", {class: "who id label md-typescale-body-small"}, m.id)),
+    sel,
+    el("label", {class: "row md-typescale-body-medium"}, "Lock (the member cannot change it)", lock),
+    actions,
+  ];
+}
+
+// ---- The events. ----
+
+// nameOK checks a new name before the file pick, with the rule of the server.
+function nameOK(name) {
+  if (!name) { toast("Type a name, then select the file.", true); return false; }
+  if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name)) {
+    toast("The name must have only a–z, 0–9, - and _, and start with a letter or number.", true);
+    return false;
+  }
+  return true;
+}
+
+// On a narrow screen, the menu and the panel cover the page. What is behind
+// them must not get the focus.
+const narrow = window.matchMedia("(max-width: 899px)");
+function syncCovered() {
+  const menu = $("menu").classList.contains("open");
+  $("work").inert = menu;
+  $("area").inert = narrow.matches && !$("panel").hidden;
+  $("topbar").inert = narrow.matches && !$("panel").hidden;
+}
+narrow.addEventListener("change", syncCovered);
+
+function openMenu() {
+  $("menu").classList.add("open"); $("scrim").classList.add("open");
+  syncCovered();
+  requestAnimationFrame(() => $("nav-comics").focus());
+}
+function closeMenu() {
+  const was = $("menu").classList.contains("open");
+  $("menu").classList.remove("open"); $("scrim").classList.remove("open");
+  syncCovered();
+  return was;
+}
+
+window.addEventListener("hashchange", route);
 $("tabs").addEventListener("change", () => {
-  const active = $("tabs").activeTab.getAttribute("aria-controls");
-  for (const t of $("tabs").querySelectorAll("md-primary-tab")) {
-    const id = t.getAttribute("aria-controls");
-    $(id).hidden = id !== active;
-  }
-  if (active === "members") loadMembers();
+  const view = $("tabs").activeTab.getAttribute("aria-controls");
+  if (view !== here.view) go(view);
 });
+$("menu-open").addEventListener("click", openMenu);
+$("scrim").addEventListener("click", closeMenu);
+$("panel-close").addEventListener("click", closePanel);
+// This runs before the select handles the key: Esc closes an open list first,
+// and not the panel behind it.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || dialogOpen()) return;
+  if ([...document.querySelectorAll("md-outlined-select")].some(x => x.open)) return;
+  if (closeMenu()) { $("menu-open").focus(); return; }
+  if (!$("panel").hidden) closePanel();
+}, true);
 $("char-filter").addEventListener("input", renderCharacters);
-$("char-add").addEventListener("click", async () => {
-  const name = $("char-name").value.trim().toLowerCase();
-  if (!name) { toast("Type a name first.", true); return; }
-  const f = await pickFile("image/png");
-  if (f && await act(() => api("POST", "/api/characters", form(f, {name})), "Added.", $("char-add"))) {
-    $("char-name").value = ""; openCharacter(name);
-  }
-});
-$("back-add").addEventListener("click", async () => {
-  const name = $("back-name").value.trim().toLowerCase();
-  if (!name) { toast("Type a name first.", true); return; }
-  const f = await pickFile("image/png,image/jpeg");
-  if (f && await act(() => api("POST", "/api/backgrounds", form(f, {name})), "Added.", $("back-add"))) $("back-name").value = "";
-});
+$("back-filter").addEventListener("input", renderBackgrounds);
+$("member-filter").addEventListener("input", renderMembers);
+$("find-member").addEventListener("click", () => { focusSearch = true; });
 $("member-find").addEventListener("click", findMember);
 $("member-q").addEventListener("keydown", e => { if (e.key === "Enter") findMember(); });
 $("prev-draw").addEventListener("click", drawPreview);
-// A success message in a closing dialog must not be lost.
+// A message in a closing confirmation must not be lost.
 $("dialog").addEventListener("closed", () => {
-  const m = $("dialog-msg"), text = m.textContent, kind = m.className;
-  m.textContent = ""; m.className = "";
+  const m = $("dialog-msg"), text = m.textContent, kind = m.className.replace("msg", "").trim();
+  m.textContent = ""; m.className = "msg";
   if (text) toast(text, kind);
 });
 $("logout").addEventListener("click", async () => {
@@ -722,7 +1135,8 @@ $("logout").addEventListener("click", async () => {
 });
 
 function bootError(text, retry) {
-  $("app").hidden = true; $("login").hidden = true;
+  $("loading").hidden = true;
+  $("shell").hidden = true; $("login").hidden = true;
   $("boot-error").hidden = false;
   $("boot-error-text").textContent = text;
   $("boot-retry").hidden = !retry;
@@ -731,10 +1145,11 @@ function bootError(text, retry) {
 
 async function start() {
   $("boot-error").hidden = true;
+  $("loading").hidden = false;
   // A property set before its component loads is lost. The components come
   // from a CDN, so they can fail to load.
   const parts = Promise.all(["md-switch", "md-outlined-select", "md-dialog", "md-tabs", "md-primary-tab",
-    "md-outlined-text-field", "md-linear-progress"].map(n => customElements.whenDefined(n)));
+    "md-outlined-text-field", "md-linear-progress", "md-filter-chip", "md-chip-set", "md-icon-button"].map(n => customElements.whenDefined(n)));
   const late = new Promise(r => setTimeout(() => r("late"), 10000));
   if (await Promise.race([parts, late]) === "late") {
     bootError("The page components did not load from the internet. Check the connection, then reload the page.", () => location.reload());
@@ -748,16 +1163,16 @@ async function start() {
     return;
   }
   $("whoami").textContent = me.name + (me.admin ? " (admin)" : " (mod)");
-  $("logout").hidden = false;
-  if (!me.comics) { bootError("Comics are off on this bot, so this page has nothing to show. An operator must install the comic art."); return; }
+  if (!me.comics) { bootError("Comics are off on this bot, so this page has nothing to show. An operator must turn comics on."); return; }
   try {
     art = await api("GET", "/api/art");
   } catch (e) {
     if ($("login").hidden) bootError(e.message, start);
     return;
   }
-  $("login").hidden = true; $("app").hidden = false;
-  renderArt();
+  $("loading").hidden = true; $("login").hidden = true; $("shell").hidden = false;
+  renderCounts();
+  route();
 }
 start();
 </script>

@@ -825,13 +825,15 @@ How the art is drawn, so that it looks right:
 
 A page on your local network to manage the comic art and the members' characters. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
 
-| Tab | What it does |
+The page has a side menu of areas, with one area now: **Comics**. Each view and each open item has its own link, so a reload keeps your place. Details and add forms open in a side panel next to the list.
+
+| View | What it does |
 |---|---|
-| **Characters** | Add a custom character, its poses, and its icon. Click the picture to set the face point. Make a character private to some user IDs. Hide any character. |
-| **Backgrounds** | Add a custom background. Hide any background. |
+| **Overview** | Links to the usual tasks, short counts, and the art files that the bot cannot use, and why. The menu shows the number of problems. |
+| **Characters** | Add a custom character, its poses, and its icon. Filter by name or status. In the panel: set the face point, make a character private to some user IDs, hide any character, and draw a test comic. |
+| **Backgrounds** | Add a custom background. Filter by name or status. In the panel: hide any background. |
 | **Members** | Find a member by name or user ID. Assign, change, or clear a character. Lock a character so that the member cannot change it with `/character`. |
 | **Preview** | Draw a test comic with sample text. |
-| **Problems** | The art files that the bot cannot use, and why. |
 
 **Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
 
@@ -839,7 +841,7 @@ A page on your local network to manage the comic art and the members' characters
 
 **Hidden art:** a hidden character cannot be chosen and is not given at random. A member who already has it keeps it. At least one public character must stay visible. A hidden background is not picked at random and is not in the comic editor.
 
-**Assigning a private character** adds the member to its `users` list. Clearing the assignment does not remove them from the list; change the list on the Characters tab.
+**Assigning a private character** adds the member to its `users` list. Clearing the assignment does not remove them from the list; change the list in the character's panel.
 
 ### Set up HTTPS and the login
 

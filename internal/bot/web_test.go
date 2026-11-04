@@ -190,6 +190,9 @@ func TestWebLogin(t *testing.T) {
 	rec = httptest.NewRecorder()
 	w.h.ServeHTTP(rec, r)
 	wantStatus(t, rec, http.StatusBadRequest, "wrong state")
+	if !strings.Contains(rec.Body.String(), `href="/"`) || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("the failed login page has no way back: %s", rec.Body)
+	}
 	if n := len(w.api.find("POST", "/oauth2/token")); n != 0 {
 		t.Errorf("%d token calls with a wrong state", n)
 	}
