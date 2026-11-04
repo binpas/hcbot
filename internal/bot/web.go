@@ -42,6 +42,7 @@ const (
 	webStateName    = "__Host-hcbot_state"
 	webThumbWidth   = 320
 	webMaxSearch    = 10
+	webUndoLife     = 15 * time.Minute // a mod can undo their own upload for this time
 	webNameFetchers = 5
 )
 
@@ -65,10 +66,17 @@ type webName struct {
 	at           time.Time
 }
 
+// webUpload is a new art file that a member can still undo.
+type webUpload struct {
+	userID string
+	at     time.Time
+}
+
 type webState struct {
 	mu       sync.Mutex
 	sessions map[string]*webSession
 	names    map[string]webName
+	uploads  map[string]webUpload // who uploaded new art, for the undo. In memory only.
 
 	artMu sync.Mutex // one change to the art at a time
 
@@ -81,6 +89,7 @@ func newWebState() webState {
 	return webState{
 		sessions:     map[string]*webSession{},
 		names:        map[string]webName{},
+		uploads:      map[string]webUpload{},
 		client:       &http.Client{Timeout: 10 * time.Second},
 		apiURL:       "https://discord.com/api/v10",
 		authorizeURL: "https://discord.com/oauth2/authorize",
@@ -152,13 +161,13 @@ func (b *Bot) webHandler() http.Handler {
 	route("GET /api/preview", webMod, b.webPreview)
 
 	route("POST /api/backgrounds", webMod, b.webAddBackground)
-	route("DELETE /api/backgrounds/{name}", webAdmin, b.webRemoveBackground)
+	route("DELETE /api/backgrounds/{name}", webMod, b.webRemoveBackground)
 	route("POST /api/hidden", webMod, b.webSetHidden)
 
 	route("POST /api/characters", webMod, b.webAddCharacter)
-	route("DELETE /api/characters/{name}", webAdmin, b.webRemoveCharacter)
+	route("DELETE /api/characters/{name}", webMod, b.webRemoveCharacter)
 	route("POST /api/characters/{name}/poses/{pose}", webMod, b.webAddPose)
-	route("DELETE /api/characters/{name}/poses/{pose}", webAdmin, b.webRemovePose)
+	route("DELETE /api/characters/{name}/poses/{pose}", webMod, b.webRemovePose)
 	route("PATCH /api/characters/{name}", webMod, b.webCharacterSettings)
 
 	route("GET /api/members", webMod, b.webMembers)
@@ -457,7 +466,65 @@ func (b *Bot) webPack(w http.ResponseWriter) *comic.Pack {
 	return b.comics.pack.Load()
 }
 
-func (b *Bot) webArtBody(pack *comic.Pack) (map[string]any, error) {
+// The keys of the upload records.
+func webBackgroundKey(name string) string { return "background/" + name }
+func webCharacterKey(name string) string  { return "character/" + name }
+func webPoseKey(name, pose string) string { return "pose/" + name + "/" + pose }
+
+// webNoteUpload records who uploaded a new file. A replaced file has no
+// undo: that needs an Administrator, and the undo must not remove their work.
+func (b *Bot) webNoteUpload(s *webSession, key string, replaced bool) {
+	b.web.mu.Lock()
+	defer b.web.mu.Unlock()
+	for k, u := range b.web.uploads {
+		if time.Since(u.at) >= webUndoLife {
+			delete(b.web.uploads, k)
+		}
+	}
+	if replaced {
+		delete(b.web.uploads, key)
+		return
+	}
+	b.web.uploads[key] = webUpload{userID: s.userID, at: time.Now()}
+}
+
+func (b *Bot) webForgetUpload(key string) {
+	b.web.mu.Lock()
+	delete(b.web.uploads, key)
+	b.web.mu.Unlock()
+}
+
+// webCanRemove allows a removal: Administrators can remove all custom art,
+// and a mod can undo their own new upload for a short time.
+func (b *Bot) webCanRemove(w http.ResponseWriter, s *webSession, key string) bool {
+	if s.admin {
+		return true
+	}
+	b.web.mu.Lock()
+	u, ok := b.web.uploads[key]
+	b.web.mu.Unlock()
+	if ok && u.userID == s.userID && time.Since(u.at) < webUndoLife {
+		return true
+	}
+	webFail(w, http.StatusForbidden, fmt.Sprintf("Only an Administrator can remove this. You can undo your own upload for %d minutes.", int(webUndoLife.Minutes())))
+	return false
+}
+
+// webUndoable lists the uploads that a member can undo now, with the
+// seconds that are left.
+func (b *Bot) webUndoable(s *webSession) map[string]int {
+	out := map[string]int{}
+	b.web.mu.Lock()
+	defer b.web.mu.Unlock()
+	for k, u := range b.web.uploads {
+		if left := webUndoLife - time.Since(u.at); u.userID == s.userID && left > 0 {
+			out[k] = int(left.Seconds())
+		}
+	}
+	return out
+}
+
+func (b *Bot) webArtBody(pack *comic.Pack, s *webSession) (map[string]any, error) {
 	members, err := b.db.ComicMembers(b.env.GuildID)
 	if err != nil {
 		return nil, err
@@ -471,15 +538,16 @@ func (b *Bot) webArtBody(pack *comic.Pack) (map[string]any, error) {
 		"backgrounds": pack.BackgroundList(),
 		"problems":    pack.Problems(),
 		"used":        used,
+		"undo":        b.webUndoable(s),
 	}, nil
 }
 
-func (b *Bot) webArt(w http.ResponseWriter, _ *http.Request, _ *webSession) {
+func (b *Bot) webArt(w http.ResponseWriter, _ *http.Request, s *webSession) {
 	pack := b.webPack(w)
 	if pack == nil {
 		return
 	}
-	body, err := b.webArtBody(pack)
+	body, err := b.webArtBody(pack, s)
 	if err != nil {
 		log.Printf("web: art: %v", err)
 		webFail(w, http.StatusInternalServerError, "I could not read the database.")
@@ -562,7 +630,7 @@ func (b *Bot) webChange(w http.ResponseWriter, s *webSession, what string, chang
 	b.comics.pack.Store(pack)
 	logComicProblems(pack)
 	b.webAudit(s, what)
-	body, err := b.webArtBody(pack)
+	body, err := b.webArtBody(pack, s)
 	if err != nil {
 		log.Printf("web: art: %v", err)
 		webFail(w, http.StatusInternalServerError, "I could not read the database.")
@@ -577,7 +645,8 @@ func (b *Bot) webChange(w http.ResponseWriter, s *webSession, what string, chang
 func (b *Bot) webChangeFailed(w http.ResponseWriter, what string, err error) {
 	switch {
 	case errors.Is(err, comic.ErrInvalid):
-		webFail(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), comic.ErrInvalid.Error()+": "))
+		text := strings.TrimPrefix(err.Error(), comic.ErrInvalid.Error()+": ")
+		webFail(w, http.StatusBadRequest, strings.ToUpper(text[:1])+text[1:]+".")
 	case errors.Is(err, comic.ErrExists):
 		webFail(w, http.StatusConflict, "That name is already in use.")
 	case errors.Is(err, comic.ErrNotFound):
@@ -645,14 +714,25 @@ func (b *Bot) webAddBackground(w http.ResponseWriter, r *http.Request, s *webSes
 				return "", comic.ErrExists
 			}
 		}
-		return "", comic.SaveBackground(b.env.ComicArtDir, name, data, replace)
+		if err := comic.SaveBackground(b.env.ComicArtDir, name, data, replace); err != nil {
+			return "", err
+		}
+		b.webNoteUpload(s, webBackgroundKey(name), replace)
+		return "", nil
 	})
 }
 
 func (b *Bot) webRemoveBackground(w http.ResponseWriter, r *http.Request, s *webSession) {
 	name := r.PathValue("name")
+	if !b.webCanRemove(w, s, webBackgroundKey(name)) {
+		return
+	}
 	b.webChange(w, s, "removed background `"+cutText(name, 40)+"`", func(*comic.Pack) (string, error) {
-		return "", comic.RemoveBackground(b.env.ComicArtDir, name)
+		if err := comic.RemoveBackground(b.env.ComicArtDir, name); err != nil {
+			return "", err
+		}
+		b.webForgetUpload(webBackgroundKey(name))
+		return "", nil
 	})
 }
 
@@ -714,14 +794,25 @@ func (b *Bot) webAddCharacter(w http.ResponseWriter, r *http.Request, s *webSess
 				return "", comic.ErrExists
 			}
 		}
-		return comic.SaveCharacterFile(b.env.ComicArtDir, name, "neutral", data, false)
+		warning, err := comic.SaveCharacterFile(b.env.ComicArtDir, name, "neutral", data, false)
+		if err == nil {
+			b.webNoteUpload(s, webCharacterKey(name), false)
+		}
+		return warning, err
 	})
 }
 
 func (b *Bot) webRemoveCharacter(w http.ResponseWriter, r *http.Request, s *webSession) {
 	name := r.PathValue("name")
+	if !b.webCanRemove(w, s, webCharacterKey(name)) {
+		return
+	}
 	b.webChange(w, s, "removed character `"+cutText(name, 40)+"`", func(*comic.Pack) (string, error) {
-		return "", comic.RemoveCharacter(b.env.ComicArtDir, name)
+		if err := comic.RemoveCharacter(b.env.ComicArtDir, name); err != nil {
+			return "", err
+		}
+		b.webForgetUpload(webCharacterKey(name))
+		return "", nil
 	})
 }
 
@@ -736,14 +827,25 @@ func (b *Bot) webAddPose(w http.ResponseWriter, r *http.Request, s *webSession) 
 	}
 	name, pose := r.PathValue("name"), r.PathValue("pose")
 	b.webChange(w, s, fmt.Sprintf("saved pose `%s` of `%s`", cutText(pose, 20), cutText(name, 40)), func(*comic.Pack) (string, error) {
-		return comic.SaveCharacterFile(b.env.ComicArtDir, name, pose, data, replace)
+		warning, err := comic.SaveCharacterFile(b.env.ComicArtDir, name, pose, data, replace)
+		if err == nil {
+			b.webNoteUpload(s, webPoseKey(name, pose), replace)
+		}
+		return warning, err
 	})
 }
 
 func (b *Bot) webRemovePose(w http.ResponseWriter, r *http.Request, s *webSession) {
 	name, pose := r.PathValue("name"), r.PathValue("pose")
+	if !b.webCanRemove(w, s, webPoseKey(name, pose)) {
+		return
+	}
 	b.webChange(w, s, fmt.Sprintf("removed pose `%s` of `%s`", cutText(pose, 20), cutText(name, 40)), func(*comic.Pack) (string, error) {
-		return "", comic.RemoveCharacterFile(b.env.ComicArtDir, name, pose)
+		if err := comic.RemoveCharacterFile(b.env.ComicArtDir, name, pose); err != nil {
+			return "", err
+		}
+		b.webForgetUpload(webPoseKey(name, pose))
+		return "", nil
 	})
 }
 
@@ -822,24 +924,41 @@ func (b *Bot) webMembers(w http.ResponseWriter, _ *http.Request, _ *webSession) 
 // Discord's search: the bot has no Server Members intent and no member list.
 func (b *Bot) webSearchMembers(w http.ResponseWriter, r *http.Request, _ *webSession) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	rows, err := b.db.ComicMembers(b.env.GuildID)
+	if err != nil {
+		log.Printf("web: members: %v", err)
+		webFail(w, http.StatusInternalServerError, "I could not read the database.")
+		return
+	}
+	// A result must show the member's current character and lock, or an
+	// assign could replace them with no warning.
+	found := func(id, name, avatar string) webMember {
+		m := webMember{ID: id, Name: name, Avatar: avatar}
+		for _, row := range rows {
+			if row.UserID == id {
+				m.Character, m.Locked = row.Character, row.Locked
+			}
+		}
+		return m
+	}
 	out := []webMember{}
 	switch {
 	case q == "":
 	case comic.IsUserID(q):
 		if name, avatar := b.webLookupName(q); name != "" {
-			out = append(out, webMember{ID: q, Name: name, Avatar: avatar})
+			out = append(out, found(q, name, avatar))
 		}
 	default:
-		found, err := b.s.GuildMembersSearch(b.env.GuildID, q, webMaxSearch)
+		members, err := b.s.GuildMembersSearch(b.env.GuildID, q, webMaxSearch)
 		if err != nil {
 			log.Printf("web: member search: %v", err)
 			webFail(w, http.StatusBadGateway, "The Discord search did not work. Paste the user ID.")
 			return
 		}
-		for _, m := range found {
+		for _, m := range members {
 			if m.User != nil {
 				name, avatar := webMemberName(m)
-				out = append(out, webMember{ID: m.User.ID, Name: name, Avatar: avatar})
+				out = append(out, found(m.User.ID, name, avatar))
 			}
 		}
 	}

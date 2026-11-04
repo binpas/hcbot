@@ -5,6 +5,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
 <title>HEALTH bot</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,49 +17,68 @@
   document.adoptedStyleSheets.push(typescale.styleSheet);
 </script>
 <style>
+  /* The band's colors: black and shades of red, with one theme. All the color
+     roles that the components use are here: a role with no value here falls
+     back to the library's light default. White is only behind the comic art,
+     which is black lines. */
   :root {
+    color-scheme: dark;
     --md-ref-typeface-brand: Roboto, system-ui, sans-serif;
     --md-ref-typeface-plain: Roboto, system-ui, sans-serif;
-    --md-sys-color-primary: #4a5c92;
-    --md-sys-color-on-primary: #ffffff;
-    --md-sys-color-primary-container: #dbe1ff;
-    --md-sys-color-on-primary-container: #00174b;
-    --md-sys-color-secondary-container: #dde1f9;
-    --md-sys-color-on-secondary-container: #161b2c;
-    --md-sys-color-error: #ba1a1a;
-    --md-sys-color-surface: #faf8ff;
-    --md-sys-color-surface-container-low: #f3f3fa;
-    --md-sys-color-surface-container: #eeedf4;
-    --md-sys-color-surface-container-highest: #e2e2e9;
-    --md-sys-color-on-surface: #1a1b21;
-    --md-sys-color-on-surface-variant: #45464f;
-    --md-sys-color-outline-variant: #c5c6d0;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --md-sys-color-primary: #b3c5ff;
-      --md-sys-color-on-primary: #1a2d60;
-      --md-sys-color-primary-container: #324478;
-      --md-sys-color-on-primary-container: #dbe1ff;
-      --md-sys-color-secondary-container: #414659;
-      --md-sys-color-on-secondary-container: #dde1f9;
-      --md-sys-color-error: #ffb4ab;
-      --md-sys-color-surface: #121318;
-      --md-sys-color-surface-container-low: #1a1b21;
-      --md-sys-color-surface-container: #1e1f25;
-      --md-sys-color-surface-container-highest: #34343a;
-      --md-sys-color-on-surface: #e2e2e9;
-      --md-sys-color-on-surface-variant: #c5c6d0;
-      --md-sys-color-outline-variant: #45464f;
-    }
+    --md-sys-color-surface: #000000;
+    --md-sys-color-surface-container-low: #0d0708;
+    --md-sys-color-surface-container: #160c0d;
+    --md-sys-color-surface-container-high: #211315;
+    --md-sys-color-surface-container-highest: #2e1b1d;
+    --md-sys-color-on-surface: #f7ecec;
+    --md-sys-color-on-surface-variant: #d4bfbf;
+    --md-sys-color-outline: #a08585;
+    --md-sys-color-outline-variant: #42292b;
+    --md-sys-color-primary: #ff6b66;
+    --md-sys-color-on-primary: #1f0002;
+    --md-sys-color-primary-container: #6e0f14;
+    --md-sys-color-on-primary-container: #ffe3e0;
+    --md-sys-color-secondary: #ffb4ae;
+    --md-sys-color-on-secondary: #3a0a0c;
+    --md-sys-color-secondary-container: #451518;
+    --md-sys-color-on-secondary-container: #ffe3e0;
+    --md-sys-color-tertiary: #ff8f87;
+    --md-sys-color-on-tertiary: #2b0406;
+    --md-sys-color-tertiary-container: #7a1218;
+    --md-sys-color-on-tertiary-container: #fff0ee;
+    --md-sys-color-error: #ff8f87;
+    --md-sys-color-on-error: #2b0406;
+    --md-sys-color-error-container: #8c0f16;
+    --md-sys-color-on-error-container: #ffffff;
+    --md-sys-color-inverse-surface: #f7ecec;
+    --md-sys-color-inverse-on-surface: #211315;
+    --md-sys-color-inverse-primary: #a8141b;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    /* The last step of a destructive action: a deep red fill with white text,
+       so that it does not look like the light red of a normal action. */
+    --hc-danger: #cf1019;
+    --hc-on-danger: #ffffff;
   }
   * { box-sizing: border-box; }
+  html { scrollbar-color: var(--md-sys-color-outline) transparent; }
+  ::selection { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+  /* The last step of a destructive action. */
+  .danger {
+    --md-filled-button-container-color: var(--hc-danger);
+    --md-filled-button-label-text-color: var(--hc-on-danger);
+    --md-filled-button-hover-label-text-color: var(--hc-on-danger);
+    --md-filled-button-focus-label-text-color: var(--hc-on-danger);
+    --md-filled-button-pressed-label-text-color: var(--hc-on-danger);
+    --md-filled-button-hover-state-layer-color: var(--hc-on-danger);
+    --md-filled-button-pressed-state-layer-color: var(--hc-on-danger);
+  }
   body { margin: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-ref-typeface-plain); }
   header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 24px; background: var(--md-sys-color-surface-container); }
   header h1 { margin: 0; flex: 1; }
   .tabs { background: var(--md-sys-color-surface-container); }
   md-tabs { max-width: 1100px; margin: 0 auto; --md-primary-tab-container-color: transparent; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .view { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
   [hidden] { display: none !important; }
   .card { position: relative; border-radius: 12px; background: var(--md-sys-color-surface-container-low); --md-elevation-level: 1; padding: 16px; }
   .card h2 { margin: 0 0 12px; }
@@ -76,7 +96,11 @@
   .thumb { height: 72px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 8px; padding: 4px; }
   .thumb.back { width: 100%; height: 110px; object-fit: cover; padding: 0; }
   .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
-  .tag { font-size: 12px; padding: 2px 8px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  /* Color groups the tags by meaning. The word carries the meaning itself. */
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 8px; background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+  .tag.limit { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
+  .tag.use { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  .tag.off { background: none; color: var(--md-sys-color-on-surface-variant); box-shadow: inset 0 0 0 1px var(--md-sys-color-outline); }
   .member { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--md-sys-color-outline-variant); flex-wrap: wrap; }
   .member:first-child { border-top: 0; }
   .member .who { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
@@ -94,18 +118,31 @@
   md-dialog { max-width: min(760px, calc(100vw - 32px)); width: 100%; }
   .stack { display: grid; gap: 16px; }
   #login { display: grid; place-items: center; min-height: 60vh; text-align: center; }
+  /* The toast stays in the page when it is empty, so that a screen reader announces new text. */
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 16px; border-radius: 8px; max-width: calc(100vw - 32px);
-    background: var(--md-sys-color-on-surface); color: var(--md-sys-color-surface); z-index: 100; }
-  #toast.bad { background: var(--md-sys-color-error); color: #fff; }
-  @media (prefers-color-scheme: dark) { #toast.bad { color: #000; } }
+    background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: 0 0 0 1px var(--md-sys-color-outline), 0 6px 18px #000; z-index: 100; }
+  #toast:empty { padding: 0; opacity: 0; pointer-events: none; }
+  /* A failure is a solid red. A warning is a dark surface with a red line: the
+     change worked. */
+  #toast.bad { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+  #toast.warn { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary), 0 6px 18px #000; }
+  #dialog-msg:empty { display: block; height: 0; }
+  #dialog-msg:not(:empty) { padding: 8px 12px; margin-bottom: 16px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  #dialog-msg.bad:not(:empty) { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+  #dialog-msg.warn:not(:empty) { background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+  #busy { position: fixed; top: 0; left: 0; right: 0; z-index: 101; }
+  .state { display: grid; gap: 12px; justify-items: start; }
+  .fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
+  .fields md-outlined-text-field { width: 110px; }
   @media (max-width: 600px) {
     header { padding: 12px 16px; }
-    main { padding: 12px 16px; }
+    .view { padding: 12px 16px; }
     .toolbar md-outlined-select { min-width: 0; flex: 1 1 100%; }
   }
 </style>
 </head>
 <body>
+<md-linear-progress id="busy" indeterminate aria-label="Working" hidden></md-linear-progress>
 <header>
   <h1 class="md-typescale-title-large">HEALTH bot</h1>
   <span id="whoami" class="label md-typescale-label-large"></span>
@@ -119,18 +156,26 @@
   </div>
 </div>
 
+<div id="boot-error" class="view" hidden>
+  <section class="card state" role="alert">
+    <p id="boot-error-text" class="md-typescale-body-large" style="margin:0"></p>
+    <div><md-filled-button id="boot-retry" hidden>Try again</md-filled-button></div>
+  </section>
+</div>
+
 <div id="app" hidden>
   <div class="tabs">
     <md-tabs id="tabs" aria-label="Views">
-      <md-primary-tab aria-controls="characters">Characters</md-primary-tab>
-      <md-primary-tab aria-controls="backgrounds">Backgrounds</md-primary-tab>
-      <md-primary-tab aria-controls="members">Members</md-primary-tab>
-      <md-primary-tab aria-controls="preview">Preview</md-primary-tab>
-      <md-primary-tab aria-controls="problems">Problems</md-primary-tab>
+      <md-primary-tab id="tab-characters" aria-controls="characters">Characters</md-primary-tab>
+      <md-primary-tab id="tab-backgrounds" aria-controls="backgrounds">Backgrounds</md-primary-tab>
+      <md-primary-tab id="tab-members" aria-controls="members">Members</md-primary-tab>
+      <md-primary-tab id="tab-preview" aria-controls="preview">Preview</md-primary-tab>
+      <md-primary-tab id="tab-problems" aria-controls="problems">Problems</md-primary-tab>
     </md-tabs>
   </div>
 
-  <main id="characters" role="tabpanel">
+  <main>
+  <div id="characters" class="view" role="tabpanel" aria-labelledby="tab-characters">
     <section class="card"><md-elevation></md-elevation>
       <h2 class="md-typescale-title-medium">Add a character</h2>
       <div class="toolbar">
@@ -146,9 +191,9 @@
       <p class="hint md-typescale-body-small">Click a character for details. A hidden character cannot be chosen and is not given at random. Members who already chose it keep it.</p>
       <div id="char-grid" class="grid" style="margin-top:12px"></div>
     </section>
-  </main>
+  </div>
 
-  <main id="backgrounds" role="tabpanel" hidden>
+  <div id="backgrounds" class="view" role="tabpanel" aria-labelledby="tab-backgrounds" hidden>
     <section class="card"><md-elevation></md-elevation>
       <h2 class="md-typescale-title-medium">Add a background</h2>
       <div class="toolbar">
@@ -160,9 +205,9 @@
     <section class="card"><md-elevation></md-elevation>
       <div id="back-grid" class="grid"></div>
     </section>
-  </main>
+  </div>
 
-  <main id="members" role="tabpanel" hidden>
+  <div id="members" class="view" role="tabpanel" aria-labelledby="tab-members" hidden>
     <section class="card"><md-elevation></md-elevation>
       <h2 class="md-typescale-title-medium">Find a member</h2>
       <div class="toolbar">
@@ -175,9 +220,9 @@
       <h2 class="md-typescale-title-medium">Members with a character</h2>
       <div id="member-list"></div>
     </section>
-  </main>
+  </div>
 
-  <main id="preview" role="tabpanel" hidden>
+  <div id="preview" class="view" role="tabpanel" aria-labelledby="tab-preview" hidden>
     <section class="card"><md-elevation></md-elevation>
       <div class="toolbar">
         <md-outlined-select id="prev-char" label="Character"></md-outlined-select>
@@ -187,18 +232,19 @@
       <p class="hint md-typescale-body-small">Draws a comic with sample text. Each click gives a different comic.</p>
       <img id="preview-img" alt="The test comic" hidden style="margin-top:12px">
     </section>
-  </main>
+  </div>
 
-  <main id="problems" role="tabpanel" hidden>
+  <div id="problems" class="view" role="tabpanel" aria-labelledby="tab-problems" hidden>
     <section class="card"><md-elevation></md-elevation>
       <h2 class="md-typescale-title-medium">Art files that the bot cannot use</h2>
       <div id="problem-list"></div>
     </section>
+  </div>
   </main>
 </div>
 
-<md-dialog id="dialog"><div slot="headline" id="dialog-title"></div><div slot="content" id="dialog-body" class="stack"></div><div slot="actions" id="dialog-actions"></div></md-dialog>
-<div id="toast" role="status" hidden></div>
+<md-dialog id="dialog"><div slot="headline" id="dialog-title"></div><div slot="content"><div id="dialog-msg" role="status"></div><div id="dialog-body" class="stack"></div></div><div slot="actions" id="dialog-actions"></div></md-dialog>
+<div id="toast" role="status"></div>
 <input id="file" type="file" hidden>
 
 <script>
@@ -220,41 +266,97 @@ function el(tag, props = {}, ...kids) {
 }
 const enc = encodeURIComponent;
 
-function toast(text, bad) {
+// A modal dialog covers the toast, so a message goes in the dialog while one
+// is open. There it stays until the next action.
+function dialogOpen() { return $("dialog").open; }
+
+// kind is "" (done), "warn" (done, but look at this), or "bad" (failed).
+function toast(text, kind, wait) {
+  if (kind === true) kind = "bad";
+  if (dialogOpen()) {
+    const m = $("dialog-msg");
+    m.textContent = text; m.className = kind || "";
+    m.scrollIntoView({block: "nearest"});
+    return;
+  }
   const t = $("toast");
-  t.textContent = text; t.className = bad ? "bad" : ""; t.hidden = false;
+  t.textContent = text; t.className = kind || "";
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3500);
+  toast.timer = setTimeout(() => { t.textContent = ""; t.className = ""; }, wait || (kind ? 10000 : 4000));
+}
+
+let pending = 0;
+function working(by) {
+  pending += by;
+  $("busy").hidden = pending === 0;
 }
 
 async function api(method, path, body) {
   const opt = {method, headers: {}};
   if (body instanceof FormData) opt.body = body;
   else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
-  const r = await fetch(path, opt);
-  if (r.status === 401) { showLogin(); throw new Error("Please log in."); }
-  const text = await r.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!r.ok) throw new Error((data && data.error) || "The request did not work (" + r.status + ").");
-  return data;
+  working(1);
+  try {
+    let r;
+    try {
+      r = await fetch(path, opt);
+    } catch {
+      throw new Error("I could not reach the bot. Check the connection and try again.");
+    }
+    if (r.status === 401) { showLogin(me ? "Your login ended. Log in again." : undefined); throw new Error("Please log in."); }
+    const text = await r.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+    if (!r.ok) throw new Error((data && data.error) || "The bot could not do this (error " + r.status + "). Try again.");
+    return data;
+  } finally {
+    working(-1);
+  }
 }
 
 // act runs a change and shows its result. A change to the art answers with
-// the new art.
-async function act(run, done) {
+// the new art. A warning shows with the success text, not in its place: the
+// change worked. button, if given, cannot be clicked again during the change.
+async function act(run, done, button) {
+  $("dialog-msg").textContent = "";
+  if (button) button.disabled = true;
   try {
     const data = await run();
     if (data && data.characters) { art = data; renderArt(); }
-    if (data && data.warning) toast(data.warning, true);
-    else if (done) toast(done);
+    const text = [done, data && data.warning].filter(Boolean).join(" ");
+    if (text) toast(text, data && data.warning ? "warn" : "");
     return data || true;
-  } catch (e) { toast(e.message, true); return null; }
+  } catch (e) {
+    toast(e.message, true);
+    return null;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+// keepFocus restores the focus after a part of the page is drawn again.
+// Elements that can have the focus there have a data-key.
+function keepFocus(draw) {
+  const key = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.key;
+  draw();
+  focusKey(key);
+}
+function focusKey(key) {
+  if (!key) return;
+  // A mod has no Replace button after an upload, only the undo.
+  const find = k => document.querySelector('[data-key="' + CSS.escape(k) + '"]');
+  const n = find(key) || find(key + ":remove");
+  if (!n) return;
+  // A new component has no inner button until its first draw.
+  if (n.updateComplete) n.updateComplete.then(() => n.focus());
+  else n.focus();
 }
 
 function showLogin(text) {
   $("app").hidden = true; $("login").hidden = false;
   $("logout").hidden = true; $("whoami").textContent = "";
+  $("boot-error").hidden = true;
+  if (dialogOpen()) $("dialog").close();
   if (text) $("login-text").textContent = text;
 }
 
@@ -278,24 +380,51 @@ function form(file, fields = {}) {
 // The dialog. actions are [label, function, danger]; the function can keep
 // the dialog open by returning false.
 function dialog(title, body, actions) {
+  // The dialog will cover the toast, so its message moves into the dialog.
+  const t = $("toast");
+  if (t.textContent) {
+    $("dialog-msg").textContent = t.textContent; $("dialog-msg").className = t.className;
+    t.textContent = ""; t.className = ""; clearTimeout(toast.timer);
+  }
   $("dialog-title").textContent = title;
   $("dialog-body").replaceChildren(...body);
-  $("dialog-actions").replaceChildren(...actions.map(([label, fn, tag]) =>
-    el(tag || "md-text-button", {onclick: async () => {
-      if (fn && (await fn()) === false) return;
-      $("dialog").close();
+  $("dialog-actions").replaceChildren(...actions.map(([label, fn, tag, cls]) =>
+    el(tag || "md-text-button", {class: cls || "", onclick: async () => {
+      // No second click while the action runs.
+      const all = [...$("dialog-actions").children];
+      for (const b of all) b.disabled = true;
+      let keep = false;
+      try { keep = fn && (await fn()) === false; }
+      finally { for (const b of all) b.disabled = false; }
+      if (!keep) $("dialog").close();
     }}, label)));
   $("dialog").show();
 }
 
-function confirmDanger(title, text, label, fn) {
-  dialog(title, [el("p", {class: "md-typescale-body-medium"}, text)], [["Cancel"], [label, fn, "md-filled-button"]]);
+// confirmDanger asks before a destructive action. back draws what was open
+// before, for Cancel. The dialog stays open with the message if the action
+// fails.
+function confirmDanger(title, text, label, fn, back) {
+  dialog(title, [el("p", {class: "md-typescale-body-medium"}, text)], [
+    ["Cancel", back ? () => { back(); return false; } : undefined],
+    [label, async () => (await fn()) ? undefined : false, "md-filled-button", "danger"],
+  ]);
+}
+
+// undoLeft is the text for the time that is left to undo an upload.
+function undoLeft(key) {
+  const minutes = Math.max(1, Math.ceil((art.undo[key] || 0) / 60));
+  return "You can undo your upload for " + minutes + (minutes === 1 ? " more minute." : " more minutes.");
 }
 
 function hideSwitch(kind, item) {
-  const s = el("md-switch", {selected: !item.hidden, ariaLabel: "Show " + item.name, onchange: async () => {
-    const ok = await act(() => api("POST", "/api/hidden", {kind, name: item.name, hidden: !s.selected}));
+  const key = "hide:" + kind + ":" + item.name;
+  const s = el("md-switch", {selected: !item.hidden, ariaLabel: "Visible: " + item.name, "data-key": key, onchange: async () => {
+    const hidden = !s.selected;
+    const ok = await act(() => api("POST", "/api/hidden", {kind, name: item.name, hidden}),
+      item.name + (hidden ? " is hidden." : " is visible."), s);
     if (!ok) s.selected = !s.selected;
+    focusKey(key); // the grid is drawn again
   }});
   return el("label", {class: "row md-typescale-label-medium"}, "Visible", s);
 }
@@ -306,10 +435,11 @@ function renderCharacters() {
     const used = art.used[c.name] || 0;
     const tags = el("div", {class: "row"});
     if (c.custom) tags.append(el("span", {class: "tag"}, "custom"));
-    if (c.users && c.users.length) tags.append(el("span", {class: "tag"}, "private"));
-    if (used) tags.append(el("span", {class: "tag"}, used + (used === 1 ? " member" : " members")));
+    if (c.users && c.users.length) tags.append(el("span", {class: "tag limit"}, "private"));
+    if (used) tags.append(el("span", {class: "tag use"}, used + (used === 1 ? " member" : " members")));
+    if (c.hidden) tags.append(el("span", {class: "tag off"}, "hidden"));
     return el("div", {class: "item" + (c.hidden ? " off" : "")},
-      el("button", {class: "open", onclick: () => openCharacter(c.name)},
+      el("button", {class: "open", "data-key": "open:" + c.name, onclick: () => openCharacter(c.name)},
         el("img", {class: "thumb", src: "/img/icon/" + enc(c.name), alt: "", loading: "lazy"}),
         el("span", {class: "name md-typescale-label-large"}, c.name)),
       tags, hideSwitch("character", c));
@@ -322,16 +452,31 @@ function renderBackgrounds() {
       el("img", {class: "thumb back", src: "/img/background/" + enc(b.name), alt: "", loading: "lazy"}),
       el("span", {class: "name md-typescale-label-large"}, b.name),
       hideSwitch("background", b));
+    if (b.custom || b.hidden) {
+      const tags = el("span", {class: "row"});
+      if (b.custom) tags.append(el("span", {class: "tag"}, "custom"));
+      if (b.hidden) tags.append(el("span", {class: "tag off"}, "hidden"));
+      item.append(tags);
+    }
     if (b.custom) {
-      item.append(el("span", {class: "row"}, el("span", {class: "tag"}, "custom")));
+      const undoKey = "background/" + b.name;
+      const replace = el("md-text-button", {"data-key": "replace:" + b.name, ariaLabel: "Replace " + b.name, onclick: () => {
+        confirmDanger("Replace " + b.name + "?",
+          "The new file takes the place of this background in all new comics. The old file goes to custom/.trash.", "Select the new file",
+          async () => {
+            const f = await pickFile("image/png,image/jpeg");
+            return f ? act(() => api("POST", "/api/backgrounds", form(f, {name: b.name, replace: "true"})), "Replaced.") : false;
+          });
+      }}, "Replace");
       if (me.admin) {
-        item.append(el("md-text-button", {onclick: async () => {
-          const f = await pickFile("image/png,image/jpeg");
-          if (f) await act(() => api("POST", "/api/backgrounds", form(f, {name: b.name, replace: "true"})), "Replaced.");
-        }}, "Replace"));
-        item.append(el("md-text-button", {onclick: () => confirmDanger("Remove " + b.name + "?",
+        item.append(replace);
+        item.append(el("md-text-button", {"data-key": "remove:" + b.name, ariaLabel: "Remove " + b.name, onclick: () => confirmDanger("Remove " + b.name + "?",
           "The file goes to custom/.trash, so you can get it back with SMB.", "Remove",
           () => act(() => api("DELETE", "/api/backgrounds/" + enc(b.name)), "Removed."))}, "Remove"));
+      } else if (art.undo[undoKey]) {
+        item.append(el("md-text-button", {"data-key": "remove:" + b.name, ariaLabel: "Undo the upload of " + b.name, onclick: () => confirmDanger("Undo the upload of " + b.name + "?",
+          undoLeft(undoKey) + " The file goes to custom/.trash.", "Undo upload",
+          () => act(() => api("DELETE", "/api/backgrounds/" + enc(b.name)), "Upload undone."))}, "Undo upload"));
       }
     }
     return item;
@@ -345,105 +490,165 @@ function renderProblems() {
     : [el("p", {class: "hint md-typescale-body-medium"}, "There are no problems.")]));
 }
 
-function setOptions(select, options) {
+// setOptions fills a select. It keeps the old value, or takes the first
+// option, unless noDefault: an empty select means that nothing is chosen yet.
+function setOptions(select, options, noDefault) {
   const old = select.value;
   select.replaceChildren(...options.map(([value, text]) =>
     el("md-select-option", {value}, el("div", {slot: "headline"}, text))));
-  select.value = options.some(o => o[0] === old) ? old : options[0][0];
+  select.value = options.some(o => o[0] === old) ? old : (noDefault ? "" : options[0][0]);
 }
 
 function renderArt() {
-  renderCharacters(); renderBackgrounds(); renderProblems();
+  keepFocus(() => { renderCharacters(); renderBackgrounds(); });
+  renderProblems();
   setOptions($("prev-char"), [["*", "At random"], ...art.characters.map(c => [c.name, c.name])]);
   setOptions($("prev-back"), [["*", "At random"], ...art.backgrounds.map(b => [b.name, b.name])]);
 }
 
+// The private list that is not saved yet, by character. It must not be lost
+// when the dialog is drawn again after a pose upload.
+const usersDraft = {};
+
 function poseCard(c, pose) {
   const has = pose === "icon" ? c.iconFile : c.poses.includes(pose);
+  const url = "/api/characters/" + enc(c.name) + "/poses/" + pose;
+  const key = "pose:" + c.name + ":" + pose;
+  const undoKey = "pose/" + c.name + "/" + pose;
   const card = el("div", {class: "pose"}, el("span", {class: "md-typescale-label-medium"}, pose));
-  if (pose === "icon" || has) card.append(el("img", {src: (pose === "icon" ? "/img/icon/" + enc(c.name) : "/img/pose/" + enc(c.name) + "/" + pose), alt: pose}));
+  if (pose === "icon" || has) card.append(el("img", {src: (pose === "icon" ? "/img/icon/" + enc(c.name) : "/img/pose/" + enc(c.name) + "/" + pose), alt: pose + " pose of " + c.name}));
   else card.append(el("span", {class: "missing hint md-typescale-body-small"}, "not set"));
-  const needAdmin = has || pose === "neutral";
-  if (!needAdmin || me.admin) {
-    card.append(el("md-text-button", {onclick: async () => {
-      const f = await pickFile("image/png");
-      if (f && await act(() => api("POST", "/api/characters/" + enc(c.name) + "/poses/" + pose, form(f, {replace: has ? "true" : "false"})), "Saved.")) openCharacter(c.name);
-    }}, has ? "Replace" : "Add"));
+  const upload = async (button, replace) => {
+    const f = await pickFile("image/png");
+    if (f && await act(() => api("POST", url, form(f, {replace: replace ? "true" : "false"})), "Saved.", button)) openCharacter(c.name, key);
+  };
+  const back = () => openCharacter(c.name, key);
+  if (!has && pose !== "neutral") {
+    const b = el("md-text-button", {"data-key": key, ariaLabel: "Add " + pose + " pose", onclick: () => upload(b, false)}, "Add");
+    card.append(b);
+  } else if (me.admin) {
+    const b = el("md-text-button", {"data-key": key, ariaLabel: "Replace " + pose + " pose", onclick: () => {
+      confirmDanger("Replace the " + pose + " pose of " + c.name + "?", "The old file goes to custom/.trash.", "Select the new file", async () => {
+        const f = await pickFile("image/png");
+        if (!f) { back(); return false; }
+        const ok = await act(() => api("POST", url, form(f, {replace: "true"})), "Saved.");
+        if (ok) back();
+        return false; // the character dialog is open again
+      }, back);
+    }}, "Replace");
+    card.append(b);
   }
-  if (has && pose !== "neutral" && pose !== "icon" && me.admin) {
-    card.append(el("md-text-button", {onclick: async () => {
-      if (await act(() => api("DELETE", "/api/characters/" + enc(c.name) + "/poses/" + pose), "Removed.")) openCharacter(c.name);
-    }}, "Remove"));
+  const canRemove = has && pose !== "neutral" && pose !== "icon" && (me.admin || art.undo[undoKey]);
+  if (canRemove) {
+    const verb = me.admin ? "Remove" : "Undo upload";
+    card.append(el("md-text-button", {"data-key": key + ":remove", ariaLabel: verb + ": " + pose + " pose", onclick: () => {
+      confirmDanger(verb + ": " + pose + " pose of " + c.name + "?",
+        (me.admin ? "" : undoLeft(undoKey) + " ") + "The file goes to custom/.trash.", verb, async () => {
+          const ok = await act(() => api("DELETE", url), me.admin ? "Removed." : "Upload undone.");
+          if (ok) back();
+          return false;
+        }, back);
+    }}, verb));
   }
   return card;
 }
 
-function openCharacter(name) {
+function openCharacter(name, focus) {
   const c = art.characters.find(x => x.name === name);
-  if (!c) { $("dialog").close(); return; }
+  if (!c) { if (dialogOpen()) $("dialog").close(); return; }
   const body = [];
   if (!c.custom) {
     body.push(el("p", {class: "hint md-typescale-body-medium"}, "A built-in Comic Chat character. You can hide it, but not change it."));
     body.push(el("div", {}, el("img", {src: "/img/portrait/" + enc(c.name), alt: c.name, style: "max-width:100%;border-radius:8px"})));
   } else {
+    const setFace = (x, y, button) => act(() => api("PATCH", "/api/characters/" + enc(c.name), {face: [x, y]}), "The face point is saved.", button);
     const dot = el("div", {class: "face-dot", style: "left:" + (100 * c.face[0] / c.width) + "%;top:" + (100 * c.face[1] / c.height) + "%"});
-    const img = el("img", {src: "/img/pose/" + enc(c.name) + "/neutral", alt: "Neutral pose"});
+    const img = el("img", {src: "/img/pose/" + enc(c.name) + "/neutral", alt: "Neutral pose. The face point is at " + c.face[0] + ", " + c.face[1] + "."});
     const box = el("div", {class: "face-box", onclick: async e => {
       const r = img.getBoundingClientRect();
       const x = Math.floor((e.clientX - r.left) / r.width * img.naturalWidth);
       const y = Math.floor((e.clientY - r.top) / r.height * img.naturalHeight);
-      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {face: [x, y]}), "The face point is saved.")) openCharacter(c.name);
+      if (await setFace(x, y)) openCharacter(c.name);
     }}, img, dot);
-    body.push(el("div", {}, el("p", {class: "hint md-typescale-body-small", style: "margin:0 0 8px"}, "Click the middle of the face. Balloon tails point there."), box));
+    // The same point with the keyboard.
+    const fx = el("md-outlined-text-field", {label: "Face X", type: "number", value: String(c.face[0]), min: "0", max: String(c.width - 1)});
+    const fy = el("md-outlined-text-field", {label: "Face Y", type: "number", value: String(c.face[1]), min: "0", max: String(c.height - 1)});
+    const faceSave = el("md-filled-tonal-button", {"data-key": "face:" + c.name, onclick: async () => {
+      if (await setFace(Number(fx.value), Number(fy.value), faceSave)) openCharacter(c.name, "face:" + c.name);
+    }}, "Save the face point");
+    body.push(el("div", {},
+      el("p", {class: "hint md-typescale-body-small", style: "margin:0 0 8px"}, "Click the middle of the face, or type the point. Balloon tails point there."),
+      box, el("div", {class: "fields"}, fx, fy, faceSave)));
 
-    const users = el("md-outlined-text-field", {label: "Private to these user IDs (empty: public)", type: "textarea", rows: 2, value: (c.users || []).join("\n"), style: "width:100%"});
-    body.push(el("div", {class: "stack"}, users, el("div", {}, el("md-filled-tonal-button", {onclick: async () => {
+    const saved = (c.users || []).join("\n");
+    const users = el("md-outlined-text-field", {label: "Private to these user IDs (empty: public)", type: "textarea", rows: 2,
+      value: usersDraft[c.name] !== undefined ? usersDraft[c.name] : saved, style: "width:100%",
+      oninput: () => { usersDraft[c.name] = users.value; }});
+    const usersSave = el("md-filled-tonal-button", {"data-key": "users:" + c.name, onclick: async () => {
       const list = users.value.split(/[\s,]+/).filter(Boolean);
-      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {users: list}), "Saved.")) openCharacter(c.name);
-    }}, "Save the list"))));
+      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {users: list}), "Saved.", usersSave)) {
+        delete usersDraft[c.name];
+        openCharacter(c.name, "users:" + c.name);
+      }
+    }}, "Save the list");
+    body.push(el("div", {class: "stack"}, users, el("div", {}, usersSave)));
     body.push(el("div", {class: "poses"}, ...me.poses.map(p => poseCard(c, p))));
   }
   const actions = [["Close"]];
-  if (c.custom && me.admin) {
+  const undoKey = "character/" + c.name;
+  if (c.custom && (me.admin || art.undo[undoKey])) {
     const used = art.used[c.name] || 0;
-    actions.unshift(["Remove", () => {
-      confirmDanger("Remove " + c.name + "?",
+    const verb = me.admin ? "Remove" : "Undo upload";
+    actions.unshift([verb, () => {
+      confirmDanger(verb + ": " + c.name + "?",
+        (me.admin ? "" : undoLeft(undoKey) + " ") +
         (used ? used + (used === 1 ? " member uses" : " members use") + " this character. They will get an automatic one. " : "") +
-        "The files go to custom/.trash, so you can get them back with SMB.", "Remove",
-        () => act(() => api("DELETE", "/api/characters/" + enc(c.name)), "Removed."));
+        "The files go to custom/.trash, so you can get them back with SMB.", verb,
+        () => act(() => api("DELETE", "/api/characters/" + enc(c.name)), me.admin ? "Removed." : "Upload undone."),
+        () => openCharacter(c.name));
       return false;
     }]);
   }
   dialog(c.name, body, actions);
+  focusKey(focus);
 }
 
-function memberRow(m, listed) {
+function memberRow(m) {
   const who = el("div", {class: "who"}, el("div", {class: "md-typescale-body-large"}, m.name || "(not on the server)"),
     el("div", {class: "id label md-typescale-body-small"}, m.id));
   const row = el("div", {class: "member"},
     m.avatar ? el("img", {src: m.avatar, alt: ""}) : el("div", {class: "noavatar"}), who);
-  if (listed && m.character) {
+  if (m.character) {
     row.append(el("img", {class: "char", src: "/img/icon/" + enc(m.character), alt: "", loading: "lazy"}),
       el("span", {class: "md-typescale-label-large"}, m.character));
-    if (m.locked) row.append(el("span", {class: "tag"}, "locked"));
+    if (m.locked) row.append(el("span", {class: "tag limit"}, "locked"));
   }
-  row.append(el("md-outlined-button", {onclick: () => editMember(m)}, listed ? "Change" : "Assign"));
+  row.append(el("md-outlined-button", {"data-key": "member:" + m.id, ariaLabel: (m.character ? "Change " : "Assign ") + (m.name || m.id), onclick: () => editMember(m)}, m.character ? "Change" : "Assign"));
   return row;
 }
 
 function editMember(m) {
   const sel = el("md-outlined-select", {label: "Character", style: "width:100%"});
-  setOptions(sel, art.characters.map(c => [c.name, c.name + (c.users && c.users.length ? " (private)" : "") + (c.hidden ? " (hidden)" : "")]));
-  if (m.character) sel.value = m.character;
-  const lock = el("md-switch", {selected: !!m.locked});
+  setOptions(sel, art.characters.map(c => [c.name, c.name + (c.users && c.users.length ? " (private)" : "") + (c.hidden ? " (hidden)" : "")]), true);
+  sel.value = m.character || "";
+  const lock = el("md-switch", {selected: !!m.locked, ariaLabel: "Lock the character. The member cannot change it."});
   const body = [sel, el("label", {class: "row md-typescale-body-medium"}, "Lock (the member cannot change it)", lock)];
+  const after = () => { loadMembers(); $("member-found").replaceChildren(); };
   const actions = [["Cancel"], ["Save", async () => {
-    const ok = await act(() => api("PUT", "/api/members/" + m.id, {character: sel.value, locked: lock.selected}), "Saved.");
-    if (ok) loadMembers();
+    if (!sel.value) { toast("Select a character.", true); return false; }
+    const ok = await act(() => api("PUT", "/api/members/" + m.id, {character: sel.value, locked: lock.selected}), (m.name || m.id) + " has the character " + sel.value + (lock.selected ? ", locked." : "."));
+    if (ok) after();
     return !!ok;
   }, "md-filled-button"]];
-  if (m.character) actions.unshift(["Clear", async () => {
-    if (await act(() => api("DELETE", "/api/members/" + m.id), "Cleared.")) loadMembers();
+  if (m.character) actions.unshift(["Clear", () => {
+    confirmDanger("Clear the character of " + (m.name || m.id) + "?",
+      m.locked ? "This also removes the lock. The member will get an automatic character." : "The member will get an automatic character.", "Clear",
+      async () => {
+        const ok = await act(() => api("DELETE", "/api/members/" + m.id), "Cleared.");
+        if (ok) after();
+        return ok;
+      }, () => editMember(m));
+    return false;
   }]);
   dialog(m.name || m.id, body, actions);
 }
@@ -451,26 +656,32 @@ function editMember(m) {
 async function loadMembers() {
   const list = await api("GET", "/api/members").catch(e => { toast(e.message, true); return null; });
   if (!list) return;
-  $("member-list").replaceChildren(...(list.length ? list.map(m => memberRow(m, true))
+  $("member-list").replaceChildren(...(list.length ? list.map(m => memberRow(m))
     : [el("p", {class: "hint md-typescale-body-medium"}, "No member has chosen a character.")]));
 }
 
 async function findMember() {
   const q = $("member-q").value.trim();
   if (!q) return;
+  const btn = $("member-find");
+  btn.disabled = true;
   const found = await api("GET", "/api/members/search?q=" + enc(q)).catch(e => { toast(e.message, true); return null; });
+  btn.disabled = false;
   if (!found) return;
-  $("member-found").replaceChildren(...(found.length ? found.map(m => memberRow(m, false))
+  $("member-found").replaceChildren(...(found.length ? found.map(m => memberRow(m))
     : [el("p", {class: "hint md-typescale-body-medium"}, "I found nobody.")]));
 }
 
 function drawPreview() {
   const pick = s => s.value === "*" ? "" : s.value;
   const q = new URLSearchParams({character: pick($("prev-char")), background: pick($("prev-back")), seed: Math.floor(Math.random() * 1e9)});
-  const img = $("preview-img");
-  img.onerror = () => toast("I could not draw the comic.", true);
+  const img = $("preview-img"), btn = $("prev-draw");
+  btn.disabled = true;
+  working(1);
+  const done = () => { btn.disabled = false; working(-1); img.onload = img.onerror = null; };
+  img.onload = () => { img.hidden = false; done(); };
+  img.onerror = () => { done(); toast("I could not draw the comic. Try again.", true); };
   img.src = "/api/preview?" + q;
-  img.hidden = false;
 }
 
 $("tabs").addEventListener("change", () => {
@@ -486,7 +697,7 @@ $("char-add").addEventListener("click", async () => {
   const name = $("char-name").value.trim().toLowerCase();
   if (!name) { toast("Type a name first.", true); return; }
   const f = await pickFile("image/png");
-  if (f && await act(() => api("POST", "/api/characters", form(f, {name})), "Added.")) {
+  if (f && await act(() => api("POST", "/api/characters", form(f, {name})), "Added.", $("char-add"))) {
     $("char-name").value = ""; openCharacter(name);
   }
 });
@@ -494,29 +705,61 @@ $("back-add").addEventListener("click", async () => {
   const name = $("back-name").value.trim().toLowerCase();
   if (!name) { toast("Type a name first.", true); return; }
   const f = await pickFile("image/png,image/jpeg");
-  if (f && await act(() => api("POST", "/api/backgrounds", form(f, {name})), "Added.")) $("back-name").value = "";
+  if (f && await act(() => api("POST", "/api/backgrounds", form(f, {name})), "Added.", $("back-add"))) $("back-name").value = "";
 });
 $("member-find").addEventListener("click", findMember);
 $("member-q").addEventListener("keydown", e => { if (e.key === "Enter") findMember(); });
 $("prev-draw").addEventListener("click", drawPreview);
+// A success message in a closing dialog must not be lost.
+$("dialog").addEventListener("closed", () => {
+  const m = $("dialog-msg"), text = m.textContent, kind = m.className;
+  m.textContent = ""; m.className = "";
+  if (text) toast(text, kind);
+});
 $("logout").addEventListener("click", async () => {
   await api("POST", "/auth/logout").catch(() => {});
   showLogin("You are logged out.");
 });
 
-(async function start() {
-  // A property set before its component loads is lost.
-  await Promise.all(["md-switch", "md-outlined-select", "md-dialog", "md-tabs", "md-primary-tab",
-    "md-outlined-text-field"].map(n => customElements.whenDefined(n)));
+function bootError(text, retry) {
+  $("app").hidden = true; $("login").hidden = true;
+  $("boot-error").hidden = false;
+  $("boot-error-text").textContent = text;
+  $("boot-retry").hidden = !retry;
+  $("boot-retry").onclick = retry;
+}
+
+async function start() {
+  $("boot-error").hidden = true;
+  // A property set before its component loads is lost. The components come
+  // from a CDN, so they can fail to load.
+  const parts = Promise.all(["md-switch", "md-outlined-select", "md-dialog", "md-tabs", "md-primary-tab",
+    "md-outlined-text-field", "md-linear-progress"].map(n => customElements.whenDefined(n)));
+  const late = new Promise(r => setTimeout(() => r("late"), 10000));
+  if (await Promise.race([parts, late]) === "late") {
+    bootError("The page components did not load from the internet. Check the connection, then reload the page.", () => location.reload());
+    $("boot-retry").textContent = "Reload";
+    return;
+  }
   try {
     me = await api("GET", "/api/me");
-  } catch { return; }
+  } catch (e) {
+    if ($("login").hidden) bootError(e.message, start);
+    return;
+  }
   $("whoami").textContent = me.name + (me.admin ? " (admin)" : " (mod)");
-  $("logout").hidden = false; $("login").hidden = true; $("app").hidden = false;
-  if (!me.comics) { toast("Comics are off on this bot.", true); return; }
-  art = await api("GET", "/api/art");
+  $("logout").hidden = false;
+  if (!me.comics) { bootError("Comics are off on this bot, so this page has nothing to show. An operator must install the comic art."); return; }
+  try {
+    art = await api("GET", "/api/art");
+  } catch (e) {
+    if ($("login").hidden) bootError(e.message, start);
+    return;
+  }
+  $("login").hidden = true; $("app").hidden = false;
   renderArt();
-})();
+}
+start();
 </script>
 </body>
 </html>

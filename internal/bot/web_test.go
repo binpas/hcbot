@@ -265,6 +265,16 @@ func TestWebAccess(t *testing.T) {
 	wantStatus(t, w.do("GET", "/api/art", c, nil, ""), http.StatusUnauthorized, "the session is gone")
 }
 
+// expireUploads ends the undo time of all the uploads.
+func (w *webTest) expireUploads() {
+	w.web.mu.Lock()
+	defer w.web.mu.Unlock()
+	for k, u := range w.web.uploads {
+		u.at = time.Now().Add(-webUndoLife - time.Minute)
+		w.web.uploads[k] = u
+	}
+}
+
 func (w *webTest) trashed(sub string) int {
 	entries, _ := os.ReadDir(filepath.Join(w.env.ComicArtDir, "custom", ".trash", sub))
 	return len(entries)
@@ -393,6 +403,7 @@ func TestWebCharacters(t *testing.T) {
 		t.Error("reload lost the hidden list")
 	}
 
+	w.expireUploads()
 	wantStatus(t, w.do("DELETE", "/api/characters/newbie/poses/sad", mod, nil, ""), http.StatusForbidden, "a mod removes a pose")
 	wantStatus(t, w.do("DELETE", "/api/characters/newbie/poses/sad", admin, nil, ""), http.StatusOK, "an admin removes a pose")
 	wantStatus(t, w.do("DELETE", "/api/characters/newbie/poses/neutral", admin, nil, ""), http.StatusBadRequest, "remove neutral")
@@ -486,6 +497,96 @@ func TestWebMembers(t *testing.T) {
 	wantStatus(t, w.do("DELETE", "/api/members/"+tUser, mod, nil, ""), http.StatusNoContent, "clear")
 	if locked, _ := w.db.ComicLocked(tGuild, tUser); locked {
 		t.Error("the lock is still set")
+	}
+}
+
+func TestWebUndo(t *testing.T) {
+	w := newWebTest(t)
+	mod := w.session(tMod)
+	w.member(tTarget, tRoleMod)
+	other := w.session(tTarget)
+	w.member(tOwner)
+	admin := w.session(tOwner)
+	back, pose := webPNGFile(t, 200, 200, true), webPNGFile(t, 100, 200, false)
+	undoable := func(c *http.Cookie, key string) bool {
+		t.Helper()
+		var art struct {
+			Undo map[string]int `json:"undo"`
+		}
+		if err := json.Unmarshal(w.do("GET", "/api/art", c, nil, "").Body.Bytes(), &art); err != nil {
+			t.Fatal(err)
+		}
+		return art.Undo[key] > 0
+	}
+
+	// A mod can undo their own new background; another mod cannot.
+	wantStatus(t, w.upload("/api/backgrounds", mod, back, map[string]string{"name": "oops"}), http.StatusOK, "add")
+	if !undoable(mod, "background/oops") || undoable(other, "background/oops") {
+		t.Error("the undo list is not correct")
+	}
+	wantStatus(t, w.do("DELETE", "/api/backgrounds/oops", other, nil, ""), http.StatusForbidden, "another mod undoes")
+	wantStatus(t, w.do("DELETE", "/api/backgrounds/oops", mod, nil, ""), http.StatusOK, "the mod undoes")
+	if w.trashed("backgrounds") != 1 {
+		t.Error("the undone file is not in the trash")
+	}
+	if undoable(mod, "background/oops") {
+		t.Error("the undo is still listed")
+	}
+
+	// After the time limit, only an Administrator can remove it.
+	wantStatus(t, w.upload("/api/backgrounds", mod, back, map[string]string{"name": "late"}), http.StatusOK, "add")
+	w.expireUploads()
+	if undoable(mod, "background/late") {
+		t.Error("an expired undo is listed")
+	}
+	wantStatus(t, w.do("DELETE", "/api/backgrounds/late", mod, nil, ""), http.StatusForbidden, "undo after the limit")
+	wantStatus(t, w.do("DELETE", "/api/backgrounds/late", admin, nil, ""), http.StatusOK, "an admin removes")
+
+	// When an Administrator replaces the file, the mod's undo ends.
+	wantStatus(t, w.upload("/api/backgrounds", mod, back, map[string]string{"name": "swap"}), http.StatusOK, "add")
+	wantStatus(t, w.upload("/api/backgrounds", admin, back, map[string]string{"name": "swap", "replace": "true"}), http.StatusOK, "replace")
+	wantStatus(t, w.do("DELETE", "/api/backgrounds/swap", mod, nil, ""), http.StatusForbidden, "undo of a replaced file")
+
+	// Characters and poses.
+	wantStatus(t, w.upload("/api/characters", mod, pose, map[string]string{"name": "fresh"}), http.StatusOK, "add")
+	wantStatus(t, w.upload("/api/characters/fresh/poses/sad", mod, pose, nil), http.StatusOK, "pose")
+	wantStatus(t, w.do("DELETE", "/api/characters/fresh/poses/sad", other, nil, ""), http.StatusForbidden, "another mod, pose")
+	wantStatus(t, w.do("DELETE", "/api/characters/fresh/poses/sad", mod, nil, ""), http.StatusOK, "undo pose")
+	wantStatus(t, w.do("DELETE", "/api/characters/fresh", other, nil, ""), http.StatusForbidden, "another mod, character")
+	wantStatus(t, w.do("DELETE", "/api/characters/fresh", mod, nil, ""), http.StatusOK, "undo character")
+	if w.comics.pack.Load().CanUse("fresh", tUser) {
+		t.Error("the character is still there")
+	}
+
+	// A built-in cannot be undone by anyone.
+	wantStatus(t, w.do("DELETE", "/api/characters/ann", mod, nil, ""), http.StatusForbidden, "a mod, built-in")
+
+	// The undo is not a way to replace: a mod still cannot overwrite.
+	wantStatus(t, w.upload("/api/backgrounds", mod, back, map[string]string{"name": "keep"}), http.StatusOK, "add")
+	wantStatus(t, w.upload("/api/backgrounds", mod, back, map[string]string{"name": "keep", "replace": "true"}), http.StatusForbidden, "a mod replaces")
+}
+
+func TestWebSearchShowsCurrentCharacter(t *testing.T) {
+	w := newWebTest(t)
+	mod := w.session(tMod)
+	if err := w.db.SetComicMember(tGuild, tTarget, "ann", true); err != nil {
+		t.Fatal(err)
+	}
+	w.api.on("GET", "^/guilds/"+tGuild+"/members/search$", 200, fmt.Sprintf(
+		`[{"user":{"id":%q,"username":"locked"},"roles":[]},{"user":{"id":%q,"username":"free"},"roles":[]}]`, tTarget, tUser))
+	var list []webMember
+	if err := json.Unmarshal(w.do("GET", "/api/members/search?q=x", mod, nil, "").Body.Bytes(), &list); err != nil || len(list) != 2 {
+		t.Fatalf("search = %v, %v", list, err)
+	}
+	if list[0].Character != "ann" || !list[0].Locked {
+		t.Errorf("the locked member = %+v", list[0])
+	}
+	if list[1].Character != "" || list[1].Locked {
+		t.Errorf("the free member = %+v", list[1])
+	}
+	w.member(tTarget)
+	if err := json.Unmarshal(w.do("GET", "/api/members/search?q="+tTarget, mod, nil, "").Body.Bytes(), &list); err != nil || len(list) != 1 || !list[0].Locked {
+		t.Errorf("search by ID = %+v, %v", list, err)
 	}
 }
 

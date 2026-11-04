@@ -41,6 +41,7 @@ A bot and control panel made for one community: the HEALTH server, with the appr
 ## Brand Commitments
 
 - The name is **HEALTH Bot**, for the HEALTH Discord server. The operator says that the server is official or approved by the band, so the bot may use the band's name as an official community tool. The bot can use the band's artwork, when the operator provides it.
+- The colors are **black and shades of red**, as the operator set them.
 - Documents are in ASD-STE100 Simplified Technical English, and page text follows the same plain style.
 
 ## Evidence on Hand

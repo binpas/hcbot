@@ -833,7 +833,7 @@ A page on your local network to manage the comic art and the members' characters
 | **Preview** | Draw a test comic with sample text. |
 | **Problems** | The art files that the bot cannot use, and why. |
 
-**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can do destructive actions: remove a character, a pose, or a background, and replace an art file. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
+**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
 
 **Art rules:** the same as for [custom comic art](#comic-art). The built-in Comic Chat art cannot be changed or removed, only hidden. A removed or replaced file goes to `custom/.trash` in the art folder, so you can get it back through SMB. The bot does not delete that folder. New art works at once, with no restart.
 
