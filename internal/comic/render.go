@@ -9,6 +9,7 @@ import (
 	"image/draw"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -47,6 +48,9 @@ var (
 	minFont    = 6.0 // text gets smaller until it fits, down to this
 	pairChars  = 128 // two speakers share a panel only with shorter messages
 	castRowH   = 30
+
+	turnChance   = 0.3 // a speaker who talks again turns around
+	silentChance = 0.5 // a one-speaker panel also shows a neighbor panel's speaker
 )
 
 var (
@@ -124,8 +128,9 @@ func (p *Pack) Render(msgs []Message, opt Options) (*image.RGBA, error) {
 
 	r := &renderer{dst: dst, fc: fc, rng: rng, bg: bg}
 	r.castList(castRect, people)
+	actors := stage(panels, rng)
 	for i, rect := range rects {
-		r.panel(rect, panels[i], people)
+		r.panel(rect, actors[i], people)
 		r.frame(rect)
 	}
 	return dst, nil
@@ -239,6 +244,61 @@ func canPair(a, b Message) bool {
 		return m.Image == nil && !m.Spoiler && utf8.RuneCountInString(m.Text) < pairChars
 	}
 	return a.Speaker != b.Speaker && short(a) && short(b)
+}
+
+// actor is one character in a panel. A silent one has no message.
+type actor struct {
+	speaker string
+	msg     *Message
+	left    bool // it looks to the left (the art looks to the right)
+}
+
+// stage gives each panel its actors, from left to right. Two speakers
+// face each other. A new speaker looks the other way from the last one; a
+// speaker who talks again turns around sometimes. A panel with one speaker
+// can also show someone from the panel before (who stays) or the panel
+// after (who arrives early); the two then face each other.
+func stage(panels [][]Message, rng *rand.Rand) [][]actor {
+	out := make([][]actor, len(panels))
+	left, last := false, ""
+	for i, pn := range panels {
+		if len(pn) == 2 {
+			out[i] = []actor{{pn[0].Speaker, &pn[0], false}, {pn[1].Speaker, &pn[1], true}}
+			left, last = true, pn[1].Speaker
+			continue
+		}
+		m := &pn[0]
+		if i > 0 && (m.Speaker != last || rng.Float64() < turnChance) {
+			left = !left
+		}
+		last = m.Speaker
+		speaker := actor{m.Speaker, m, left}
+		out[i] = []actor{speaker}
+		if rng.Float64() >= silentChance {
+			continue
+		}
+		var near []string
+		for _, j := range []int{i - 1, i + 1} {
+			if j < 0 || j >= len(panels) {
+				continue
+			}
+			for _, n := range panels[j] {
+				if n.Speaker != m.Speaker && !slices.Contains(near, n.Speaker) {
+					near = append(near, n.Speaker)
+				}
+			}
+		}
+		if len(near) == 0 {
+			continue
+		}
+		silent := actor{near[rng.IntN(len(near))], nil, !left}
+		if left {
+			out[i] = []actor{silent, speaker}
+		} else {
+			out[i] = []actor{speaker, silent}
+		}
+	}
+	return out
 }
 
 func (p *Pack) background(name string, rng *rand.Rand) image.Image {
@@ -399,28 +459,33 @@ func (f *balloonFit) cut(fc *richtext.Faces, maxW, h int) {
 	last.Items = fc.Ellipsize(append(spans(last.Items), richtext.Span{Text: " …", Style: f.st}), maxW)
 }
 
-// panel draws one or two characters and their balloons, as comicgen does:
+// panel draws the actors and their balloons, as comicgen does:
 // a random zoom (1 to 2) for the background and the characters, the
 // characters from the middle height down, and the balloons in the top
 // half, the second under the first.
-func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string]*cast) {
+func (r *renderer) panel(rect image.Rectangle, actors []actor, people map[string]*cast) {
 	zoom := 1 + r.rng.Float64()
 	r.fill(rect, zoom)
 	inner := rect.Inset(border)
-	two := len(msgs) == 2
+	two := len(actors) == 2 // two characters: each gets half of the panel
 	areaW, areaH := cell-2*areaPad, cell/2-18
 	figTop := rect.Min.Y + cell/2 - 10
 	scale := charScale * zoom
 
-	// The characters: one in the middle, or two that face each other.
+	// The characters: one in the middle, or two side by side.
 	type placed struct {
 		rect image.Rectangle
 		head image.Point
 	}
 	var figs []placed
-	for i, m := range msgs {
-		f := people[m.Speaker].char.figure(moodOf(m.Text), r.rng)
-		flip := two && i == 1
+	speakers := 0
+	for i, a := range actors {
+		var md mood // a silent character is neutral
+		if a.msg != nil {
+			md = moodOf(a.msg.Text)
+			speakers++
+		}
+		f := people[a.speaker].char.figure(md, r.rng)
 		fw := int(float64(f.img.Bounds().Dx()) * scale)
 		fh := int(float64(f.img.Bounds().Dy()) * scale)
 		slotW := cell
@@ -431,7 +496,7 @@ func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string
 		fr := image.Rect(fx, figTop, fx+fw, figTop+fh)
 		img := image.Image(f.img)
 		hx := int(float64(f.headX) * scale)
-		if flip {
+		if a.left {
 			img = flipH(f.img)
 			hx = fw - hx
 		}
@@ -440,29 +505,32 @@ func (r *renderer) panel(rect image.Rectangle, msgs []Message, people map[string
 	}
 
 	// The profile pictures, at the bottom middle of each character.
-	for i, m := range msgs {
+	for i, a := range actors {
 		fr := figs[i].rect
 		cy := min(fr.Max.Y, inner.Max.Y) - avatarSize/2 - 6
-		r.avatar(people[m.Speaker].avatar, fr.Min.X+fr.Dx()/2, cy, avatarSize)
+		r.avatar(people[a.speaker].avatar, fr.Min.X+fr.Dx()/2, cy, avatarSize)
 	}
 
 	// The balloons: near their speaker, at a random place across.
 	y := rect.Min.Y + areaPad
-	for i, m := range msgs {
+	for i, a := range actors {
+		if a.msg == nil {
+			continue
+		}
 		h := areaH
-		if two {
+		if speakers == 2 {
 			h = areaH / 2
 		}
 		if i == 1 {
 			h = max(h, rect.Min.Y+areaPad+areaH-y)
 		}
-		f := r.fitBalloon(m, areaW, h)
+		f := r.fitBalloon(*a.msg, areaW, h)
 		arrowX := figs[i].head.X
 		minX, maxX := rect.Min.X+areaPad, rect.Max.X-areaPad-f.size.X
 		bx := min(max(arrowX-int(float64(f.size.X)*r.rng.Float64()), minX), max(maxX, minX))
 		box := image.Rectangle{Min: image.Pt(bx, y), Max: image.Pt(bx, y).Add(f.size)}
 		r.balloon(box, figs[i].head, figs[i].rect.Min.Y)
-		r.balloonContent(box, f, m)
+		r.balloonContent(box, f, *a.msg)
 		y = box.Max.Y + 4
 	}
 }

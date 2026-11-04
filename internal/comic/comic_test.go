@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/binpas/hcbot/internal/richtext"
 )
 
 func testPack(t *testing.T) string {
@@ -170,6 +172,117 @@ func TestSplit(t *testing.T) {
 	}
 	if canPair(m("a", "x"), m("a", "y")) || canPair(m("a", "x"), m("b", strings.Repeat("y", pairChars))) {
 		t.Error("canPair is wrong")
+	}
+}
+
+func TestStage(t *testing.T) {
+	m := func(s string) Message { return Message{Speaker: s} }
+	panels := [][]Message{{m("a")}, {m("b")}, {m("b")}, {m("c"), m("d")}, {m("e")}, {m("f")}, {m("f")}}
+	var turned, again, silent, single int
+	from := map[[2]int]bool{} // {panel, neighbor panel} that gave a silent actor
+	for seed := range uint64(2000) {
+		acts := stage(panels, rand.New(rand.NewPCG(seed, 1)))
+		var prev actor
+		for i, as := range acts {
+			var sp []actor
+			for _, a := range as {
+				if a.msg != nil {
+					sp = append(sp, a)
+				}
+			}
+			if len(as) == 2 && (as[0].left || !as[1].left) {
+				t.Fatalf("seed %d panel %d: the two do not face each other: %+v", seed, i, as)
+			}
+			if len(sp) != len(panels[i]) {
+				t.Fatalf("seed %d panel %d: %d speakers", seed, i, len(sp))
+			}
+			if i == 0 && sp[0].left {
+				t.Fatalf("seed %d: the first panel looks left", seed)
+			}
+			if i > 0 && len(panels[i]) == 1 {
+				if sp[0].speaker == prev.speaker {
+					again++
+					if sp[0].left != prev.left {
+						turned++
+					}
+				} else if sp[0].left == prev.left {
+					t.Fatalf("seed %d panel %d: a new speaker looks the same way", seed, i)
+				}
+			}
+			if len(panels[i]) == 1 {
+				single++
+				if len(as) == 2 {
+					silent++
+					s := as[0]
+					if as[0].msg != nil {
+						s = as[1]
+					}
+					if s.speaker == sp[0].speaker {
+						t.Fatalf("seed %d panel %d: the speaker is also silent", seed, i)
+					}
+					near := false
+					for _, j := range []int{i - 1, i + 1} {
+						if j >= 0 && j < len(panels) && slices.ContainsFunc(panels[j], func(n Message) bool { return n.Speaker == s.speaker }) {
+							near = true
+							from[[2]int{i, j}] = true
+						}
+					}
+					if !near {
+						t.Fatalf("seed %d panel %d: silent %s is not from a neighbor panel", seed, i, s.speaker)
+					}
+				}
+			}
+			prev = sp[len(sp)-1]
+		}
+	}
+	if got := float64(turned) / float64(again); got < 0.25 || got > 0.35 {
+		t.Errorf("a speaker who talks again turned %.2f of the time, want about %.2f", got, turnChance)
+	}
+	// 5 of the 6 one-speaker panels have someone to show (not panel 6), one time in two.
+	if got := float64(silent) / float64(single); got < 0.38 || got > 0.45 {
+		t.Errorf("silent actors in %.2f of the one-speaker panels", got)
+	}
+	// Every panel with a neighbor, in both directions: not only the first panels.
+	for _, want := range [][2]int{{0, 1}, {1, 0}, {2, 3}, {4, 3}, {4, 5}, {5, 4}} {
+		if !from[want] {
+			t.Errorf("panel %d never showed someone from panel %d", want[0], want[1])
+		}
+	}
+	if from[[2]int{6, 5}] {
+		t.Error("the last panel showed its own speaker")
+	}
+}
+
+func TestSilentActorHasNoBalloon(t *testing.T) {
+	p := loadTestPack(t)
+	f, err := fonts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc := richtext.NewFaces(f, 1)
+	defer fc.Close()
+	msgs := []Message{{Speaker: "1", Text: "hi"}, {Speaker: "2", Text: "yo"}}
+	people := p.assign(msgs)
+	rect := image.Rect(0, 0, cell, cell)
+	white := func(as []actor) int {
+		dst := image.NewRGBA(rect)
+		r := &renderer{dst: dst, fc: fc, rng: rand.New(rand.NewPCG(1, 2))}
+		r.panel(rect, as, people)
+		n := 0
+		for y := range cell/2 - 10 { // above the characters
+			for x := range cell {
+				if dst.RGBAAt(x, y) == colWhite {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if n := white([]actor{{speaker: "1"}, {speaker: "2", left: true}}); n != 0 {
+		t.Errorf("silent actors drew a balloon (%d white pixels)", n)
+	}
+	if white([]actor{{speaker: "1", msg: &msgs[0]}, {speaker: "2", left: true}}) == 0 {
+		t.Error("the speaker has no balloon")
 	}
 }
 
