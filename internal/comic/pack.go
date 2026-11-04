@@ -27,17 +27,22 @@ type Pack struct {
 	byName   map[string]*Character
 	backs    []*Background
 	problems []string // custom art that could not be used, and why
+	hiddenC  map[string]bool
+	hiddenB  map[string]bool
 }
 
 // Character is one character's art. A complex character has heads and
 // torsos that join at a connection point; a simple one has whole bodies.
 type Character struct {
-	Name   string
-	icon   image.Image
-	users  []string // when set, the only users that can use it (private)
-	faces  []part
-	torsos []part
-	bodies []part
+	Name     string
+	icon     image.Image
+	users    []string // when set, the only users that can use it (private)
+	custom   bool     // from the custom folder
+	poses    []string // custom: the pose file names, without ".png"
+	iconFile bool     // custom: it has an icon.png
+	faces    []part
+	torsos   []part
+	bodies   []part
 }
 
 // part is one pose: a head, a torso, or a whole body.
@@ -52,8 +57,9 @@ type part struct {
 
 // Background is one background image.
 type Background struct {
-	Name string
-	img  image.Image
+	Name   string
+	img    image.Image
+	custom bool
 }
 
 // The manifest files of the art pack (the format of comic-chat-web).
@@ -245,6 +251,13 @@ func (p *Pack) CanUse(name, user string) bool {
 	return c != nil && c.usableBy(user)
 }
 
+// CanChoose reports whether a user can choose the character now: CanUse,
+// and it is not hidden. A member who chose a character keeps it when it
+// is hidden later.
+func (p *Pack) CanChoose(name, user string) bool {
+	return p.CanUse(name, user) && !p.hiddenC[name]
+}
+
 // NamesFor returns the names of the characters that a user can use, in
 // cast order.
 func (p *Pack) NamesFor(user string) []string {
@@ -256,10 +269,18 @@ func (p *Pack) NamesFor(user string) []string {
 }
 
 // Private returns the number of private characters.
-func (p *Pack) Private() int { return len(p.chars) - len(p.public) }
+func (p *Pack) Private() int {
+	n := 0
+	for _, c := range p.chars {
+		if len(c.users) > 0 {
+			n++
+		}
+	}
+	return n
+}
 
 func (p *Pack) usable(user string) []*Character {
-	return slices.DeleteFunc(slices.Clone(p.chars), func(c *Character) bool { return !c.usableBy(user) })
+	return slices.DeleteFunc(slices.Clone(p.chars), func(c *Character) bool { return !c.usableBy(user) || p.hiddenC[c.Name] })
 }
 
 // Backgrounds returns the background names.
@@ -269,6 +290,32 @@ func (p *Pack) Backgrounds() []string {
 		out[i] = b.Name
 	}
 	return out
+}
+
+// VisibleBackgrounds returns the names of the backgrounds that are not
+// hidden.
+func (p *Pack) VisibleBackgrounds() []string {
+	return slices.DeleteFunc(p.Backgrounds(), func(n string) bool { return p.hiddenB[n] })
+}
+
+// Hide sets the hidden characters and backgrounds. A hidden character is
+// not given at random and cannot be chosen. A hidden background is not
+// picked at random or offered. Call it before the pack is in use. At least
+// one public character stays: if all are in the list, it ignores them.
+func (p *Pack) Hide(chars, backs []string) {
+	p.hiddenC, p.hiddenB = map[string]bool{}, map[string]bool{}
+	for _, n := range chars {
+		p.hiddenC[n] = true
+	}
+	for _, n := range backs {
+		p.hiddenB[n] = true
+	}
+	visible := slices.DeleteFunc(slices.Clone(p.public), func(c *Character) bool { return p.hiddenC[c.Name] })
+	if len(visible) == 0 {
+		p.hiddenC = map[string]bool{}
+		return
+	}
+	p.public = visible
 }
 
 func readJSON(path string, v any) error {

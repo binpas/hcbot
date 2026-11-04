@@ -85,7 +85,7 @@ func (b *Bot) registerComics() {
 	if !b.env.MessageContent {
 		return
 	}
-	pack, err := comic.LoadPack(b.env.ComicArtDir)
+	pack, err := b.loadComicPack()
 	if errors.Is(err, fs.ErrNotExist) {
 		log.Printf("Comics are off: no comic art in %s (see deploy/comic-art.sh)", b.env.ComicArtDir)
 		return
@@ -136,6 +136,20 @@ func (b *Bot) registerComics() {
 		b.addComponent(id, h)
 	}
 	b.addModal("comicmsgs", b.onComicMessages)
+}
+
+// loadComicPack reads the art and applies the hidden list.
+func (b *Bot) loadComicPack() (*comic.Pack, error) {
+	pack, err := comic.LoadPack(b.env.ComicArtDir)
+	if err != nil {
+		return nil, err
+	}
+	chars, backs, err := b.db.ComicHidden()
+	if err != nil {
+		log.Printf("comic: hidden list: %v", err) // show all, not nothing
+	}
+	pack.Hide(chars, backs)
+	return pack, nil
 }
 
 // comicMax is COMIC_MAX_MESSAGES, from 2 to comicHardMax.
@@ -654,7 +668,7 @@ func (b *Bot) comicEditor(guildID, id string, d comicDraft, msgs []*discordgo.Me
 		parts = append(parts, discordgo.TextDisplay{Content: strings.Join(lines, "\n")})
 	}
 	options := []discordgo.SelectMenuOption{{Label: "Random background", Value: comicRandom, Default: d.Background == ""}}
-	for _, name := range b.comics.pack.Load().Backgrounds() {
+	for _, name := range b.comics.pack.Load().VisibleBackgrounds() {
 		if len(options) == 25 { // a Discord limit
 			break
 		}
@@ -837,7 +851,7 @@ func (b *Bot) onComicBackground(c *Ctx) {
 		return
 	}
 	d.Background = ""
-	if v := c.Values(); len(v) == 1 && v[0] != comicRandom && slices.Contains(b.comics.pack.Load().Backgrounds(), v[0]) {
+	if v := c.Values(); len(v) == 1 && v[0] != comicRandom && slices.Contains(b.comics.pack.Load().VisibleBackgrounds(), v[0]) {
 		d.Background = v[0]
 	}
 	if b.saveComic(c, id, d) {
@@ -928,8 +942,19 @@ func (b *Bot) cmdCharacter(c *Ctx) {
 	name, set := c.Str("name")
 	name = strings.ToLower(strings.TrimSpace(name))
 	text := ""
+	if set {
+		locked, err := b.db.ComicLocked(c.GuildID(), c.UserID())
+		if err != nil {
+			c.dbFailed("get character lock", err)
+			return
+		}
+		if locked {
+			c.Reply(true, errEmbed(comicLockedText))
+			return
+		}
+	}
 	switch {
-	case set && !pack.CanUse(name, c.UserID()): // a private one looks missing
+	case set && !pack.CanChoose(name, c.UserID()): // a private one looks missing
 		c.ReplyComplex(true, []*discordgo.MessageEmbed{errEmbed(fmt.Sprintf("There is no character named `%s`.", cutText(name, 40)))},
 			characterButtons())
 		return
@@ -962,6 +987,8 @@ func (b *Bot) cmdCharacter(c *Ctx) {
 	e.Image = &discordgo.MessageEmbedImage{URL: "attachment://character.png"}
 	_ = c.reply(true, []*discordgo.MessageEmbed{e}, characterButtons(), comicFile("character.png", data))
 }
+
+const comicLockedText = "A mod set your comic character, so you cannot change it."
 
 func characterButtons() []discordgo.MessageComponent {
 	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
@@ -1004,6 +1031,15 @@ func (b *Bot) onCharacterReset(c *Ctx) {
 	if b.comics == nil {
 		return
 	}
+	locked, err := b.db.ComicLocked(c.GuildID(), c.UserID())
+	if err != nil {
+		c.dbFailed("get character lock", err)
+		return
+	}
+	if locked {
+		c.Reply(true, errEmbed(comicLockedText))
+		return
+	}
 	if err := b.db.DeleteComicCharacter(c.GuildID(), c.UserID()); err != nil {
 		c.dbFailed("reset character", err)
 		return
@@ -1024,7 +1060,7 @@ func logComicProblems(p *comic.Pack) {
 // be read, the old art stays.
 func (b *Bot) cmdComicArtReload(c *Ctx) {
 	c.Defer(true)
-	pack, err := comic.LoadPack(b.env.ComicArtDir)
+	pack, err := b.loadComicPack()
 	if err != nil {
 		c.Reply(true, errEmbed(fmt.Sprintf("I could not read the comic art, so the old art stays: %s", cutText(err.Error(), 300))))
 		return

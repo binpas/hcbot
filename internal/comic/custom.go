@@ -188,7 +188,7 @@ func (p *Pack) loadCustomCharacter(dir, folder string) {
 			fx, fy = face[0], face[1]
 		}
 	}
-	c := &Character{Name: name, icon: icon, users: users}
+	c := &Character{Name: name, icon: icon, users: users, custom: true, iconFile: icon != nil}
 	// neutral first, then by name, so that a comic is the same after a
 	// reload.
 	stems := make([]string, 0, len(poses))
@@ -198,7 +198,8 @@ func (p *Pack) loadCustomCharacter(dir, folder string) {
 		}
 	}
 	slices.Sort(stems)
-	for _, stem := range append([]string{"neutral"}, stems...) {
+	c.poses = append([]string{"neutral"}, stems...)
+	for _, stem := range c.poses {
 		img, pose := poses[stem], customPoses[stem]
 		b := img.Bounds()
 		// The face point scales with the pose, when its size differs.
@@ -245,7 +246,7 @@ func (p *Pack) loadCustomBackground(path, file string) {
 		p.problem("%s: %v", where, err)
 		return
 	}
-	p.backs = append(p.backs, &Background{Name: name, img: img})
+	p.backs = append(p.backs, &Background{Name: name, img: img, custom: true})
 }
 
 func splitExt(name string) (string, string) {
@@ -271,11 +272,18 @@ func readLimited(path string, minW, maxW, minH, maxH int) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("not an image: %v", err)
 	}
-	if cfg.Width < minW || cfg.Width > maxW || cfg.Height < minH || cfg.Height > maxH {
-		return nil, fmt.Errorf("the size is %d×%d; it must be %d to %d wide and %d to %d high",
-			cfg.Width, cfg.Height, minW, maxW, minH, maxH)
+	if err := checkSize(cfg, minW, maxW, minH, maxH); err != nil {
+		return nil, err
 	}
 	return readImage(path)
+}
+
+func checkSize(cfg image.Config, minW, maxW, minH, maxH int) error {
+	if cfg.Width < minW || cfg.Width > maxW || cfg.Height < minH || cfg.Height > maxH {
+		return fmt.Errorf("the size is %d×%d; it must be %d to %d wide and %d to %d high",
+			cfg.Width, cfg.Height, minW, maxW, minH, maxH)
+	}
+	return nil
 }
 
 // transparent reports whether the corners of an image are transparent.

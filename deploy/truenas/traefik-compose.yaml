@@ -1,0 +1,57 @@
+# Traefik on the host: HTTPS for the bot's web interface, on its own LAN IP
+# (macvlan), because the TrueNAS web UI uses ports 80 and 443 on the host's
+# address. See README.md, "Web interface".
+#
+# Traefik holds the Cloudflare token and the wildcard key. The bot never
+# sees them. Data: /mnt/POOL/apps/traefik (apps, 0700): traefik.yml,
+# dynamic.yml, acme.json (0600) and .env (0600, CF_DNS_API_TOKEN=...).
+#
+# The host itself cannot connect to the macvlan IP. Other LAN devices can.
+# Do not forward router ports to this IP.
+
+services:
+  traefik:
+    image: traefik:v3.7.17
+    container_name: traefik
+    restart: unless-stopped
+    user: "568:568"
+    command: ["--configFile=/data/traefik.yml"]
+    env_file: /mnt/POOL/apps/traefik/.env
+    environment:
+      TZ: UTC
+    volumes:
+      - /mnt/POOL/apps/traefik:/data
+    networks:
+      lan:
+        ipv4_address: 192.168.1.40
+        mac_address: "02:42:c0:a8:01:28"
+      # The default route must use this network: the bots' ports are on
+      # 172.16.0.1, which the router cannot reach.
+      default:
+        gw_priority: 1
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: eth0
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1
+          ip_range: 192.168.1.40/32

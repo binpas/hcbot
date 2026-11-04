@@ -51,6 +51,13 @@ type Env struct {
 	// ComicArtDir is the art pack for /comic (deploy/comic-art.sh). When
 	// it has no art, the comic commands are not registered.
 	ComicArtDir string
+
+	// WebAddr is where the bot serves the web interface, for example
+	// ":9102". Empty serves none. WebURL is its public HTTPS address, and
+	// WebSecret is the Discord OAuth2 client secret for the login.
+	WebAddr   string
+	WebURL    string
+	WebSecret string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -72,6 +79,9 @@ func LoadEnv() Env {
 		MetricsAddr:        strings.TrimSpace(os.Getenv("METRICS_ADDR")),
 		TTSToken:           strings.TrimSpace(os.Getenv("TTS_TOKEN")),
 		ComicArtDir:        envStr("COMIC_ART_DIR", "comic"),
+		WebAddr:            strings.TrimSpace(os.Getenv("WEB_ADDR")),
+		WebURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_URL")), "/"),
+		WebSecret:          strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
 	}
 }
 

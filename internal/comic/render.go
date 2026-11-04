@@ -307,10 +307,16 @@ func (p *Pack) background(name string, rng *rand.Rand) image.Image {
 			return b.img
 		}
 	}
-	if len(p.backs) == 0 {
+	var backs []*Background
+	for _, b := range p.backs {
+		if !p.hiddenB[b.Name] {
+			backs = append(backs, b)
+		}
+	}
+	if len(backs) == 0 {
 		return nil
 	}
-	return p.backs[rng.IntN(len(p.backs))].img
+	return backs[rng.IntN(len(backs))].img
 }
 
 type renderer struct {

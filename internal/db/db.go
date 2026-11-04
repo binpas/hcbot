@@ -213,6 +213,13 @@ var schema = []string{
 		character TEXT NOT NULL,
 		PRIMARY KEY (guild_id, user_id)
 	)`,
+	// Art that the web interface hid from comics. kind is "character" or
+	// "background".
+	`CREATE TABLE IF NOT EXISTS comic_hidden (
+		kind TEXT NOT NULL,
+		name TEXT NOT NULL,
+		PRIMARY KEY (kind, name)
+	)`,
 	// The server nicknames that the bot saw, for comic and spoken names.
 	// They expire 30 days after the bot last saw the member. Go bot only.
 	`CREATE TABLE IF NOT EXISTS member_nicks (
@@ -273,6 +280,7 @@ var schema = []string{
 var migrations = []string{
 	// JSON array of role IDs stripped at arrest time, restored on release.
 	`ALTER TABLE sentences ADD COLUMN removed_roles TEXT`,
+	`ALTER TABLE comic_characters ADD COLUMN locked INTEGER NOT NULL DEFAULT 0`,
 }
 
 func (d *DB) init() error {

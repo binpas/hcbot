@@ -1,0 +1,522 @@
+<!doctype html>
+<!-- The bot's web interface (internal/bot/web.go). The same Material Web
+     components as the TTS worker dashboard, from a CDN at a fixed version. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HEALTH bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block">
+<script type="module">
+  import 'https://cdn.jsdelivr.net/npm/@material/web@2.5.0/all.js/+esm';
+  import {styles as typescale} from 'https://cdn.jsdelivr.net/npm/@material/web@2.5.0/typography/md-typescale-styles.js/+esm';
+  document.adoptedStyleSheets.push(typescale.styleSheet);
+</script>
+<style>
+  :root {
+    --md-ref-typeface-brand: Roboto, system-ui, sans-serif;
+    --md-ref-typeface-plain: Roboto, system-ui, sans-serif;
+    --md-sys-color-primary: #4a5c92;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #dbe1ff;
+    --md-sys-color-on-primary-container: #00174b;
+    --md-sys-color-secondary-container: #dde1f9;
+    --md-sys-color-on-secondary-container: #161b2c;
+    --md-sys-color-error: #ba1a1a;
+    --md-sys-color-surface: #faf8ff;
+    --md-sys-color-surface-container-low: #f3f3fa;
+    --md-sys-color-surface-container: #eeedf4;
+    --md-sys-color-surface-container-highest: #e2e2e9;
+    --md-sys-color-on-surface: #1a1b21;
+    --md-sys-color-on-surface-variant: #45464f;
+    --md-sys-color-outline-variant: #c5c6d0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --md-sys-color-primary: #b3c5ff;
+      --md-sys-color-on-primary: #1a2d60;
+      --md-sys-color-primary-container: #324478;
+      --md-sys-color-on-primary-container: #dbe1ff;
+      --md-sys-color-secondary-container: #414659;
+      --md-sys-color-on-secondary-container: #dde1f9;
+      --md-sys-color-error: #ffb4ab;
+      --md-sys-color-surface: #121318;
+      --md-sys-color-surface-container-low: #1a1b21;
+      --md-sys-color-surface-container: #1e1f25;
+      --md-sys-color-surface-container-highest: #34343a;
+      --md-sys-color-on-surface: #e2e2e9;
+      --md-sys-color-on-surface-variant: #c5c6d0;
+      --md-sys-color-outline-variant: #45464f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-ref-typeface-plain); }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 24px; background: var(--md-sys-color-surface-container); }
+  header h1 { margin: 0; flex: 1; }
+  .tabs { background: var(--md-sys-color-surface-container); }
+  md-tabs { max-width: 1100px; margin: 0 auto; --md-primary-tab-container-color: transparent; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  [hidden] { display: none !important; }
+  .card { position: relative; border-radius: 12px; background: var(--md-sys-color-surface-container-low); --md-elevation-level: 1; padding: 16px; }
+  .card h2 { margin: 0 0 12px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .toolbar md-outlined-text-field { flex: 1; min-width: 180px; }
+  .toolbar md-outlined-select { min-width: 220px; }
+  .hint, .label { color: var(--md-sys-color-on-surface-variant); }
+  .hint { margin: 8px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--md-sys-color-surface-container); min-width: 0; }
+  .item.off img { opacity: .4; }
+  .item button.open { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .item button.open:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+  .item .name { overflow-wrap: anywhere; text-align: center; }
+  .thumb { height: 72px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 8px; padding: 4px; }
+  .thumb.back { width: 100%; height: 110px; object-fit: cover; padding: 0; }
+  .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  .member { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--md-sys-color-outline-variant); flex-wrap: wrap; }
+  .member:first-child { border-top: 0; }
+  .member .who { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+  .member img, .member .noavatar { width: 40px; height: 40px; border-radius: 50%; background: var(--md-sys-color-surface-container-highest); }
+  .member .char { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 8px; }
+  .id { font-variant-numeric: tabular-nums; }
+  #preview-img { max-width: 100%; border-radius: 8px; }
+  .poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+  .pose { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 8px; border-radius: 8px; background: var(--md-sys-color-surface-container); }
+  .pose img { height: 72px; max-width: 100%; object-fit: contain; background: #fff; border-radius: 4px; }
+  .pose .missing { height: 72px; display: flex; align-items: center; }
+  .face-box { position: relative; display: inline-block; line-height: 0; cursor: crosshair; background: #fff; border-radius: 8px; max-width: 100%; }
+  .face-box img { max-height: 320px; max-width: 100%; }
+  .face-dot { position: absolute; width: 14px; height: 14px; margin: -7px; border-radius: 50%; background: #e53935; border: 2px solid #fff; pointer-events: none; }
+  md-dialog { max-width: min(760px, calc(100vw - 32px)); width: 100%; }
+  .stack { display: grid; gap: 16px; }
+  #login { display: grid; place-items: center; min-height: 60vh; text-align: center; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 16px; border-radius: 8px; max-width: calc(100vw - 32px);
+    background: var(--md-sys-color-on-surface); color: var(--md-sys-color-surface); z-index: 100; }
+  #toast.bad { background: var(--md-sys-color-error); color: #fff; }
+  @media (prefers-color-scheme: dark) { #toast.bad { color: #000; } }
+  @media (max-width: 600px) {
+    header { padding: 12px 16px; }
+    main { padding: 12px 16px; }
+    .toolbar md-outlined-select { min-width: 0; flex: 1 1 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 class="md-typescale-title-large">HEALTH bot</h1>
+  <span id="whoami" class="label md-typescale-label-large"></span>
+  <md-text-button id="logout" hidden>Log out</md-text-button>
+</header>
+
+<div id="login" hidden>
+  <div class="stack">
+    <p id="login-text" class="md-typescale-body-large">This page is for mods of the server.</p>
+    <div><md-filled-button href="/auth/login">Log in with Discord</md-filled-button></div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="tabs">
+    <md-tabs id="tabs" aria-label="Views">
+      <md-primary-tab aria-controls="characters">Characters</md-primary-tab>
+      <md-primary-tab aria-controls="backgrounds">Backgrounds</md-primary-tab>
+      <md-primary-tab aria-controls="members">Members</md-primary-tab>
+      <md-primary-tab aria-controls="preview">Preview</md-primary-tab>
+      <md-primary-tab aria-controls="problems">Problems</md-primary-tab>
+    </md-tabs>
+  </div>
+
+  <main id="characters" role="tabpanel">
+    <section class="card"><md-elevation></md-elevation>
+      <h2 class="md-typescale-title-medium">Add a character</h2>
+      <div class="toolbar">
+        <md-outlined-text-field id="char-name" label="Name" maxlength="32"></md-outlined-text-field>
+        <md-outlined-button id="char-add">Select neutral.png</md-outlined-button>
+      </div>
+      <p class="hint md-typescale-body-small">A PNG with a transparent background, facing right, 40–1000 px wide and 100–1000 px high (about 400 px high is best), at most 8 MB. A name has a–z, 0–9, - and _.</p>
+    </section>
+    <section class="card"><md-elevation></md-elevation>
+      <div class="toolbar">
+        <md-outlined-text-field id="char-filter" label="Filter" type="search"></md-outlined-text-field>
+      </div>
+      <p class="hint md-typescale-body-small">Click a character for details. A hidden character cannot be chosen and is not given at random. Members who already chose it keep it.</p>
+      <div id="char-grid" class="grid" style="margin-top:12px"></div>
+    </section>
+  </main>
+
+  <main id="backgrounds" role="tabpanel" hidden>
+    <section class="card"><md-elevation></md-elevation>
+      <h2 class="md-typescale-title-medium">Add a background</h2>
+      <div class="toolbar">
+        <md-outlined-text-field id="back-name" label="Name" maxlength="32"></md-outlined-text-field>
+        <md-outlined-button id="back-add">Select a file</md-outlined-button>
+      </div>
+      <p class="hint md-typescale-body-small">A PNG or JPEG, 160–2000 px each side, at most 8 MB. Square, 320–640 px, is best.</p>
+    </section>
+    <section class="card"><md-elevation></md-elevation>
+      <div id="back-grid" class="grid"></div>
+    </section>
+  </main>
+
+  <main id="members" role="tabpanel" hidden>
+    <section class="card"><md-elevation></md-elevation>
+      <h2 class="md-typescale-title-medium">Find a member</h2>
+      <div class="toolbar">
+        <md-outlined-text-field id="member-q" label="Name or user ID" type="search"></md-outlined-text-field>
+        <md-filled-tonal-button id="member-find">Search</md-filled-tonal-button>
+      </div>
+      <div id="member-found" style="margin-top:8px"></div>
+    </section>
+    <section class="card"><md-elevation></md-elevation>
+      <h2 class="md-typescale-title-medium">Members with a character</h2>
+      <div id="member-list"></div>
+    </section>
+  </main>
+
+  <main id="preview" role="tabpanel" hidden>
+    <section class="card"><md-elevation></md-elevation>
+      <div class="toolbar">
+        <md-outlined-select id="prev-char" label="Character"></md-outlined-select>
+        <md-outlined-select id="prev-back" label="Background"></md-outlined-select>
+        <md-filled-button id="prev-draw">Draw</md-filled-button>
+      </div>
+      <p class="hint md-typescale-body-small">Draws a comic with sample text. Each click gives a different comic.</p>
+      <img id="preview-img" alt="The test comic" hidden style="margin-top:12px">
+    </section>
+  </main>
+
+  <main id="problems" role="tabpanel" hidden>
+    <section class="card"><md-elevation></md-elevation>
+      <h2 class="md-typescale-title-medium">Art files that the bot cannot use</h2>
+      <div id="problem-list"></div>
+    </section>
+  </main>
+</div>
+
+<md-dialog id="dialog"><div slot="headline" id="dialog-title"></div><div slot="content" id="dialog-body" class="stack"></div><div slot="actions" id="dialog-actions"></div></md-dialog>
+<div id="toast" role="status" hidden></div>
+<input id="file" type="file" hidden>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let me = null, art = null;
+
+// el builds an element. All text goes in as text, not as HTML.
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (k in n && k !== "href") n[k] = v;
+    else n.setAttribute(k, v);
+  }
+  n.append(...kids);
+  return n;
+}
+const enc = encodeURIComponent;
+
+function toast(text, bad) {
+  const t = $("toast");
+  t.textContent = text; t.className = bad ? "bad" : ""; t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3500);
+}
+
+async function api(method, path, body) {
+  const opt = {method, headers: {}};
+  if (body instanceof FormData) opt.body = body;
+  else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+  const r = await fetch(path, opt);
+  if (r.status === 401) { showLogin(); throw new Error("Please log in."); }
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+  if (!r.ok) throw new Error((data && data.error) || "The request did not work (" + r.status + ").");
+  return data;
+}
+
+// act runs a change and shows its result. A change to the art answers with
+// the new art.
+async function act(run, done) {
+  try {
+    const data = await run();
+    if (data && data.characters) { art = data; renderArt(); }
+    if (data && data.warning) toast(data.warning, true);
+    else if (done) toast(done);
+    return data || true;
+  } catch (e) { toast(e.message, true); return null; }
+}
+
+function showLogin(text) {
+  $("app").hidden = true; $("login").hidden = false;
+  $("logout").hidden = true; $("whoami").textContent = "";
+  if (text) $("login-text").textContent = text;
+}
+
+function pickFile(accept) {
+  return new Promise(resolve => {
+    const f = $("file");
+    f.value = ""; f.accept = accept;
+    f.onchange = () => resolve(f.files[0] || null);
+    f.oncancel = () => resolve(null);
+    f.click();
+  });
+}
+
+function form(file, fields = {}) {
+  const fd = new FormData();
+  fd.append("file", file);
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+  return fd;
+}
+
+// The dialog. actions are [label, function, danger]; the function can keep
+// the dialog open by returning false.
+function dialog(title, body, actions) {
+  $("dialog-title").textContent = title;
+  $("dialog-body").replaceChildren(...body);
+  $("dialog-actions").replaceChildren(...actions.map(([label, fn, tag]) =>
+    el(tag || "md-text-button", {onclick: async () => {
+      if (fn && (await fn()) === false) return;
+      $("dialog").close();
+    }}, label)));
+  $("dialog").show();
+}
+
+function confirmDanger(title, text, label, fn) {
+  dialog(title, [el("p", {class: "md-typescale-body-medium"}, text)], [["Cancel"], [label, fn, "md-filled-button"]]);
+}
+
+function hideSwitch(kind, item) {
+  const s = el("md-switch", {selected: !item.hidden, ariaLabel: "Show " + item.name, onchange: async () => {
+    const ok = await act(() => api("POST", "/api/hidden", {kind, name: item.name, hidden: !s.selected}));
+    if (!ok) s.selected = !s.selected;
+  }});
+  return el("label", {class: "row md-typescale-label-medium"}, "Visible", s);
+}
+
+function renderCharacters() {
+  const q = $("char-filter").value.trim().toLowerCase();
+  $("char-grid").replaceChildren(...art.characters.filter(c => c.name.includes(q)).map(c => {
+    const used = art.used[c.name] || 0;
+    const tags = el("div", {class: "row"});
+    if (c.custom) tags.append(el("span", {class: "tag"}, "custom"));
+    if (c.users && c.users.length) tags.append(el("span", {class: "tag"}, "private"));
+    if (used) tags.append(el("span", {class: "tag"}, used + (used === 1 ? " member" : " members")));
+    return el("div", {class: "item" + (c.hidden ? " off" : "")},
+      el("button", {class: "open", onclick: () => openCharacter(c.name)},
+        el("img", {class: "thumb", src: "/img/icon/" + enc(c.name), alt: "", loading: "lazy"}),
+        el("span", {class: "name md-typescale-label-large"}, c.name)),
+      tags, hideSwitch("character", c));
+  }));
+}
+
+function renderBackgrounds() {
+  $("back-grid").replaceChildren(...art.backgrounds.map(b => {
+    const item = el("div", {class: "item" + (b.hidden ? " off" : "")},
+      el("img", {class: "thumb back", src: "/img/background/" + enc(b.name), alt: "", loading: "lazy"}),
+      el("span", {class: "name md-typescale-label-large"}, b.name),
+      hideSwitch("background", b));
+    if (b.custom) {
+      item.append(el("span", {class: "row"}, el("span", {class: "tag"}, "custom")));
+      if (me.admin) {
+        item.append(el("md-text-button", {onclick: async () => {
+          const f = await pickFile("image/png,image/jpeg");
+          if (f) await act(() => api("POST", "/api/backgrounds", form(f, {name: b.name, replace: "true"})), "Replaced.");
+        }}, "Replace"));
+        item.append(el("md-text-button", {onclick: () => confirmDanger("Remove " + b.name + "?",
+          "The file goes to custom/.trash, so you can get it back with SMB.", "Remove",
+          () => act(() => api("DELETE", "/api/backgrounds/" + enc(b.name)), "Removed."))}, "Remove"));
+      }
+    }
+    return item;
+  }));
+}
+
+function renderProblems() {
+  const list = art.problems || [];
+  $("problem-list").replaceChildren(...(list.length
+    ? list.map(p => el("p", {class: "md-typescale-body-medium"}, p))
+    : [el("p", {class: "hint md-typescale-body-medium"}, "There are no problems.")]));
+}
+
+function setOptions(select, options) {
+  const old = select.value;
+  select.replaceChildren(...options.map(([value, text]) =>
+    el("md-select-option", {value}, el("div", {slot: "headline"}, text))));
+  select.value = options.some(o => o[0] === old) ? old : options[0][0];
+}
+
+function renderArt() {
+  renderCharacters(); renderBackgrounds(); renderProblems();
+  setOptions($("prev-char"), [["*", "At random"], ...art.characters.map(c => [c.name, c.name])]);
+  setOptions($("prev-back"), [["*", "At random"], ...art.backgrounds.map(b => [b.name, b.name])]);
+}
+
+function poseCard(c, pose) {
+  const has = pose === "icon" ? c.iconFile : c.poses.includes(pose);
+  const card = el("div", {class: "pose"}, el("span", {class: "md-typescale-label-medium"}, pose));
+  if (pose === "icon" || has) card.append(el("img", {src: (pose === "icon" ? "/img/icon/" + enc(c.name) : "/img/pose/" + enc(c.name) + "/" + pose), alt: pose}));
+  else card.append(el("span", {class: "missing hint md-typescale-body-small"}, "not set"));
+  const needAdmin = has || pose === "neutral";
+  if (!needAdmin || me.admin) {
+    card.append(el("md-text-button", {onclick: async () => {
+      const f = await pickFile("image/png");
+      if (f && await act(() => api("POST", "/api/characters/" + enc(c.name) + "/poses/" + pose, form(f, {replace: has ? "true" : "false"})), "Saved.")) openCharacter(c.name);
+    }}, has ? "Replace" : "Add"));
+  }
+  if (has && pose !== "neutral" && pose !== "icon" && me.admin) {
+    card.append(el("md-text-button", {onclick: async () => {
+      if (await act(() => api("DELETE", "/api/characters/" + enc(c.name) + "/poses/" + pose), "Removed.")) openCharacter(c.name);
+    }}, "Remove"));
+  }
+  return card;
+}
+
+function openCharacter(name) {
+  const c = art.characters.find(x => x.name === name);
+  if (!c) { $("dialog").close(); return; }
+  const body = [];
+  if (!c.custom) {
+    body.push(el("p", {class: "hint md-typescale-body-medium"}, "A built-in Comic Chat character. You can hide it, but not change it."));
+    body.push(el("div", {}, el("img", {src: "/img/portrait/" + enc(c.name), alt: c.name, style: "max-width:100%;border-radius:8px"})));
+  } else {
+    const dot = el("div", {class: "face-dot", style: "left:" + (100 * c.face[0] / c.width) + "%;top:" + (100 * c.face[1] / c.height) + "%"});
+    const img = el("img", {src: "/img/pose/" + enc(c.name) + "/neutral", alt: "Neutral pose"});
+    const box = el("div", {class: "face-box", onclick: async e => {
+      const r = img.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / r.width * img.naturalWidth);
+      const y = Math.floor((e.clientY - r.top) / r.height * img.naturalHeight);
+      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {face: [x, y]}), "The face point is saved.")) openCharacter(c.name);
+    }}, img, dot);
+    body.push(el("div", {}, el("p", {class: "hint md-typescale-body-small", style: "margin:0 0 8px"}, "Click the middle of the face. Balloon tails point there."), box));
+
+    const users = el("md-outlined-text-field", {label: "Private to these user IDs (empty: public)", type: "textarea", rows: 2, value: (c.users || []).join("\n"), style: "width:100%"});
+    body.push(el("div", {class: "stack"}, users, el("div", {}, el("md-filled-tonal-button", {onclick: async () => {
+      const list = users.value.split(/[\s,]+/).filter(Boolean);
+      if (await act(() => api("PATCH", "/api/characters/" + enc(c.name), {users: list}), "Saved.")) openCharacter(c.name);
+    }}, "Save the list"))));
+    body.push(el("div", {class: "poses"}, ...me.poses.map(p => poseCard(c, p))));
+  }
+  const actions = [["Close"]];
+  if (c.custom && me.admin) {
+    const used = art.used[c.name] || 0;
+    actions.unshift(["Remove", () => {
+      confirmDanger("Remove " + c.name + "?",
+        (used ? used + (used === 1 ? " member uses" : " members use") + " this character. They will get an automatic one. " : "") +
+        "The files go to custom/.trash, so you can get them back with SMB.", "Remove",
+        () => act(() => api("DELETE", "/api/characters/" + enc(c.name)), "Removed."));
+      return false;
+    }]);
+  }
+  dialog(c.name, body, actions);
+}
+
+function memberRow(m, listed) {
+  const who = el("div", {class: "who"}, el("div", {class: "md-typescale-body-large"}, m.name || "(not on the server)"),
+    el("div", {class: "id label md-typescale-body-small"}, m.id));
+  const row = el("div", {class: "member"},
+    m.avatar ? el("img", {src: m.avatar, alt: ""}) : el("div", {class: "noavatar"}), who);
+  if (listed && m.character) {
+    row.append(el("img", {class: "char", src: "/img/icon/" + enc(m.character), alt: "", loading: "lazy"}),
+      el("span", {class: "md-typescale-label-large"}, m.character));
+    if (m.locked) row.append(el("span", {class: "tag"}, "locked"));
+  }
+  row.append(el("md-outlined-button", {onclick: () => editMember(m)}, listed ? "Change" : "Assign"));
+  return row;
+}
+
+function editMember(m) {
+  const sel = el("md-outlined-select", {label: "Character", style: "width:100%"});
+  setOptions(sel, art.characters.map(c => [c.name, c.name + (c.users && c.users.length ? " (private)" : "") + (c.hidden ? " (hidden)" : "")]));
+  if (m.character) sel.value = m.character;
+  const lock = el("md-switch", {selected: !!m.locked});
+  const body = [sel, el("label", {class: "row md-typescale-body-medium"}, "Lock (the member cannot change it)", lock)];
+  const actions = [["Cancel"], ["Save", async () => {
+    const ok = await act(() => api("PUT", "/api/members/" + m.id, {character: sel.value, locked: lock.selected}), "Saved.");
+    if (ok) loadMembers();
+    return !!ok;
+  }, "md-filled-button"]];
+  if (m.character) actions.unshift(["Clear", async () => {
+    if (await act(() => api("DELETE", "/api/members/" + m.id), "Cleared.")) loadMembers();
+  }]);
+  dialog(m.name || m.id, body, actions);
+}
+
+async function loadMembers() {
+  const list = await api("GET", "/api/members").catch(e => { toast(e.message, true); return null; });
+  if (!list) return;
+  $("member-list").replaceChildren(...(list.length ? list.map(m => memberRow(m, true))
+    : [el("p", {class: "hint md-typescale-body-medium"}, "No member has chosen a character.")]));
+}
+
+async function findMember() {
+  const q = $("member-q").value.trim();
+  if (!q) return;
+  const found = await api("GET", "/api/members/search?q=" + enc(q)).catch(e => { toast(e.message, true); return null; });
+  if (!found) return;
+  $("member-found").replaceChildren(...(found.length ? found.map(m => memberRow(m, false))
+    : [el("p", {class: "hint md-typescale-body-medium"}, "I found nobody.")]));
+}
+
+function drawPreview() {
+  const pick = s => s.value === "*" ? "" : s.value;
+  const q = new URLSearchParams({character: pick($("prev-char")), background: pick($("prev-back")), seed: Math.floor(Math.random() * 1e9)});
+  const img = $("preview-img");
+  img.onerror = () => toast("I could not draw the comic.", true);
+  img.src = "/api/preview?" + q;
+  img.hidden = false;
+}
+
+$("tabs").addEventListener("change", () => {
+  const active = $("tabs").activeTab.getAttribute("aria-controls");
+  for (const t of $("tabs").querySelectorAll("md-primary-tab")) {
+    const id = t.getAttribute("aria-controls");
+    $(id).hidden = id !== active;
+  }
+  if (active === "members") loadMembers();
+});
+$("char-filter").addEventListener("input", renderCharacters);
+$("char-add").addEventListener("click", async () => {
+  const name = $("char-name").value.trim().toLowerCase();
+  if (!name) { toast("Type a name first.", true); return; }
+  const f = await pickFile("image/png");
+  if (f && await act(() => api("POST", "/api/characters", form(f, {name})), "Added.")) {
+    $("char-name").value = ""; openCharacter(name);
+  }
+});
+$("back-add").addEventListener("click", async () => {
+  const name = $("back-name").value.trim().toLowerCase();
+  if (!name) { toast("Type a name first.", true); return; }
+  const f = await pickFile("image/png,image/jpeg");
+  if (f && await act(() => api("POST", "/api/backgrounds", form(f, {name})), "Added.")) $("back-name").value = "";
+});
+$("member-find").addEventListener("click", findMember);
+$("member-q").addEventListener("keydown", e => { if (e.key === "Enter") findMember(); });
+$("prev-draw").addEventListener("click", drawPreview);
+$("logout").addEventListener("click", async () => {
+  await api("POST", "/auth/logout").catch(() => {});
+  showLogin("You are logged out.");
+});
+
+(async function start() {
+  // A property set before its component loads is lost.
+  await Promise.all(["md-switch", "md-outlined-select", "md-dialog", "md-tabs", "md-primary-tab",
+    "md-outlined-text-field"].map(n => customElements.whenDefined(n)));
+  try {
+    me = await api("GET", "/api/me");
+  } catch { return; }
+  $("whoami").textContent = me.name + (me.admin ? " (admin)" : " (mod)");
+  $("logout").hidden = false; $("login").hidden = true; $("app").hidden = false;
+  if (!me.comics) { toast("Comics are off on this bot.", true); return; }
+  art = await api("GET", "/api/art");
+  renderArt();
+})();
+</script>
+</body>
+</html>

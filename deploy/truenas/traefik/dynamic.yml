@@ -1,0 +1,30 @@
+# The routes. Copy to /mnt/POOL/apps/traefik/dynamic.yml. Traefik reads
+# this file again when it changes.
+http:
+  routers:
+    hcbot:
+      rule: Host(`hcbot.example.com`)
+      entryPoints: [websecure]
+      middlewares: [lan-only]
+      service: hcbot
+    hcbot-test:
+      rule: Host(`hcbot-test.example.com`)
+      entryPoints: [websecure]
+      middlewares: [lan-only]
+      service: hcbot-test
+  middlewares:
+    lan-only:
+      ipAllowList:
+        sourceRange:
+          - 192.168.0.0/16
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+  services:
+    hcbot:
+      loadBalancer:
+        servers:
+          - url: http://172.16.0.1:9102
+    hcbot-test:
+      loadBalancer:
+        servers:
+          - url: http://172.16.0.1:9103

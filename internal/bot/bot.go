@@ -59,7 +59,8 @@ type Bot struct {
 	dlSlot   chan struct{}                                            // one video download at a time
 	ttsHTTP  *http.Client
 	tts      ttsState
-	comics   *comicState       // nil when comics are off
+	comics   *comicState // nil when comics are off
+	web      webState
 	tweets   *tweetshot.Client // X post data for /tweetshot (a fake server in tests)
 
 	// fetchImage gets a picture for a comic (a fake in tests).
@@ -124,6 +125,7 @@ func New(env config.Env, database *db.DB, chain, persona *markov.Store) (*Bot, e
 		lookupIP:     lookupIP,
 		dlSlot:       make(chan struct{}, 1),
 		ttsHTTP:      &http.Client{Timeout: ttsRequestTimeout},
+		web:          newWebState(),
 		fetchImage:   httpFetch(&http.Client{Timeout: 5 * time.Second}),
 		tweets:       tweetshot.NewClient(),
 		backupDir:    "backups",
@@ -179,6 +181,9 @@ func (b *Bot) Open() error {
 	}
 	if err := b.s.Open(); err != nil {
 		return fmt.Errorf("open session: %w", err)
+	}
+	if err := b.startWeb(); err != nil {
+		log.Printf("Web interface is off: %v", err) // the bot works without it
 	}
 	if err := b.syncCommands(); err != nil {
 		return fmt.Errorf("sync commands: %w", err)

@@ -37,6 +37,10 @@ services:
     # LAN address only (README.md, "Metrics").
     # ports:
     #   - "192.168.1.10:9101:9101"
+    # With WEB_ADDR=:9102 in .env, it serves the web interface: publish that
+    # port on the docker0 address only, for Traefik (README.md, "Web
+    # interface"). The LAN must reach it only through HTTPS.
+    #   - "172.16.0.1:9102:9102"
     read_only: true
     tmpfs:
       # /download keeps its files and the yt-dlp cache here.

@@ -117,6 +117,9 @@ YTDLP_COOKIES=
 TTS_URL=
 TTS_TOKEN=
 METRICS_ADDR=
+WEB_ADDR=
+WEB_URL=
+DISCORD_CLIENT_SECRET=
 ```
 
 | Key | Description |
@@ -134,6 +137,9 @@ METRICS_ADDR=
 | `TTS_URL` | The address of the [text to speech worker](#text-to-speech), for example `http://host.docker.internal:8765`. When it is not set, `/say` and `/voices` are not registered. |
 | `TTS_TOKEN` | The secret token of the text to speech worker. It must be the same as `TTS_TOKEN` in the worker's `.env`. |
 | `METRICS_ADDR` | Where the bot serves [Prometheus metrics](#metrics), for example `:9101`. When it is not set, the bot serves no metrics and opens no port. |
+| `WEB_ADDR` | Where the bot serves the [web interface](#web-interface), for example `:9102`. When it is not set, the bot serves no page and opens no port. |
+| `WEB_URL` | The HTTPS address of the web interface, for example `https://hcbot.example.com`. Only requests to this host name work. |
+| `DISCORD_CLIENT_SECRET` | The OAuth2 client secret of the bot's Discord application, for the web interface login. Keep it secret. |
 | `COMIC_ART_DIR` | The folder with the [comic art](#comic-art) (default `comic`, relative to the working folder). When it has no art, or Message Content is off, the comic commands are not registered. |
 
 Keep `.env` private: the token gives full control of the bot, and the GIPHY key and the TTS token are also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
@@ -371,7 +377,7 @@ Use only the voices of people who agree. Do not use `/say` to imitate a real per
 | `/character [name]` | everyone | Without a name, shows your character. With a name, sets it (type to see the names). **Show all** shows all characters, and **Reset** goes back to an automatic character. |
 | `/comicart reload` | admin only | Reads the comic art again, so that new [custom characters and backgrounds](#custom-comic-art) work without a restart. The reply lists the files that cannot be used, and why. If the art folder cannot be read, the old art stays. |
 
-The layout follows [comicgen](https://github.com/iopred/comicgen), the comic library of the Septapus bot, so that the comic is readable when Discord shows it small in the chat: square panels (220 px) in 2 to 4 columns, and the cast ("A comic starring:", with the head of each character, the profile picture, and the Discord user name) in the free cells at the start of the first row. Each panel has one speaker, or two short messages from two people at random, in the order of the messages. Each panel has a random zoom. A new speaker looks the other way from the last speaker, and a member who speaks again turns around 30% of the time. In a panel with one speaker, one time in two, a character from the panel before or after is also there, with no balloon and a neutral face, and the two face each other. The balloons are in the top half of the panel; long text gets smaller until it fits. Each character has a small profile picture at the bottom, so you can see who is who. Members who did not choose a character get one from their user ID, so it is usually the same one. Two automatic characters in one comic are never the same; a chosen character is always used. The words and emoji in a message select the face and the pose, as in Comic Chat: for example "lol" or 😂 laughs, ":(" is sad, all capitals shout, "hi" waves, and "you" points at the other person.
+The layout follows [comicgen](https://github.com/iopred/comicgen), the comic library of the Septapus bot, so that the comic is readable when Discord shows it small in the chat: square panels (220 px) in 2 to 4 columns, and the cast ("A comic starring:", with the head of each character, the profile picture, and the Discord user name) in the free cells at the start of the first row. Each panel has one speaker, or two short messages from two people at random, in the order of the messages. Each panel has a random zoom. A new speaker looks the other way from the last speaker, and a member who speaks again turns around 30% of the time. In a panel with one speaker, one time in two, a character from the panel before or after is also there, with no balloon and a neutral face, and the two face each other. The balloons are in the top half of the panel; long text gets smaller until it fits. Each character has a small profile picture at the bottom, so you can see who is who. A mod can also assign and lock a character on the [web interface](#web-interface). Members who did not choose a character get one from their user ID, so it is usually the same one. Two automatic characters in one comic are never the same; a chosen character is always used. The words and emoji in a message select the face and the pose, as in Comic Chat: for example "lol" or 😂 laughs, ":(" is sad, all capitals shout, "hi" waves, and "you" points at the other person.
 
 **Pictures:** the first picture of a message goes in its balloon, under the text: an uploaded image (PNG, JPEG, GIF, or WebP), a sticker, or a GIF or image link (for example from Tenor or GIPHY; the link is removed from the text). An animated picture shows its first frame. Link previews of web pages are not used. A picture marked as a spoiler is not shown: the balloon has a dark "spoiler" box. The bot gets each picture at a small size (at most 480 px wide) and keeps it only while it draws. If a picture cannot be fetched, the balloon says "🖼️ image".
 
@@ -727,7 +733,7 @@ The image package on GHCR is private. Give TrueNAS a login for it once: make a G
 
 To update, use **Update** on the app (it gets the new `latest`), or set a `sha-<commit>` tag in the YAML. To update a download tool, change its version and checksum in the `Dockerfile`. The `yt-dlp` workflow (`.github/workflows/yt-dlp.yml`) does this for yt-dlp each Monday: it checks the release signature with the key in `deploy/yt-dlp-signing-key.asc`, commits the new version to `main`, and builds a new image. You must still update the app to use it.
 
-The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports, except the [metrics](#metrics) port when `METRICS_ADDR` is set.
+The container has the same protection as the systemd unit: a read-only root file system, no Linux capabilities, `no-new-privileges`, and limits for memory, CPU, and processes. `/tmp` is a `tmpfs` (memory) of 2 GB for `/download`. The bot opens no ports, except the [metrics](#metrics) port when `METRICS_ADDR` is set and the [web interface](#web-interface) port when `WEB_ADDR` is set.
 
 To run `hcbot-train` in the container, use the app shell, or `docker exec -it hcbot hcbot-train ...`.
 
@@ -812,6 +818,37 @@ How the art is drawn, so that it looks right:
 **Private characters:** add a `"users"` list of Discord user IDs to `character.json` (in Discord, turn on Developer Mode, then right-click a user and select **Copy User ID**). Only those users can choose the character with `/character`, and only they see it in the autocomplete and in **Show all**. For other users, `/character` says that there is no character with that name. Comics never give a private character at random. Everyone who reads a comic sees the character in it. When you remove a user from the list (then `/comicart reload`), comics give that user a random character again; their choice comes back when you add them again. If `character.json` has an error, or no ID in `users` is correct, the character is not used, so that it cannot become public by mistake. At least one character must be public.
 
 - Only use art that you made or may use. The art goes only to the servers where the bot posts the comics.
+
+---
+
+## Web interface
+
+A page on your local network to manage the comic art and the members' characters. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
+
+| Tab | What it does |
+|---|---|
+| **Characters** | Add a custom character, its poses, and its icon. Click the picture to set the face point. Make a character private to some user IDs. Hide any character. |
+| **Backgrounds** | Add a custom background. Hide any background. |
+| **Members** | Find a member by name or user ID. Assign, change, or clear a character. Lock a character so that the member cannot change it with `/character`. |
+| **Preview** | Draw a test comic with sample text. |
+| **Problems** | The art files that the bot cannot use, and why. |
+
+**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can do destructive actions: remove a character, a pose, or a background, and replace an art file. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
+
+**Art rules:** the same as for [custom comic art](#comic-art). The built-in Comic Chat art cannot be changed or removed, only hidden. A removed or replaced file goes to `custom/.trash` in the art folder, so you can get it back through SMB. The bot does not delete that folder. New art works at once, with no restart.
+
+**Hidden art:** a hidden character cannot be chosen and is not given at random. A member who already has it keeps it. At least one public character must stay visible. A hidden background is not picked at random and is not in the comic editor.
+
+**Assigning a private character** adds the member to its `users` list. Clearing the assignment does not remove them from the list; change the list on the Characters tab.
+
+### Set up HTTPS and the login
+
+The bot serves plain HTTP on a port that only the host can reach. [Traefik](https://traefik.io/) gives the page HTTPS, on its own LAN address. Traefik holds the DNS token and the certificate key, so the bot never has them. Do not forward router ports to it.
+
+1. **DNS:** in Cloudflare, make a token with `Zone / DNS / Edit` and `Zone / Zone / Read` for your zone only. Add `A` records for the names of the page, to Traefik's LAN address, as **DNS only** (grey cloud). Let's Encrypt uses a DNS challenge, so it does not need to connect to your network.
+2. **Traefik:** make a folder for it (owner 568:568, mode 0700) with `traefik.yml` and `dynamic.yml` from `deploy/truenas/traefik/` (change the domain), an empty `acme.json` (0600), and `.env` (0600) with `CF_DNS_API_TOKEN=<token>`. Install `deploy/truenas/traefik-compose.yaml` as a custom app. Change the LAN address, subnet, gateway, and parent interface in it. Reserve that address on your router, with the MAC address in the file. The host itself cannot connect to this address; other devices can.
+3. **Discord:** in the Developer Portal, open your application, then **OAuth2**. Reset the **Client Secret**, and add `<WEB_URL>/auth/callback` as a **Redirect**.
+4. **The bot:** set the three values in `.env`. Publish the port on the Docker bridge address only (see `deploy/truenas/compose.yaml`), so that the LAN must use HTTPS.
 
 ---
 
