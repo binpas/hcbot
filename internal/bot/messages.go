@@ -52,19 +52,25 @@ func (b *Bot) onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) 
 // Discord delivers the text of a message that mentions the bot even
 // without the Message Content intent.
 func (b *Bot) mentionKeyword(m *discordgo.Message) string {
-	botID := b.s.State.User.ID
-	if !slices.ContainsFunc(m.Mentions, func(u *discordgo.User) bool { return u.ID == botID }) {
-		return ""
-	}
-	loc := regexp.MustCompile(`^<@!?` + botID + `>\s*`).FindStringIndex(m.Content)
-	if loc == nil {
-		return ""
-	}
-	words := strings.Fields(m.Content[loc[1]:])
+	words := b.mentionWords(m)
 	if len(words) == 0 {
 		return ""
 	}
 	return strings.ToLower(words[0])
+}
+
+// mentionWords returns the words after a leading mention of the bot, or nil
+// when the message does not start with one.
+func (b *Bot) mentionWords(m *discordgo.Message) []string {
+	botID := b.s.State.User.ID
+	if !slices.ContainsFunc(m.Mentions, func(u *discordgo.User) bool { return u.ID == botID }) {
+		return nil
+	}
+	loc := regexp.MustCompile(`^<@!?` + botID + `>\s*`).FindStringIndex(m.Content)
+	if loc == nil {
+		return nil
+	}
+	return strings.Fields(m.Content[loc[1]:])
 }
 
 // fireTrigger replies with a random response when the message is

@@ -216,6 +216,146 @@ func TestComicMention(t *testing.T) {
 	}
 }
 
+func TestComicMentionCount(t *testing.T) {
+	const (
+		defaultNote = "I used the default of 4 messages. The range is 1 to 10."
+		badNote     = "The count must be a whole number. " + defaultNote
+	)
+	mention := "<@" + tBot + ">"
+	cases := []struct {
+		content string
+		limit   int // the history request is 3 times the count
+		note    string
+	}{
+		{mention + " comic", 12, defaultNote},
+		{mention + " comic 4", 12, ""}, // the member chose 4
+		{mention + " comic 3", 9, ""},
+		{mention + "comic 5", 15, ""}, // no space after the mention
+		{mention + " comic +5", 15, ""},
+		{mention + " comic 007", 21, ""},
+		{mention + " comic 0", 3, ""},
+		{mention + " comic -3", 3, ""},
+		{mention + " comic 500", 30, ""}, // the default COMIC_MAX_MESSAGES is 10
+		{mention + " comic 99999999999999999999", 30, ""},
+		{mention + " comic -99999999999999999999", 3, ""},
+		{mention + " comic 😀", 12, badNote},
+		{mention + " comic hello", 12, badNote},
+		{mention + " comic 2.5", 12, badNote},
+		{mention + " comic 5 hello", 12, badNote},
+		{mention + " comic <:emote:123>", 12, badNote},
+	}
+	tb, _ := newComicBot(t)
+	tb.config(map[string]string{"COMIC_COOLDOWN": "0"})
+	for _, tc := range cases {
+		tb.api.reset()
+		tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+		tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
+			ID: "1100", ChannelID: tChGeneral, GuildID: tGuild, Content: tc.content,
+			Author: &discordgo.User{ID: tUser}, Mentions: []*discordgo.User{{ID: tBot}}}})
+		g := tb.api.find("GET", `/channels/`+tChGeneral+`/messages`)
+		if len(g) != 1 || !strings.Contains("&"+g[0].Query+"&", fmt.Sprintf("&limit=%d&", tc.limit)) {
+			t.Errorf("%q: history requests = %+v, want limit %d", tc.content, g, tc.limit)
+		}
+		posts := tb.api.find("POST", `/channels/`+tChGeneral+`/messages`)
+		wantPosts := 1
+		if tc.note != "" {
+			wantPosts = 2
+		}
+		if len(posts) != wantPosts || posts[0].Files["comic.png"] == nil {
+			t.Fatalf("%q: posts = %v, want %d with the comic first", tc.content, tb.callList(), wantPosts)
+		}
+		if tc.note != "" {
+			if s := tb.sent(tChGeneral); s[1] != tc.note {
+				t.Errorf("%q: note = %q, want %q", tc.content, s[1], tc.note)
+			}
+			if posts[1].Files["comic.png"] != nil {
+				t.Errorf("%q: the note has the comic", tc.content)
+			}
+		}
+	}
+
+	// The note shows the count that the bot used.
+	tb.config(map[string]string{"COMIC_MAX_MESSAGES": "3"})
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
+		ID: "1100", ChannelID: tChGeneral, GuildID: tGuild, Content: mention + " comic hello",
+		Author: &discordgo.User{ID: tUser}, Mentions: []*discordgo.User{{ID: tBot}}}})
+	if s := tb.sent(tChGeneral); len(s) != 2 || !strings.Contains(s[1], "default of 3") || !strings.Contains(s[1], "1 to 3") {
+		t.Errorf("low limit: sent = %q", s)
+	}
+	tb.config(map[string]string{"COMIC_MAX_MESSAGES": "10"})
+
+	// No comic, no note: only the failure reply.
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON())
+	tb.onMessageCreate(tb.s, &discordgo.MessageCreate{Message: &discordgo.Message{
+		ID: "1100", ChannelID: tChGeneral, GuildID: tGuild, Content: mention + " comic hello",
+		Author: &discordgo.User{ID: tUser}, Mentions: []*discordgo.User{{ID: tBot}}}})
+	if s := tb.sent(tChGeneral); len(s) != 1 || strings.Contains(s[0], "default") {
+		t.Errorf("no messages: sent = %q", s)
+	}
+}
+
+// /comic without a count shows the note to the member only, and keeps the
+// comic in the original response.
+func TestComicCommandDefaultNote(t *testing.T) {
+	tb, _ := newComicBot(t)
+	tb.config(map[string]string{"COMIC_COOLDOWN": "0"})
+	notes := func() []struct {
+		Content string `json:"content"`
+		Flags   int    `json:"flags"`
+	} {
+		var out []struct {
+			Content string `json:"content"`
+			Flags   int    `json:"flags"`
+		}
+		for _, call := range tb.api.find("POST", `/webhooks/.*`) {
+			var p struct {
+				Content string `json:"content"`
+				Flags   int    `json:"flags"`
+			}
+			if err := json.Unmarshal(call.Body, &p); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, p)
+		}
+		return out
+	}
+
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.run(tUser, "comic")
+	tb.pngFile("comic.png")
+	n := notes()
+	if len(n) != 1 || n[0].Content != "I used the default of 4 messages. The range is 1 to 10." ||
+		n[0].Flags&int(discordgo.MessageFlagsEphemeral) == 0 {
+		t.Errorf("notes = %+v", n)
+	}
+	if edits := tb.api.find("PATCH", `/webhooks/.*/messages/@original`); len(edits) != 1 {
+		t.Errorf("edits = %d, want only the comic", len(edits))
+	}
+
+	// A chosen count has no note.
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON(allChat...))
+	tb.run(tUser, "comic", intOpt("count", 4))
+	tb.pngFile("comic.png")
+	if n := notes(); len(n) != 0 {
+		t.Errorf("chosen count: notes = %+v", n)
+	}
+
+	// No comic, no note.
+	tb.api.reset()
+	tb.api.on("GET", `/channels/`+tChGeneral+`/messages`, 200, chatJSON())
+	tb.run(tUser, "comic")
+	tb.expect(true, "no messages with text")
+	for _, p := range notes() {
+		if strings.Contains(p.Content, "default") {
+			t.Errorf("no messages: note = %q", p.Content)
+		}
+	}
+}
+
 var comicIDRE = regexp.MustCompile(`comicpick:(\d+)"`)
 
 // submitCheckboxes sends a modal with one checkbox group, the way Discord

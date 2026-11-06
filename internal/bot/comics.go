@@ -194,6 +194,7 @@ func (b *Bot) cmdComic(c *Ctx) {
 		return
 	}
 	n := b.comicCount(int(c.Int("count", comicDefaultCount)))
+	usedDefault := c.opt("count") == nil
 	if d := b.comicWait(c.UserID(), true); d > 0 {
 		c.Reply(true, errEmbed(waitMessage(d)))
 		return
@@ -208,10 +209,29 @@ func (b *Bot) cmdComic(c *Ctx) {
 	}
 	_, err = c.s.InteractionResponseEdit(c.i.Interaction, &discordgo.WebhookEdit{Files: comicFile("comic.png", data)})
 	c.logErr("comic: post", err)
+	if err == nil && usedDefault {
+		// Only the member sees this note. c.Reply would replace the comic,
+		// because the response is still marked as deferred.
+		_, err = c.s.FollowupMessageCreate(c.i.Interaction, true, &discordgo.WebhookParams{
+			Content: b.comicDefaultNote(n, true), Flags: discordgo.MessageFlagsEphemeral,
+			AllowedMentions: &discordgo.MessageAllowedMentions{},
+		})
+		c.logErr("comic: default note", err)
+	}
 }
 
 // comicCount is a requested number of messages, in the limits.
 func (b *Bot) comicCount(n int) int { return min(max(n, 1), b.comicMax()) }
+
+// comicDefaultNote is the line under a comic that used the default count n.
+// valid is false when the member gave a count that is not a whole number.
+func (b *Bot) comicDefaultNote(n int, valid bool) string {
+	note := fmt.Sprintf("I used the default of %d messages. The range is 1 to %d.", n, b.comicMax())
+	if !valid {
+		return "The count must be a whole number. " + note
+	}
+	return note
+}
 
 // errComicRead is the error when the messages of a channel cannot be read.
 var errComicRead = errors.New("read the messages")
@@ -268,13 +288,10 @@ func (b *Bot) comicMention(m *discordgo.Message) bool {
 		reply(why)
 		return true
 	}
-	n := comicDefaultCount
-	if f := strings.Fields(m.Content); len(f) > 2 {
-		if v, err := strconv.Atoi(f[2]); err == nil {
-			n = v
-		}
-	}
+	args := b.mentionWords(m)[1:]
+	n, valid := parseComicCount(args)
 	n = b.comicCount(n)
+	usedDefault := len(args) == 0 || !valid
 	if d := b.comicWait(m.Author.ID, true); d > 0 {
 		reply(waitMessage(d))
 		return true
@@ -291,8 +308,37 @@ func (b *Bot) comicMention(m *discordgo.Message) bool {
 		Files: comicFile("comic.png", data), Reference: m.Reference(), AllowedMentions: &discordgo.MessageAllowedMentions{},
 	}); err != nil {
 		log.Printf("comic: post: %v", err)
+		return true
+	}
+	// A message shows its text above its files, so the note that goes under
+	// the comic is a second message.
+	if usedDefault {
+		if _, err := b.s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
+			Content:         b.comicDefaultNote(n, valid),
+			AllowedMentions: &discordgo.MessageAllowedMentions{},
+		}); err != nil {
+			log.Printf("comic: default note: %v", err)
+		}
 	}
 	return true
+}
+
+// parseComicCount reads the words after "@Bot comic". No words is the
+// default count. Any text that is not one whole number is also the default
+// count, and valid is false. A number that is too large for an int is still
+// a number: Atoi returns the nearest int, and comicCount applies the limits.
+func parseComicCount(args []string) (n int, valid bool) {
+	if len(args) == 0 {
+		return comicDefaultCount, true
+	}
+	if len(args) > 1 {
+		return comicDefaultCount, false
+	}
+	v, err := strconv.Atoi(args[0])
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return comicDefaultCount, false
+	}
+	return v, true
 }
 
 // lastComic draws the last n messages with text of a channel, before the
