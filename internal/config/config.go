@@ -62,6 +62,9 @@ type Env struct {
 	WebAddr   string
 	WebURL    string
 	WebSecret string
+	// WebIPHeader is the request header in which the HTTPS proxy gives the
+	// address of the browser, for the login limit and the log.
+	WebIPHeader string
 }
 
 // LoadEnv reads .env (if present) into the process environment and returns
@@ -87,6 +90,7 @@ func LoadEnv() Env {
 		WebAddr:            strings.TrimSpace(os.Getenv("WEB_ADDR")),
 		WebURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_URL")), "/"),
 		WebSecret:          strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+		WebIPHeader:        envStr("WEB_IP_HEADER", "X-Forwarded-For"),
 	}
 }
 

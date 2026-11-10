@@ -1,8 +1,10 @@
 package bot
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
@@ -25,13 +27,21 @@ import (
 	"github.com/binpas/hcbot/internal/comic"
 )
 
-// The web interface is a page on the local network, behind an HTTPS proxy
-// (README.md, "Web interface"). Members log in with Discord. Mods can use
-// it; destructive actions are for Administrators. It runs only when
-// WEB_ADDR, WEB_URL, DISCORD_CLIENT_SECRET and GUILD_ID are set.
+// The web interface is a page behind an HTTPS proxy (README.md, "Web
+// interface"). Members log in with Discord. Mods can use it; destructive
+// actions are for Administrators. It runs only when WEB_ADDR, WEB_URL,
+// DISCORD_CLIENT_SECRET and GUILD_ID are set.
 
-//go:embed web/index.html
-var webPage []byte
+// The page and its scripts. The bot serves all the script of the page, so
+// that the policy in webGuard can refuse script from other sites.
+var (
+	//go:embed web/index.html
+	webPage []byte
+	//go:embed web/app.js
+	webApp []byte
+	//go:embed web/material.js
+	webMaterial []byte
+)
 
 const (
 	webSessionLife  = 12 * time.Hour
@@ -83,6 +93,9 @@ type webState struct {
 
 	artMu sync.Mutex // one change to the art at a time
 
+	loginLimit *webLimiter // login requests, for each address
+	tokenLimit *webLimiter // token requests to Discord, for all addresses
+
 	client       *http.Client // the OAuth2 calls (a fake in tests)
 	apiURL       string
 	authorizeURL string
@@ -95,6 +108,8 @@ func newWebState() webState {
 		uploads:      map[string]webUpload{},
 		cands:        map[string]webCand{},
 		jobs:         map[string]webJob{},
+		loginLimit:   newWebLimiter(webLoginBurst, webLoginEvery),
+		tokenLimit:   newWebLimiter(webTokenBurst, webTokenEvery),
 		client:       &http.Client{Timeout: 10 * time.Second},
 		apiURL:       "https://discord.com/api/v10",
 		authorizeURL: "https://discord.com/oauth2/authorize",
@@ -153,9 +168,12 @@ func (b *Bot) webHandler() http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(webPage)
 	})
-	mux.HandleFunc("GET /auth/login", b.webLogin)
-	mux.HandleFunc("GET /auth/callback", b.webCallback)
+	mux.HandleFunc("GET /app.js", webStatic("text/javascript; charset=utf-8", webApp))
+	mux.HandleFunc("GET /material.js", webStatic("text/javascript; charset=utf-8", webMaterial))
+	mux.HandleFunc("GET /auth/login", b.webLoginLimit(b.webLogin))
+	mux.HandleFunc("GET /auth/callback", b.webLoginLimit(b.webCallback))
 	route("POST /auth/logout", webAny, b.webLogout)
+	route("POST /api/sessions/end", webAdmin, b.webEndAll)
 	route("GET /api/me", webMod, b.webMe)
 
 	route("GET /api/art", webMod, b.webArt)
@@ -184,9 +202,23 @@ func (b *Bot) webHandler() http.Handler {
 	return b.webGuard(mux)
 }
 
-// webGuard protects against other sites: a page on the internet can send
-// requests to a LAN address. Only the configured host name works, and a
-// change must come from this page.
+// webStatic serves a file of the page. The browser keeps it, and asks each
+// time if it changed.
+func webStatic(ctype string, data []byte) http.HandlerFunc {
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:12]) + `"`
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Type", ctype)
+		h.Set("Cache-Control", "no-cache")
+		h.Set("ETag", etag)
+		http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+	}
+}
+
+// webGuard protects against other sites. Only the configured host name
+// works, and a change must come from this page. The page gets script only
+// from the bot.
 func (b *Bot) webGuard(next http.Handler) http.Handler {
 	base, _ := url.Parse(b.env.WebURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +231,7 @@ func (b *Bot) webGuard(next http.Handler) http.Handler {
 			return
 		}
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'; "+
 			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "+
 			"img-src 'self' https://cdn.discordapp.com; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -249,6 +281,7 @@ func (b *Bot) webAuth(level webLevel, h func(http.ResponseWriter, *http.Request,
 			}
 			if !mod {
 				b.webEnd(r)
+				log.Printf("web: login ended: %s (%s) is not a mod now", s.name, s.userID)
 				webFail(w, http.StatusUnauthorized, "You no longer have the mod role, so your login ended.")
 				return
 			}
@@ -329,6 +362,27 @@ func (b *Bot) webAccess(userID string) (mod, admin bool, err error) {
 
 func (b *Bot) webRedirect() string { return b.env.WebURL + "/auth/callback" }
 
+// webLoginLimit refuses an address that makes too many login requests.
+func (b *Bot) webLoginLimit(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip := b.webClientIP(r)
+		if ok, first := b.web.loginLimit.allow(webLimitKey(ip)); !ok {
+			if first {
+				log.Printf("web: too many login requests from %s", ip)
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(int(webLoginEvery.Seconds())))
+			webLoginFailed(w, http.StatusTooManyRequests, "There were too many login attempts from your address. Wait one minute, then try again.")
+			return
+		}
+		h(w, r)
+	}
+}
+
+// webRefused records a login that did not work, with the address.
+func (b *Bot) webRefused(r *http.Request, why string) {
+	log.Printf("web: login refused from %s: %s", b.webClientIP(r), why)
+}
+
 func (b *Bot) webLogin(w http.ResponseWriter, r *http.Request) {
 	state := webRandom()
 	http.SetCookie(w, webCookie(webStateName, state, 10*time.Minute))
@@ -357,18 +411,30 @@ func webLoginFailed(w http.ResponseWriter, status int, text string) {
 func (b *Bot) webCallback(w http.ResponseWriter, r *http.Request) {
 	state, err := r.Cookie(webStateName)
 	if err != nil || state.Value == "" || state.Value != r.URL.Query().Get("state") {
+		b.webRefused(r, "the state is not correct")
 		webLoginFailed(w, http.StatusBadRequest, "The login expired or is not correct. Log in again.")
 		return
 	}
 	http.SetCookie(w, webCookie(webStateName, "", -time.Second))
 	code := r.URL.Query().Get("code")
 	if code == "" {
+		b.webRefused(r, "no code from Discord")
 		webLoginFailed(w, http.StatusForbidden, "Discord did not log you in. Try again, and select Authorize on the Discord page.")
+		return
+	}
+	// The caller sets the state and its cookie, so a stranger can get to
+	// this point. This limit is for all addresses together.
+	if ok, first := b.web.tokenLimit.allow(""); !ok {
+		if first {
+			log.Printf("web: too many logins at one time; the last was from %s", b.webClientIP(r))
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(int(webTokenEvery.Seconds())))
+		webLoginFailed(w, http.StatusTooManyRequests, "There are too many logins at this time. Wait one minute, then try again.")
 		return
 	}
 	user, err := b.webDiscordUser(r.Context(), code)
 	if err != nil {
-		log.Printf("web: login: %v", err)
+		b.webRefused(r, fmt.Sprintf("Discord: %v", err))
 		webLoginFailed(w, http.StatusBadGateway, "I could not complete the login with Discord. Try again.")
 		return
 	}
@@ -379,7 +445,13 @@ func (b *Bot) webCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !mod {
+		b.webRefused(r, fmt.Sprintf("%s (%s) is not a mod", user.Username, user.ID))
 		webLoginFailed(w, http.StatusForbidden, "This page is only for mods of the server. You need the mod role to log in.")
+		return
+	}
+	if !user.MFAEnabled {
+		b.webRefused(r, fmt.Sprintf("%s (%s) has no two-factor authentication", user.Username, user.ID))
+		webLoginFailed(w, http.StatusForbidden, "This page needs two-factor authentication. Turn it on in Discord (User Settings, My Account), then log in again.")
 		return
 	}
 	id := webRandom()
@@ -393,6 +465,11 @@ func (b *Bot) webCallback(w http.ResponseWriter, r *http.Request) {
 	b.web.sessions[id] = &webSession{userID: user.ID, name: user.Username, admin: admin,
 		expires: now.Add(webSessionLife), checked: now}
 	b.web.mu.Unlock()
+	level := "mod"
+	if admin {
+		level = "Administrator"
+	}
+	log.Printf("web: login: %s (%s, %s) from %s", user.Username, user.ID, level, b.webClientIP(r))
 	http.SetCookie(w, webCookie(webSessionName, id, webSessionLife))
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -453,8 +530,22 @@ func (b *Bot) webDo(req *http.Request, out any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, webMaxJSON)).Decode(out)
 }
 
-func (b *Bot) webLogout(w http.ResponseWriter, r *http.Request, _ *webSession) {
+func (b *Bot) webLogout(w http.ResponseWriter, r *http.Request, s *webSession) {
 	b.webEnd(r)
+	log.Printf("web: logout: %s (%s) from %s", s.name, s.userID, b.webClientIP(r))
+	http.SetCookie(w, webCookie(webSessionName, "", -time.Second))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// webEndAll ends all the logins, also that of the Administrator who asks.
+// It is for a lost device or an account that someone else got into.
+func (b *Bot) webEndAll(w http.ResponseWriter, r *http.Request, s *webSession) {
+	b.web.mu.Lock()
+	n := len(b.web.sessions)
+	clear(b.web.sessions)
+	b.web.mu.Unlock()
+	log.Printf("web: %s (%s) ended all %d logins, from %s", s.name, s.userID, n, b.webClientIP(r))
+	b.modLog(makeEmbed("🌐 Web interface", fmt.Sprintf("**%s** (<@%s>): ended all logins of the web interface", escapeMarkdown(s.name), s.userID), colourBlurple))
 	http.SetCookie(w, webCookie(webSessionName, "", -time.Second))
 	w.WriteHeader(http.StatusNoContent)
 }

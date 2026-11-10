@@ -33,3 +33,7 @@ certificatesResolvers:
 
 log:
   level: INFO
+
+# One line for each request, in the container log (docker logs traefik):
+# who asked for what, and when. The compose file limits the size of that log.
+accessLog: {}

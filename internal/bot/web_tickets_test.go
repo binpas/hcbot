@@ -68,7 +68,7 @@ func TestWebTickets(t *testing.T) {
 	rec = w.do("GET", fmt.Sprintf("/files/ticket/%d", img.ID), mod, nil, "")
 	wantStatus(t, rec, http.StatusOK, "picture")
 	if rec.Body.String() != "PNGDATA" || rec.Header().Get("Content-Type") != "image/png" ||
-		!strings.HasPrefix(rec.Header().Get("Content-Disposition"), "inline") {
+		!strings.HasPrefix(rec.Header().Get("Content-Disposition"), "inline") || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("picture: %v %q", rec.Header(), rec.Body)
 	}
 	rec = w.do("GET", fmt.Sprintf("/files/ticket/%d", html.ID), mod, nil, "")

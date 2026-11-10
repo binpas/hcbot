@@ -36,7 +36,11 @@ func newWebTest(t *testing.T) *webTest {
 	}
 	tb := newTestBot(t, func(e *config.Env) {
 		e.MessageContent, e.ComicArtDir, e.WebURL, e.WebSecret, e.WebAddr = true, dir, webTestURL, "the-secret", ":0"
+		e.WebIPHeader = "X-Forwarded-For"
 	})
+	// The tests log in many times from one address (web_limit_test.go has
+	// the tests of the limits).
+	tb.web.loginLimit, tb.web.tokenLimit = newWebLimiter(10000, time.Second), newWebLimiter(10000, time.Second)
 	tb.config(map[string]string{"MOD_ROLE": tRoleMod, "MOD_LOG": tChModLog})
 	tb.web.client = tb.s.Client
 	tb.api.on("GET", "^/guilds/"+tGuild+"$", 200, fmt.Sprintf(`{"id":%q,"owner_id":%q}`, tGuild, tOwner))
@@ -57,7 +61,7 @@ func (w *webTest) member(id string, roles ...string) {
 func (w *webTest) session(id string) *http.Cookie {
 	w.t.Helper()
 	w.api.on("POST", "/oauth2/token", 200, `{"access_token":"tok","token_type":"Bearer"}`)
-	w.api.on("GET", "^/users/@me$", 200, fmt.Sprintf(`{"id":%q,"username":"name%s"}`, id, id))
+	w.api.on("GET", "^/users/@me$", 200, fmt.Sprintf(`{"id":%q,"username":"name%s","mfa_enabled":true}`, id, id))
 	r := httptest.NewRequest("GET", webTestURL+"/auth/callback?state=s&code=c", nil)
 	r.AddCookie(&http.Cookie{Name: webStateName, Value: "s"})
 	rec := httptest.NewRecorder()
@@ -157,8 +161,28 @@ func TestWebGuard(t *testing.T) {
 	}
 	rec = w.do("GET", "/", nil, nil, "")
 	wantStatus(t, rec, http.StatusOK, "the page")
-	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
-		t.Errorf("CSP = %q", rec.Header().Get("Content-Security-Policy"))
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors 'none'") || !strings.Contains(csp, "script-src 'self';") {
+		t.Errorf("CSP = %q", csp)
+	}
+	// All script comes from the bot: no inline script, and none from other sites.
+	page := rec.Body.String()
+	if strings.Count(page, "<script") != 2 || !strings.Contains(page, `<script type="module" src="/material.js"></script>`) ||
+		!strings.Contains(page, `<script src="/app.js"></script>`) || strings.Contains(page, "jsdelivr") {
+		t.Error("the page must have only its two script files")
+	}
+	for _, file := range []string{"/app.js", "/material.js"} {
+		rec := w.do("GET", file, nil, nil, "")
+		wantStatus(t, rec, http.StatusOK, file)
+		etag := rec.Header().Get("ETag")
+		if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") || etag == "" || rec.Body.Len() == 0 {
+			t.Errorf("%s: %v", file, rec.Header())
+		}
+		r := httptest.NewRequest("GET", webTestURL+file, nil)
+		r.Header.Set("If-None-Match", etag)
+		again := httptest.NewRecorder()
+		w.h.ServeHTTP(again, r)
+		wantStatus(t, again, http.StatusNotModified, file+" again")
 	}
 	wantStatus(t, w.do("GET", "/api/art", nil, nil, ""), http.StatusUnauthorized, "art with no login")
 	bad := &http.Cookie{Name: webSessionName, Value: "guess"}
@@ -247,7 +271,7 @@ func TestWebAccess(t *testing.T) {
 			w.member(tUser, tRoleJail)
 		}
 		w.api.on("POST", "/oauth2/token", 200, `{"access_token":"tok"}`)
-		w.api.on("GET", "^/users/@me$", 200, fmt.Sprintf(`{"id":%q}`, id))
+		w.api.on("GET", "^/users/@me$", 200, fmt.Sprintf(`{"id":%q,"mfa_enabled":true}`, id))
 		r := httptest.NewRequest("GET", webTestURL+"/auth/callback?state=s&code=c", nil)
 		r.AddCookie(&http.Cookie{Name: webStateName, Value: "s"})
 		rec := httptest.NewRecorder()

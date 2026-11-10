@@ -39,7 +39,9 @@ services:
     #   - "192.168.1.10:9101:9101"
     # With WEB_ADDR=:9102 in .env, it serves the web interface: publish that
     # port on the docker0 address only, for Traefik (README.md, "Web
-    # interface"). The LAN must reach it only through HTTPS.
+    # interface"). The LAN must reach it only through HTTPS. The bot trusts
+    # the browser address that the proxy sends (WEB_IP_HEADER), so open
+    # this port for the proxy only.
     #   - "172.16.0.1:9102:9102"
     read_only: true
     tmpfs:

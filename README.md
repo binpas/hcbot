@@ -120,6 +120,7 @@ METRICS_ADDR=
 WEB_ADDR=
 WEB_URL=
 DISCORD_CLIENT_SECRET=
+WEB_IP_HEADER=
 ```
 
 | Key | Description |
@@ -140,6 +141,7 @@ DISCORD_CLIENT_SECRET=
 | `WEB_ADDR` | Where the bot serves the [web interface](#web-interface), for example `:9102`. When it is not set, the bot serves no page and opens no port. |
 | `WEB_URL` | The HTTPS address of the web interface, for example `https://hcbot.example.com`. Only requests to this host name work. |
 | `DISCORD_CLIENT_SECRET` | The OAuth2 client secret of the bot's Discord application, for the web interface login. Keep it secret. |
+| `WEB_IP_HEADER` | The request header in which the HTTPS proxy gives the address of the browser (default `X-Forwarded-For`, which Traefik sets). With a Cloudflare Tunnel, use `CF-Connecting-IP`. The bot uses the last address in it for the [login limit and the log](#web-interface). |
 | `COMIC_ART_DIR` | The folder with the [comic art](#comic-art) (default `comic`, relative to the working folder). When it has no art, or Message Content is off, the comic commands are not registered. |
 | `TICKET_FILES_DIR` | The folder where the bot keeps the files of ticket messages, for the [transcripts](#tickets) (default `ticket-files`, relative to the working folder). |
 
@@ -831,7 +833,7 @@ How the art is drawn, so that it looks right:
 
 ## Web interface
 
-A control panel on your local network: comic art and characters, speech clips and voices, Markov and persona replies, ticket transcripts, and the settings. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
+A control panel behind an HTTPS proxy, on your local network or through a [Cloudflare Tunnel](#open-the-page-to-the-internet): comic art and characters, speech clips and voices, Markov and persona replies, ticket transcripts, and the settings. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
 
 The page has a side menu of areas. Each view and each open item has its own link, so a reload keeps your place. Details and add forms open in a side panel next to the list. An area that is off says why.
 
@@ -867,7 +869,21 @@ All tickets, newest first: member tickets, mod tickets, and older transcripts. S
 
 All the settings of `/setup`, with a search field. Mods can read them. **Only Administrators** can change them. The bot uses the same checks as `/setup`, and the mod log shows who changed what, with the old and new values. The button that posts the mod support message stays in `/setup`.
 
-**Who can use it:** members log in with Discord (only the `identify` scope). The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can change settings, change voices, and do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
+Administrators also have **End all logins** here. It ends the session of each member, also your own, so all must log in again. Use it when a device is lost, or when another person got into the account of a mod. The mod log shows who did it.
+
+**Who can use it:** members log in with Discord (only the `identify` scope). The Discord account must have **two-factor authentication**: the bot refuses a login without it, and tells the member why. The bot then checks the server in `GUILD_ID` again every 5 minutes. Members with `MOD_ROLE` or Administrator can use the page. **Only Administrators** can change settings, change voices, and do destructive actions: remove a character, a pose, or a background, and replace an art file. The one exception: a mod can undo their own new upload for 15 minutes. The file goes to the trash, as for other removals. The bot keeps these upload records in memory, so a bot restart ends the undo. Each change goes in the bot log and the mod log, with the name of the member. A session lasts 12 hours and ends when the bot restarts.
+
+**Protection of the login:** the login is the only part that works with no session. An address can make 10 login requests at one time, then one more each 6 seconds. All addresses together can make 20 logins at one time, then one more each 3 seconds, so a flood cannot make Discord block the bot. A refused request gets a page that says to wait. The bot log has each login, each refused login with its cause, and each logout, with the address of the browser (`WEB_IP_HEADER`). The browser keeps no ticket file and no answer of the bot after the logout.
+
+**The page files:** the bot serves all the script of the page. The page refuses inline script and script from other sites. Only the fonts come from another site (Google Fonts). `internal/bot/web/material.js` is [Material Web](https://github.com/material-components/material-web) 2.5.0 with its dependencies, as one file. To make it again, for example for a new version, do this in an empty folder. Then put the comment from the top of the old file at the top of the new file.
+
+```sh
+npm install --ignore-scripts --save-exact @material/web@2.5.0 esbuild
+printf '%s\n' "import '@material/web/all.js';" \
+  "import {styles as typescale} from '@material/web/typography/md-typescale-styles.js';" \
+  "document.adoptedStyleSheets.push(typescale.styleSheet);" > entry.js
+npx esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --target=es2022 --outfile=material.js
+```
 
 **Art rules:** the same as for [custom comic art](#comic-art). The built-in Comic Chat art cannot be changed or removed, only hidden. A removed or replaced file goes to `custom/.trash` in the art folder, so you can get it back through SMB. The bot does not delete that folder. New art works at once, with no restart.
 
@@ -877,12 +893,24 @@ All the settings of `/setup`, with a search field. Mods can read them. **Only Ad
 
 ### Set up HTTPS and the login
 
-The bot serves plain HTTP on a port that only the host can reach. [Traefik](https://traefik.io/) gives the page HTTPS, on its own LAN address. Traefik holds the DNS token and the certificate key, so the bot never has them. Do not forward router ports to it.
+The bot serves plain HTTP on a port that only the host can reach. [Traefik](https://traefik.io/) gives the page HTTPS, on its own LAN address. Traefik holds the DNS token and the certificate key, so the bot never has them. Do not forward router ports to it. The bot trusts the browser address that the proxy gives in `WEB_IP_HEADER`, so only the proxy must be able to connect to the bot's port.
 
 1. **DNS:** in Cloudflare, make a token with `Zone / DNS / Edit` and `Zone / Zone / Read` for your zone only. Add `A` records for the names of the page, to Traefik's LAN address, as **DNS only** (grey cloud). Let's Encrypt uses a DNS challenge, so it does not need to connect to your network.
-2. **Traefik:** make a folder for it (owner 568:568, mode 0700) with `traefik.yml` and `dynamic.yml` from `deploy/truenas/traefik/` (change the domain), an empty `acme.json` (0600), and `.env` (0600) with `CF_DNS_API_TOKEN=<token>`. Install `deploy/truenas/traefik-compose.yaml` as a custom app. Change the LAN address, subnet, gateway, and parent interface in it. Reserve that address on your router, with the MAC address in the file. The host itself cannot connect to this address; other devices can.
+2. **Traefik:** make a folder for it (owner 568:568, mode 0700) with `traefik.yml` and `dynamic.yml` from `deploy/truenas/traefik/` (change the domain), an empty `acme.json` (0600), and `.env` (0600) with `CF_DNS_API_TOKEN=<token>`. These files permit only addresses of the local network, limit the requests of each address, and write an access log (`docker logs traefik`). Install `deploy/truenas/traefik-compose.yaml` as a custom app. Change the LAN address, subnet, gateway, and parent interface in it. Reserve that address on your router, with the MAC address in the file. The host itself cannot connect to this address; other devices can.
 3. **Discord:** in the Developer Portal, open your application, then **OAuth2**. Reset the **Client Secret**, and add `<WEB_URL>/auth/callback` as a **Redirect**.
 4. **The bot:** set the three values in `.env`. Publish the port on the Docker bridge address only (see `deploy/truenas/compose.yaml`), so that the LAN must use HTTPS.
+
+### Open the page to the internet
+
+Use a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/). Do not forward a router port, and do not remove `lan-only` from the Traefik routes: an open port shows the address of your network and puts your server directly on the internet. With a tunnel, your network makes only outbound connections, and Cloudflare hides its address. Cloudflare can read the traffic, which includes the ticket transcripts.
+
+1. **Tunnel:** in Cloudflare Zero Trust, make a tunnel, and run its `cloudflared` connector on the host of the bot. Keep the tunnel token secret (a `.env` file, mode 0600).
+2. **Public host name:** give the tunnel the host name of `WEB_URL`, with the service `http://<docker0 address>:9102` (the bot's port). Cloudflare replaces the `A` record with a proxied record. Devices on your network then also use the tunnel, so you can remove the `hcbot` route from Traefik.
+3. **The bot:** set `WEB_IP_HEADER=CF-Connecting-IP` in `.env`, and start the bot again. Without it, the log shows a wrong address, and the login limit can count all members as one address.
+4. **Cloudflare:** add a rate limit rule for the host name, as a second limit before your network.
+5. **Check:** log in from a phone that is not on your network. The bot log must show the address of the phone, not an address of Cloudflare or of your network.
+
+Before you open the page, make sure that each Administrator knows **End all logins** in Settings.
 
 ---
 

@@ -5,20 +5,28 @@ http:
     hcbot:
       rule: Host(`hcbot.example.com`)
       entryPoints: [websecure]
-      middlewares: [lan-only]
+      middlewares: [lan-only, web-rate]
       service: hcbot
     hcbot-test:
       rule: Host(`hcbot-test.example.com`)
       entryPoints: [websecure]
-      middlewares: [lan-only]
+      middlewares: [lan-only, web-rate]
       service: hcbot-test
   middlewares:
+    # Do not remove lan-only to open the page to the internet. Use a
+    # Cloudflare Tunnel (README.md, "Open the page to the internet").
     lan-only:
       ipAllowList:
         sourceRange:
           - 192.168.0.0/16
           - 10.0.0.0/8
           - 172.16.0.0/12
+    # For each address. A page of art asks for many pictures at one time,
+    # so the burst is large. The bot has its own, smaller limit for logins.
+    web-rate:
+      rateLimit:
+        average: 50
+        burst: 200
   services:
     hcbot:
       loadBalancer:

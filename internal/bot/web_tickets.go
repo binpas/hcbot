@@ -233,8 +233,9 @@ func (b *Bot) webTicketFile(w http.ResponseWriter, r *http.Request, _ *webSessio
 		return
 	}
 	h := w.Header()
+	// The browser must not keep a ticket file after the logout (webGuard
+	// sets no-store).
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	h.Set("Cache-Control", "private, max-age=3600")
 	disposition := "attachment"
 	if ticketMediaKind(f.ContentType) != "" {
 		h.Set("Content-Type", f.ContentType)
