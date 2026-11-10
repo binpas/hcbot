@@ -48,6 +48,10 @@ type Env struct {
 	MetricsAddr string
 	TTSToken    string
 
+	// TicketFilesDir is where the bot keeps the attachments of ticket
+	// messages, for the transcripts. Empty: the bot keeps none.
+	TicketFilesDir string
+
 	// ComicArtDir is the art pack for /comic (deploy/comic-art.sh). When
 	// it has no art, the comic commands are not registered.
 	ComicArtDir string
@@ -79,6 +83,7 @@ func LoadEnv() Env {
 		MetricsAddr:        strings.TrimSpace(os.Getenv("METRICS_ADDR")),
 		TTSToken:           strings.TrimSpace(os.Getenv("TTS_TOKEN")),
 		ComicArtDir:        envStr("COMIC_ART_DIR", "comic"),
+		TicketFilesDir:     envStr("TICKET_FILES_DIR", "ticket-files"),
 		WebAddr:            strings.TrimSpace(os.Getenv("WEB_ADDR")),
 		WebURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_URL")), "/"),
 		WebSecret:          strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
@@ -148,6 +153,8 @@ var SetupKeys = []SetupKey{
 		"Category ID for the category to create user tickets in"},
 	{"MOD_SUPPORT", "MOD_SUPPORT_CHANNEL_ID", KindChannel, "",
 		"Channel ID for the channel to use for the mod support embed"},
+	{"TICKET_FILE_MAX_MB", "TICKET_FILE_MAX_MB", KindInt, "25",
+		"Largest ticket attachment that the bot saves for the transcript, in MB. A larger file is noted by name only"},
 	{"MOD_ROLE", "MOD_ROLE_ID", KindRole, "",
 		"Role ID for the moderator role"},
 	{"MOD_DM_PUNISHMENT", "MOD_DM_PUNISHMENT", KindBool, "on",

@@ -15,7 +15,7 @@ A moderation, engagement and community bot for the HEALTH Discord server. It is 
 - **Speech clips:** mods make a voice message or an audio clip of a text with `/say`, in a preset voice, with a local [Echo-TTS](https://github.com/jordandare/echo-tts) worker on a GPU. *(Needs the [text to speech worker](#text-to-speech).)*
 - **User notes:** private mod notes on members. Mods add a note with `/note add`, or right-click a message to add it to its author's notes.
 - **Jail:** restrict a member to one channel for a set time, with sentence tracking, automatic release, and `/jail audit` to find channels the jail role can still see.
-- **Tickets:** members open private mod-support tickets with a reaction; mods close, archive, list, note and search them.
+- **Tickets:** members open private mod-support tickets with a reaction, and mods open tickets with the users they choose. The bot keeps a transcript of each ticket (text, edits, deletes and files). Mods close, archive, list, note and search them, and read transcripts in Discord or in the web interface.
 - **Triggers:** mod-defined keyword responses, with random picks from several responses and a Carl-bot import.
 - **Autoreacts:** the bot reacts with an emote when a word or phrase is said. *(Needs the [Message Content option](#message-content-features).)*
 - **Reaction roles** built with a wizard.
@@ -141,6 +141,7 @@ DISCORD_CLIENT_SECRET=
 | `WEB_URL` | The HTTPS address of the web interface, for example `https://hcbot.example.com`. Only requests to this host name work. |
 | `DISCORD_CLIENT_SECRET` | The OAuth2 client secret of the bot's Discord application, for the web interface login. Keep it secret. |
 | `COMIC_ART_DIR` | The folder with the [comic art](#comic-art) (default `comic`, relative to the working folder). When it has no art, or Message Content is off, the comic commands are not registered. |
+| `TICKET_FILES_DIR` | The folder where the bot keeps the files of ticket messages, for the [transcripts](#tickets) (default `ticket-files`, relative to the working folder). |
 
 Keep `.env` private: the token gives full control of the bot, and the GIPHY key and the TTS token are also secret. If a token is ever shown in a log or a chat, reset it in the Developer Portal.
 
@@ -155,6 +156,7 @@ Run `/setup` as a server administrator. It shows an ephemeral embed (only you se
 | `SENSITIVE_LOG` | Channel for sensitive output (`/userinfo`). Falls back to `BIG_BROTHER` | — |
 | `CURATED` | Channel for curated messages ¹ | — |
 | `TICKET_CAT` | **Category** for new tickets | — |
+| `TICKET_FILE_MAX_MB` | Largest ticket attachment that the bot saves for the transcript, in MB. The transcript names a larger file, but the bot does not keep it. | 25 |
 | `MOD_SUPPORT` | Channel for the mod support embed | — |
 | `MOD_ROLE` | The moderator role | — |
 | `MOD_DM_PUNISHMENT` | Send a DM to a member when they are banned, kicked, muted, warned, or jailed. The DM shows the server, the action, the length, and the reason. It does not show the moderator. | on |
@@ -232,6 +234,7 @@ Set it to `false` (or remove it) and restart the bot when you are ready to switc
 - the **message text** in the audit log (edits, deletes and bulk-delete transcripts),
 - **media recovery** for deleted messages,
 - **comics**, with `/comic`, **Start comic here**, and `/character` (they also need the [comic art](#comic-art)).
+- **ticket transcripts**: the bot keeps the messages and files of ticket channels, and `/ticket archive` works only with the option on.
 
 When the option is off, the `/autoreact` commands are not registered, curation is off completely, and `/setup` and `/help` do not show them. The data stays in the database, so everything works again when you turn the option on.
 
@@ -431,20 +434,25 @@ An arrest removes the member's other roles, except `JAIL_PROTECTED_ROLES`, manag
 
 | Command | Access | Description |
 |---|---|---|
+| `/ticket open` | mod only | Opens a form where you choose 1 to 10 users. The bot makes a mod ticket `open-ticket-mod-<n>` that only these users, `MOD_ROLE` and the bot can see. |
 | `/ticket close` | mod only | Closes the ticket in this channel. |
-| `/ticket archive` | mod only | Moves this closed ticket into a `Ticket Archive N` category. |
-| `/ticket archiveall` | mod only | Archives every closed ticket. |
-| `/ticket list <member>` | mod only | Every ticket of a member. |
+| `/ticket archive` | mod only | Saves the transcript of this closed ticket, and then deletes the channel (Confirm/Cancel). |
+| `/ticket archiveall` | mod only | Archives every closed ticket the same way (Confirm/Cancel). |
+| `/ticket convertold` | admin only | One time: converts the channels in the old `Ticket Archive N` categories to transcripts, deletes them, and deletes the empty `Ticket Archive N` categories (Confirm/Cancel). |
+| `/ticket list <member>` | mod only | Every ticket of a member, with the mod tickets that the member is in. |
+| `/ticket transcript <username-#>` | mod only | The transcript as an HTML file (`/ticket transcript alice-2` or `/ticket transcript mod-3`). Pictures are in the file, up to 8 MB in total. Get the other files from the web interface. An older transcript comes as a text file. |
 | `/ticket note <username-#> <note>` | mod only | Adds a note, for example `/ticket note alice-2 Resolved via DM.` |
 | `/ticket notes <username-#>` | mod only | Shows a ticket's notes. |
-| `/ticket search <query>` | mod only | Searches the notes. |
+| `/ticket search <query>` | mod only | Searches the notes and the messages of all transcripts (also the text before an edit). |
 
 How tickets work:
 
 1. A member reacts 📩 on the mod support embed (post it from `/setup`). The bot removes the reaction.
 2. The bot makes `open-ticket-<username>-<n>` in `TICKET_CAT`. Only the member, `MOD_ROLE` and the bot can see it. If the member already has an open ticket, the bot sends a DM with a link instead.
-3. 🔒 in the ticket (or `/ticket close`) removes the member's access and renames the channel to `closed-…`.
-4. Archiving moves the channel into `Ticket Archive N` (at most 50 channels each; the bot makes the next one) with mod-only permissions. The channel and its history stay as they are.
+3. A mod can also open a ticket with `/ticket open`. Mod tickets have their own numbers: `mod-1`, `mod-2`, and so on.
+4. 🔒 in the ticket (or `/ticket close`) removes the access of the member (or of the added users) and renames the channel to `closed-…`. Only a mod can close a mod ticket.
+5. With the Message Content intent on, the bot keeps each message of an open or closed ticket: the author, the time, the text, the text before each edit, a note when a message is deleted, and the attachments (in `TICKET_FILES_DIR`, up to `TICKET_FILE_MAX_MB` each).
+6. Archiving reads the channel history once more for messages that the bot missed (for example while it was offline), saves the transcript, and then deletes the channel. If the bot cannot read the history, it keeps the channel.
 
 ### Triggers and autoreacts
 
@@ -537,7 +545,7 @@ A role or member in a template that no longer exists is skipped and listed.
 | `/botprofile avatar <file>` | admin only | Changes the bot's avatar everywhere, after you confirm. |
 | `/botprofile banner <file>` | admin only | Changes the bot's profile banner everywhere, after you confirm. |
 
-Backups are in `backups/`, named `hcbot_<UTC time>.db`. Backups from older versions (`health_bot_<UTC time>.db`) are still listed. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically.
+Backups are in `backups/`, named `hcbot_<UTC time>.db`. Backups from older versions (`health_bot_<UTC time>.db`) are still listed. They are safe copies made while the bot runs. The bot also makes a backup every day at 04:00 UTC, but only when the database changed. Old backups are not deleted automatically. The ticket files in `TICKET_FILES_DIR` are not in the backups; copy that folder (or snapshot the dataset) to keep them.
 
 `/db configexport` and `/db configimport` let you repair the settings by hand. Export the settings, change or remove values in the JSON file, and import the file again. The file holds only the values saved in the database, not `.env` values or defaults. The `mode` option controls the import:
 
@@ -823,7 +831,7 @@ How the art is drawn, so that it looks right:
 
 ## Web interface
 
-A control panel on your local network: comic art and characters, speech clips and voices, Markov and persona replies, and the settings. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
+A control panel on your local network: comic art and characters, speech clips and voices, Markov and persona replies, ticket transcripts, and the settings. It needs `WEB_ADDR`, `WEB_URL`, `DISCORD_CLIENT_SECRET`, and `GUILD_ID`. If one is missing, the bot logs "Web interface is off" and continues to work.
 
 The page has a side menu of areas. Each view and each open item has its own link, so a reload keeps your place. Details and add forms open in a side panel next to the list. An area that is off says why.
 
@@ -850,6 +858,10 @@ A member sees only the channels in `TTS_CHANNELS` where they can post. An empty 
 **Markov and Persona**
 
 Type a message and generate candidates, with their scores when the worker answers. Persona also shows the question that the ranker got. Send one candidate to a channel in `MARKOV_REPLY_CHANNELS` or `PERSONA_REPLY_CHANNELS`, if you can post there. Only generated text can be sent: the bot keeps each candidate for 15 minutes, for the member who made it, and sends it once. The post looks like a normal reply. The mod log shows who sent it.
+
+**Tickets**
+
+All tickets, newest first: member tickets, mod tickets, and older transcripts. Search by a member's name or user ID (this also finds the mod tickets that the member is in), by text in the messages (also the text before an edit), or by both. Open a ticket to read its notes and its transcript, with the pictures, videos and sounds in the page. Other files are downloads. The page only reads; it changes nothing.
 
 **Settings**
 
@@ -934,6 +946,8 @@ make check
 | `user_notes` | Mod notes on members, with copies of the messages added from the right-click menu |
 | `sentences` | Jail sentences |
 | `tickets`, `ticket_notes` | Tickets and their notes |
+| `ticket_members` | The users of each mod ticket |
+| `ticket_messages`, `ticket_edits`, `ticket_files` | Ticket transcripts: the messages, the text before each edit, and the attachments (the files are in `TICKET_FILES_DIR`) |
 | `ticket_archive` | Transcripts of tickets archived by an older version (read only) |
 | `trigger_values` | Trigger responses |
 | `autoreacts` | Autoreacts |

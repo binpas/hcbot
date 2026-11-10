@@ -100,6 +100,49 @@ var schema = []string{
 		note       TEXT    NOT NULL,
 		created_at TEXT    DEFAULT (datetime('now'))
 	)`,
+	// The users that a mod added to a mod ticket (tickets.kind 'mod').
+	`CREATE TABLE IF NOT EXISTS ticket_members (
+		ticket_id INTEGER NOT NULL,
+		user_id   TEXT    NOT NULL,
+		username  TEXT    NOT NULL,
+		PRIMARY KEY (ticket_id, user_id)
+	)`,
+	// The transcript of a ticket: each message sent in its channel. content
+	// is the newest text; ticket_edits keeps the text before each edit.
+	`CREATE TABLE IF NOT EXISTS ticket_messages (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		ticket_id   INTEGER NOT NULL,
+		message_id  TEXT    NOT NULL UNIQUE,
+		author_id   TEXT    NOT NULL,
+		author_name TEXT    NOT NULL,
+		bot         INTEGER NOT NULL DEFAULT 0,
+		content     TEXT    NOT NULL DEFAULT '',
+		sent_at     TEXT    NOT NULL,
+		edited_at   TEXT,
+		deleted_at  TEXT
+	)`,
+	`CREATE INDEX IF NOT EXISTS ticket_messages_ticket ON ticket_messages (ticket_id)`,
+	`CREATE TABLE IF NOT EXISTS ticket_edits (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		message_id  TEXT NOT NULL,
+		content     TEXT NOT NULL,
+		replaced_at TEXT DEFAULT (datetime('now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS ticket_edits_message ON ticket_edits (message_id)`,
+	// The attachments of ticket messages. path is relative to
+	// TICKET_FILES_DIR, or '' when the file was not saved (note says why).
+	`CREATE TABLE IF NOT EXISTS ticket_files (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		ticket_id     INTEGER NOT NULL,
+		message_id    TEXT    NOT NULL,
+		attachment_id TEXT    NOT NULL UNIQUE,
+		filename      TEXT    NOT NULL,
+		content_type  TEXT    NOT NULL DEFAULT '',
+		size          INTEGER NOT NULL DEFAULT 0,
+		path          TEXT    NOT NULL DEFAULT '',
+		note          TEXT    NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS ticket_files_ticket ON ticket_files (ticket_id)`,
 	`CREATE TABLE IF NOT EXISTS sentences (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		guild_id      INTEGER NOT NULL,
@@ -281,6 +324,14 @@ var migrations = []string{
 	// JSON array of role IDs stripped at arrest time, restored on release.
 	`ALTER TABLE sentences ADD COLUMN removed_roles TEXT`,
 	`ALTER TABLE comic_characters ADD COLUMN locked INTEGER NOT NULL DEFAULT 0`,
+	// 'member' (opened by a member with a reaction) or 'mod' (opened by a
+	// mod with /ticket open; user_id is 0 and username is 'mod').
+	`ALTER TABLE tickets ADD COLUMN kind TEXT NOT NULL DEFAULT 'member'`,
+	`ALTER TABLE tickets ADD COLUMN opened_by TEXT NOT NULL DEFAULT ''`,
+	// Set when the transcript was saved and the channel deleted. An
+	// 'archived' ticket without it is an old one whose channel was moved
+	// to a Ticket Archive category.
+	`ALTER TABLE tickets ADD COLUMN archived_at TEXT`,
 }
 
 func (d *DB) init() error {

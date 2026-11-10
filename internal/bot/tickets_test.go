@@ -13,8 +13,8 @@ import (
 
 const tSupportMsg = "700"
 
-func ticketBot(t *testing.T) *testBot {
-	tb := newTestBot(t)
+func ticketBot(t *testing.T, opts ...func(*config.Env)) *testBot {
+	tb := newTestBot(t, opts...)
 	tb.config(map[string]string{config.ModSupportMsgKey: tSupportMsg, "MOD_SUPPORT": tChSupport})
 	return tb
 }
@@ -237,43 +237,65 @@ func TestTicketCloseCommand(t *testing.T) {
 	tb.expect(true, "already closed")
 }
 
+// transcriptBot is a ticket bot with the Message Content intent and a
+// folder for ticket files.
+func transcriptBot(t *testing.T) *testBot {
+	dir := t.TempDir()
+	tb := ticketBot(t, withMessageContent, func(e *config.Env) { e.TicketFilesDir = dir })
+	// Discord answers a channel delete with the channel.
+	tb.api.on("DELETE", "/channels/[0-9]+", 200, `{"id":"1"}`)
+	return tb
+}
+
 func TestTicketArchive(t *testing.T) {
-	tb := ticketBot(t)
+	tb := transcriptBot(t)
 	tb.ticket("650", tTarget, "target", 3, "open", true)
 	tb.runIn("650", tMod, "ticket archive")
 	tb.expect(true, "Close the ticket first")
 
 	tb.sqlExec(`UPDATE tickets SET status='closed' WHERE channel_id='650'`)
+	tb.say(tTarget, "650", "logged live", false)
+	tb.api.on("GET", "/channels/650/messages", 200, `[{"id":"20500","channel_id":"650",
+		"author":{"id":"300","username":"target"},"content":"missed while offline","timestamp":"2026-01-01T10:00:00Z"}]`)
 	tb.runIn("650", tMod, "ticket archive")
-	tb.expect(true, "Moved to **Ticket Archive 1** as `target-3`")
+	yes := tb.componentID(tb.expect(true, "Archive this ticket?", "delete this channel"), "confirm:yes:ticketarchive:")
+	tb.expectCall(0, "DELETE", "/channels/650")
 
-	cat := tb.expectCall(1, "POST", "/guilds/100/channels")
-	if len(cat) != 1 {
-		t.FailNow()
+	tb.click(tMod, yes)
+	tb.expect(true, "Transcript saved")
+	if del := tb.expectCall(1, "DELETE", "/channels/650"); len(del) == 1 && !strings.Contains(del[0].Reason, "target-3 archived") {
+		t.Errorf("audit reason = %q", del[0].Reason)
 	}
-	cb := channelIn(cat[0])
-	if cb.Name != "Ticket Archive 1" || cb.Type != int(discordgo.ChannelTypeGuildCategory) ||
-		overwriteFor(cb.PermissionOverwrites, tGuild) == nil || overwriteFor(cb.PermissionOverwrites, tRoleMod) == nil {
-		t.Errorf("category = %+v", cb)
+	tk, _ := tb.db.TicketByChannel("650")
+	if tk.Status != "archived" || tk.ArchivedAt == "" {
+		t.Errorf("ticket = %+v", tk)
 	}
-	if edit := tb.expectCall(1, "PATCH", "/channels/650"); len(edit) == 1 {
-		e := channelIn(edit[0])
-		if e.Name != "target-3" || e.ParentID != "601" || len(e.PermissionOverwrites) != 2 ||
-			overwriteFor(e.PermissionOverwrites, tTarget) != nil {
-			t.Errorf("move = %+v", e)
-		}
-	}
-	if tk, _ := tb.db.TicketByChannel("650"); tk.Status != "archived" {
-		t.Errorf("status = %q", tk.Status)
+	msgs, _ := tb.db.TicketTranscript(tk.ID)
+	if len(msgs) != 2 || msgs[0].Content != "logged live" || msgs[1].Content != "missed while offline" {
+		t.Errorf("transcript = %+v", msgs)
 	}
 	if !contains(tb.sent(tChModLog), "Ticket Archived") {
 		t.Error("not logged")
 	}
 
-	tb.api.fail("PATCH", "/channels/.*")
+	// When the history cannot be read, the channel stays.
+	tb.api.reset()
 	tb.ticket("651", tTarget, "target", 4, "closed", true)
+	tb.api.fail("GET", "/channels/651/messages")
 	tb.runIn("651", tMod, "ticket archive")
-	tb.expect(true, "don't have permission to move/rename")
+	tb.click(tMod, tb.componentID(tb.last(), "confirm:yes:ticketarchive:"))
+	tb.expect(true, "did not delete the channel")
+	tb.expectCall(0, "DELETE", "/channels/651")
+	if tk, _ := tb.db.TicketByChannel("651"); tk.Status != "closed" {
+		t.Errorf("status = %q", tk.Status)
+	}
+}
+
+func TestTicketArchiveNeedsMessageContent(t *testing.T) {
+	tb := ticketBot(t)
+	tb.ticket("650", tTarget, "target", 3, "closed", true)
+	tb.runIn("650", tMod, "ticket archive")
+	tb.expect(true, "needs the Message Content intent")
 }
 
 func TestRolloverCategory(t *testing.T) {
@@ -297,7 +319,7 @@ func TestRolloverCategory(t *testing.T) {
 }
 
 func TestTicketArchiveAll(t *testing.T) {
-	tb := ticketBot(t)
+	tb := transcriptBot(t)
 	tb.run(tMod, "ticket archiveall")
 	tb.expect(true, "no closed tickets")
 
@@ -307,17 +329,19 @@ func TestTicketArchiveAll(t *testing.T) {
 	tb.ticket("653", tMod, "moddy", 1, "open", true)
 	tb.api.reset()
 	tb.run(tMod, "ticket archiveall")
-	rs := tb.replies()
-	if len(rs) != 2 || !strings.Contains(rs[0].text(), "Processing **3**") {
-		t.Fatalf("replies = %+v", rs)
-	}
+	yes := tb.componentID(tb.expect(true, "**3** closed ticket(s)"), "confirm:yes:ticketarchiveall:")
+	tb.expectCall(0, "DELETE", "/channels/.*")
+	tb.click(tMod, yes)
 	tb.expect(true, "Archived **2** ticket(s). Skipped **1**.")
 	if !contains(tb.sent(tChModLog), "Archive Complete") {
 		t.Error("summary not logged")
 	}
-	tb.expectCall(1, "PATCH", "/channels/650")
-	tb.expectCall(1, "PATCH", "/channels/651")
-	tb.expectCall(0, "PATCH", "/channels/653")
+	tb.expectCall(1, "DELETE", "/channels/650")
+	tb.expectCall(1, "DELETE", "/channels/651")
+	tb.expectCall(0, "DELETE", "/channels/653")
+	if tk, _ := tb.db.TicketByChannel("652"); tk.Status != "closed" {
+		t.Errorf("ticket without a channel: status = %q", tk.Status)
+	}
 }
 
 func TestTicketList(t *testing.T) {
@@ -330,9 +354,9 @@ func TestTicketList(t *testing.T) {
 	tb.sqlExec(`INSERT INTO ticket_archive (guild_id, user_id, username, channel_name, number, opened_at, transcript)
 		VALUES (?, ?, 'target', 'x', 1, '2020-01-01', '')`, tGuild, tTarget)
 	tb.run(tMod, "ticket list", userOpt("member", tTarget))
-	r := tb.expect(true, "**3** ticket(s)", "🟢 Ticket #3 — open", channelMention("650"),
-		"🔴 Ticket #2 — closed", "*channel deleted*", "📦 Ticket #1 — archived", "check /ticket notes")
-	if f := r.Embeds[0].Fields; len(f) != 3 || !strings.Contains(f[0].Name, "#3") || !strings.Contains(f[2].Name, "#1") {
+	r := tb.expect(true, "**3** ticket(s)", "🟢 target-3 — open", channelMention("650"),
+		"🔴 target-2 — closed", "*channel deleted*", "📦 target-1 — archived", "/ticket transcript target-1")
+	if f := r.Embeds[0].Fields; len(f) != 3 || !strings.Contains(f[0].Name, "-3") || !strings.Contains(f[2].Name, "-1") {
 		t.Errorf("order wrong: %v", f)
 	}
 }
@@ -360,7 +384,7 @@ func TestTicketNotes(t *testing.T) {
 	tb.expect(true, "Notes — target-2", "Resolved via DM", "by "+userMention(tMod))
 
 	tb.run(tMod, "ticket search", strOpt("query", "dm"))
-	tb.expect(true, "**2** match(es)", "target-2", "old-user-1")
+	tb.expect(true, "**2** note(s)", "target-2", "old-user-1")
 	tb.run(tMod, "ticket search", strOpt("query", "nothing like this"))
-	tb.expect(true, "No ticket notes matched")
+	tb.expect(true, "No ticket notes or messages matched")
 }

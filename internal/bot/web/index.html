@@ -180,6 +180,12 @@
   .pre { white-space: pre-wrap; }
   .narrow-form { display: grid; gap: 16px; max-width: 720px; }
   .settings-section { margin-top: 16px; }
+  .tmsg { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--md-sys-color-outline-variant); min-width: 0; overflow-wrap: anywhere; }
+  .tmsg .who { font-weight: 600; }
+  .tmsg.bot .who { color: var(--md-sys-color-primary); }
+  .tmsg .old { white-space: pre-wrap; padding-left: 8px; border-left: 3px solid var(--md-sys-color-outline-variant); color: var(--md-sys-color-on-surface-variant); }
+  .tmsg .gone { color: var(--md-sys-color-error); }
+  .tmsg img, .tmsg video { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; }
   .checks { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; }
   .checks label { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 8px; overflow-wrap: anywhere; }
   audio { width: 100%; max-width: 480px; height: 36px; color-scheme: dark; }
@@ -272,6 +278,7 @@
       <a id="nav-speech" href="#/speech/send"><span>Speech</span></a>
       <a id="nav-markov" href="#/markov/markov"><span>Markov</span></a>
       <a id="nav-persona" href="#/persona/persona"><span>Persona</span></a>
+      <a id="nav-tickets" href="#/tickets/tickets"><span>Tickets</span></a>
       <a id="nav-settings" href="#/settings/settings"><span>Settings</span></a>
     </nav>
     <div id="account">
@@ -385,6 +392,16 @@
       <div id="markov" class="view" role="region" aria-labelledby="area-title" hidden></div>
       <div id="persona" class="view" role="region" aria-labelledby="area-title" hidden></div>
 
+      <div id="tickets" class="view" role="region" aria-labelledby="area-title" hidden>
+        <div class="toolbar">
+          <md-outlined-text-field id="ticket-user" label="Member name or user ID" type="search"></md-outlined-text-field>
+          <md-outlined-text-field id="ticket-q" label="Text in the messages" type="search"></md-outlined-text-field>
+          <md-filled-tonal-button id="ticket-find">Search</md-filled-tonal-button>
+        </div>
+        <p class="hint md-typescale-body-small">A mod ticket is named mod-#. Searching for a member also finds the mod tickets that the member is in.</p>
+        <div id="ticket-list" class="rows"></div>
+      </div>
+
       <div id="settings" class="view" role="region" aria-labelledby="area-title" hidden>
         <div class="toolbar">
           <md-outlined-text-field id="settings-filter" label="Search the settings" type="search"></md-outlined-text-field>
@@ -419,6 +436,7 @@ const AREAS = {
   speech: {title: "Speech", views: [["send", "Send"], ["clips", "Clips"], ["voices", "Voices"]]},
   markov: {title: "Markov", views: [["markov", "Generate"]]},
   persona: {title: "Persona", views: [["persona", "Generate"]]},
+  tickets: {title: "Tickets", views: [["tickets", "Tickets"]]},
   settings: {title: "Settings", views: [["settings", "Settings"]]},
 };
 const VIEWS = Object.values(AREAS).flatMap(a => a.views.map(v => v[0]));
@@ -646,6 +664,7 @@ function route() {
   if (here.area === "speech") loadSpeech();
   if (here.view === "clips") loadClipDays();
   if (here.view === "settings") loadSettings();
+  if (here.view === "tickets" && !tickets.list) loadTickets();
   renderView();
   if (here.view === "preview" && here.item) presetPreview(here.item);
   renderPanel();
@@ -693,6 +712,7 @@ function renderView() {
   if (here.view === "voices") renderVoices();
   if (here.view === "markov" || here.view === "persona") renderChat(here.view);
   if (here.view === "settings") renderSettings();
+  if (here.view === "tickets") renderTickets();
 }
 
 let previewArt = null;
@@ -911,6 +931,18 @@ function renderPanel() {
     $("panel").hidden = false;
   };
   if (!item || view === "overview" || view === "preview" || view === "send" || view === "markov" || view === "persona") { $("panel").hidden = true; return; }
+  if (view === "tickets") {
+    const d = ticketDetail[item];
+    if (d) { show("Ticket " + d.ref, ticketBody(d)); return; }
+    if (/^[tl][0-9]{1,18}$/.test(item)) {
+      show("Ticket", [el("p", {class: "hint md-typescale-body-medium"}, "Loading the transcript…")]);
+      api("GET", "/api/tickets/" + enc(item)).then(data => {
+        ticketDetail[item] = data;
+        if (here.item === item) renderPanel();
+      }).catch(e => toast(e.message, true));
+      return;
+    }
+  }
   if (view === "settings") {
     if (!settings) { $("panel").hidden = true; return; } // it opens when they load
     const k = settings.sections.flatMap(sec => sec.settings).find(x => x.key === item);
@@ -1429,6 +1461,84 @@ function drawCandidates(view) {
   st.out.replaceChildren(...kids);
 }
 
+// ---- Tickets. ----
+
+let tickets = {list: null, more: false, searched: false};
+const ticketDetail = {};
+const ticketStatusText = {open: "Open", closed: "Closed", archived: "Archived"};
+
+async function loadTickets() {
+  const user = $("ticket-user").value.trim(), q = $("ticket-q").value.trim();
+  const data = await api("GET", "/api/tickets?user=" + enc(user) + "&q=" + enc(q)).catch(e => { toast(e.message, true); return null; });
+  if (!data) return;
+  tickets = {list: data.tickets, more: data.more, searched: !!(user || q)};
+  // An open ticket gets new messages: read each transcript again.
+  for (const k of Object.keys(ticketDetail)) delete ticketDetail[k];
+  if (here.view === "tickets") renderTickets();
+}
+
+function ticketWho(t) {
+  if (t.kind === "mod") return "Mod ticket" + (t.members ? " with " + t.members : "");
+  return "Opened by " + t.username + " (" + t.userId + ")";
+}
+
+function renderTickets() {
+  const host = $("ticket-list");
+  const hint = text => el("p", {class: "hint md-typescale-body-medium"}, text);
+  if (!tickets.list) { host.replaceChildren(hint("Loading the tickets…")); return; }
+  if (!tickets.list.length) { host.replaceChildren(hint(tickets.searched ? "No ticket matches this search." : "There are no tickets yet.")); return; }
+  const rows = tickets.list.map(t => {
+    const props = {class: "rowitem", href: "#/tickets/tickets/" + enc(t.key), "data-key": "open:tickets:" + t.key};
+    if (here.item === t.key) props["aria-current"] = "true";
+    return el("a", props,
+      el("div", {class: "rowhead"},
+        el("span", {class: "grow md-typescale-label-large mono"}, t.ref),
+        el("span", {class: "hint md-typescale-body-small"}, ticketStatusText[t.status] || t.status)),
+      el("div", {class: "md-typescale-body-medium"}, ticketWho(t)),
+      el("div", {class: "hint md-typescale-body-small id"}, ["Opened " + (t.opened || "at an unknown time"), plural(t.messages, "message", "messages")].join(" · ")));
+  });
+  if (tickets.more) rows.push(hint("Only the newest 100 tickets show. Search to find older ones."));
+  host.replaceChildren(...rows);
+}
+
+function ticketFile(f) {
+  const url = "/files/ticket/" + f.id;
+  if (!f.saved) return el("p", {class: "hint md-typescale-body-small"}, "📎 " + f.name + " (not saved: " + f.note + ")");
+  if (f.media === "img") return el("a", {href: url, target: "_blank", rel: "noopener"}, el("img", {src: url, alt: f.name, loading: "lazy"}));
+  if (f.media === "video") return el("video", {src: url, controls: true, preload: "metadata", "aria-label": f.name});
+  if (f.media === "audio") return el("audio", {src: url, controls: true, preload: "none", "aria-label": f.name});
+  return el("a", {href: url, download: f.name}, "📎 " + f.name + " (" + Math.max(1, Math.round(f.size / 1024)) + " KB)");
+}
+
+function ticketBody(d) {
+  const body = d.facts.map(f => el("p", {class: "hint md-typescale-body-small"}, f));
+  if (d.link) body.push(el("p", {}, el("a", {href: d.link, target: "_blank", rel: "noopener"}, "Open the channel in Discord")));
+  if (d.notes.length) {
+    body.push(el("h3", {class: "md-typescale-title-small"}, "Notes"));
+    for (const n of d.notes) body.push(el("div", {class: "tmsg"},
+      el("div", {class: "md-typescale-body-medium pre"}, n.note),
+      el("div", {class: "hint md-typescale-body-small"}, (n.author || "unknown") + " · " + n.at)));
+  }
+  body.push(el("h3", {class: "md-typescale-title-small"}, "Messages"));
+  if (d.legacy !== undefined) {
+    body.push(el("div", {class: "md-typescale-body-medium pre mono"}, d.legacy || "(empty)"));
+    return body;
+  }
+  if (!d.messages.length) body.push(el("p", {class: "hint md-typescale-body-medium"}, "The bot has no messages for this ticket."));
+  for (const m of d.messages) {
+    const when = [m.sent + " UTC", m.edited ? "edited " + m.edited : ""].filter(Boolean).join(" · ");
+    const kids = [el("div", {class: "rowhead"},
+      el("span", {class: "who md-typescale-label-large", title: m.authorId}, m.author),
+      el("span", {class: "hint md-typescale-body-small id"}, when))];
+    if (m.deleted) kids.push(el("div", {class: "gone md-typescale-body-small"}, "Deleted " + m.deleted + " UTC"));
+    for (const e of m.edits || []) kids.push(el("div", {class: "old md-typescale-body-small"}, "Before the edit: " + e.content));
+    if (m.content) kids.push(el("div", {class: "md-typescale-body-medium pre"}, m.content));
+    for (const f of m.files || []) kids.push(ticketFile(f));
+    body.push(el("div", {class: "tmsg" + (m.bot ? " bot" : "")}, ...kids));
+  }
+  return body;
+}
+
 // ---- Settings. ----
 
 let settings = null, guildLists = null;
@@ -1602,6 +1712,8 @@ $("clip-day").addEventListener("change", async () => {
   if ($("clip-day").value && $("clip-day").value !== clipData.day) { await loadClips($("clip-day").value); renderClips(); }
 });
 $("settings-filter").addEventListener("input", renderSettings);
+$("ticket-find").addEventListener("click", loadTickets);
+for (const id of ["ticket-user", "ticket-q"]) $(id).addEventListener("keydown", e => { if (e.key === "Enter") loadTickets(); });
 $("char-filter").addEventListener("input", renderCharacters);
 $("back-filter").addEventListener("input", renderBackgrounds);
 $("member-filter").addEventListener("input", renderMembers);

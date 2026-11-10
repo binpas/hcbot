@@ -29,7 +29,7 @@ import (
 )
 
 // The other areas of the web interface: Settings, Speech, Markov and
-// Persona. Everything that posts checks the same limits as the slash
+// Persona (Tickets is in web_tickets.go). Everything that posts checks the same limits as the slash
 // commands, and writes the mod log: the Discord post does not show which
 // mod made it.
 
@@ -90,6 +90,8 @@ func (b *Bot) registerWebAreas(route func(string, webLevel, func(http.ResponseWr
 
 	route("POST /api/chat/{chain}/generate", webMod, b.webChatGenerate)
 	route("POST /api/chat/{chain}/send", webMod, b.webChatSend)
+
+	b.registerWebTickets(route)
 }
 
 // webFeatures tells the page which areas work, with the reason when one is

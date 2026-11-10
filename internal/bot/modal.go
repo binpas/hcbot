@@ -8,7 +8,8 @@ import (
 )
 
 // Modal components that discordgo v0.29 does not have: a Label holds one
-// input (a text input, a string select, or a checkbox group), with a title
+// input (a text input, a string select, a user select, or a checkbox
+// group), with a title
 // and a description.
 // discordgo cannot read a modal submit with Labels, so onRawInteraction
 // reads it from the raw gateway event.
@@ -106,6 +107,24 @@ func (g modalCheckboxes) MarshalJSON() ([]byte, error) {
 		Max      int                     `json:"max_values"`
 		Required bool                    `json:"required"`
 	}{g.Type(), g.CustomID, opts, 0, len(opts), false})
+}
+
+// modalUserSelect is a user select in a Label. Its submit has the user IDs.
+type modalUserSelect struct {
+	CustomID string
+	Min, Max int
+}
+
+func (u modalUserSelect) Type() discordgo.ComponentType { return discordgo.UserSelectMenuComponent }
+
+func (u modalUserSelect) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type     discordgo.ComponentType `json:"type"`
+		CustomID string                  `json:"custom_id"`
+		Min      int                     `json:"min_values"`
+		Max      int                     `json:"max_values"`
+		Required bool                    `json:"required"`
+	}{u.Type(), u.CustomID, u.Min, u.Max, u.Min > 0})
 }
 
 // rawComponent is a submitted modal component, at any depth.
