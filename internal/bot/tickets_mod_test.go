@@ -86,7 +86,8 @@ func TestModTicketOpen(t *testing.T) {
 	if members, _ := tb.db.TicketMembers(tk.ID); len(members) != 2 {
 		t.Errorf("members = %+v", members)
 	}
-	if w := tb.sent("601"); len(w) != 1 || !strings.Contains(w[0], userMention(tTarget)) || !strings.Contains(w[0], userMention(tMod)) {
+	if w := tb.sent("601"); len(w) != 1 || !strings.Contains(w[0], userMention(tTarget)) ||
+		!strings.Contains(w[0], "The moderators ("+roleMention(tRoleMod)+") opened") || strings.Contains(w[0], userMention(tMod)) {
 		t.Errorf("welcome = %v", w)
 	}
 	if !contains(tb.sent(tChModLog), "Mod Ticket Opened") {

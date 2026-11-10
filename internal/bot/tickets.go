@@ -147,7 +147,7 @@ func (b *Bot) openModTicket(guildID string, mod *discordgo.Member, members []db.
 	for i, m := range members {
 		ids[i], mentions[i] = m.UserID, userMention(m.UserID)
 	}
-	overwrites, _ := b.ticketOverwrites(guildID, ids...)
+	overwrites, modRole := b.ticketOverwrites(guildID, ids...)
 	ref := db.TicketRefName(db.ModTicketUsername, number)
 	ch, err := b.s.GuildChannelCreateComplex(guildID, discordgo.GuildChannelCreateData{
 		Name:                 "open-ticket-" + ref,
@@ -162,9 +162,15 @@ func (b *Bot) openModTicket(guildID string, mod *discordgo.Member, members []db.
 	if _, err := b.db.CreateModTicket(guildID, ch.ID, mod.User.ID, number, members); err != nil {
 		log.Printf("open mod ticket: save ticket for #%s: %v", ch.Name, err)
 	}
+	// The message tags the mod role, not the mod who opened the ticket. The
+	// mod log and the database keep who opened it.
+	opener := "The moderators"
+	if modRole != nil {
+		opener += " (" + roleMention(modRole.ID) + ")"
+	}
 	_, err = b.s.ChannelMessageSend(ch.ID, fmt.Sprintf(
-		"Hello %s!\n%s, a moderator, opened this ticket to talk with you.\nOnly you, the moderators and the bot can see this channel.",
-		strings.Join(mentions, " "), userMention(mod.User.ID)))
+		"Hello %s!\n%s opened this ticket to talk with you.\nOnly you, the moderators and the bot can see this channel.",
+		strings.Join(mentions, " "), opener))
 	if err != nil {
 		log.Printf("open mod ticket: welcome message in #%s: %v", ch.Name, err)
 	}
