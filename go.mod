@@ -1,6 +1,6 @@
 module github.com/binpas/hcbot
 
-go 1.27.1
+go 1.27.4
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
